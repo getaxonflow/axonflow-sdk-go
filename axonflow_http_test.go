@@ -259,32 +259,37 @@ func TestHealthCheckUnhealthy(t *testing.T) {
 
 func TestListConnectors(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/connectors" {
+		if r.URL.Path == "/api/v1/connectors" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]map[string]interface{}{
-				{
-					"id":          "conn-1",
-					"name":        "GitHub",
-					"type":        "github",
-					"version":     "1.0.0",
-					"description": "GitHub connector",
-					"installed":   true,
+			// API returns wrapped response
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"connectors": []map[string]interface{}{
+					{
+						"id":          "conn-1",
+						"name":        "GitHub",
+						"type":        "github",
+						"version":     "1.0.0",
+						"description": "GitHub connector",
+						"installed":   true,
+					},
+					{
+						"id":        "conn-2",
+						"name":      "Slack",
+						"type":      "slack",
+						"installed": false,
+					},
 				},
-				{
-					"id":        "conn-2",
-					"name":      "Slack",
-					"type":      "slack",
-					"installed": false,
-				},
+				"total": 2,
 			})
 		}
 	}))
 	defer server.Close()
 
 	client := NewClient(AxonFlowConfig{
-		AgentURL: server.URL,
-		ClientID: "test",
-		Debug:    true,
+		AgentURL:        server.URL,
+		OrchestratorURL: server.URL, // Connectors are on orchestrator
+		ClientID:        "test",
+		Debug:           true,
 	})
 
 	connectors, err := client.ListConnectors()
@@ -303,7 +308,7 @@ func TestListConnectors(t *testing.T) {
 
 func TestListConnectorsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/connectors" {
+		if r.URL.Path == "/api/v1/connectors" {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("Server error"))
 		}
@@ -311,8 +316,9 @@ func TestListConnectorsError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(AxonFlowConfig{
-		AgentURL: server.URL,
-		ClientID: "test",
+		AgentURL:        server.URL,
+		OrchestratorURL: server.URL, // Connectors are on orchestrator
+		ClientID:        "test",
 	})
 
 	_, err := client.ListConnectors()
@@ -323,7 +329,8 @@ func TestListConnectorsError(t *testing.T) {
 
 func TestInstallConnector(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/connectors/install" && r.Method == "POST" {
+		// New path: /api/v1/connectors/{id}/install
+		if r.URL.Path == "/api/v1/connectors/github/install" && r.Method == "POST" {
 			// Verify request body
 			body, _ := io.ReadAll(r.Body)
 			var req ConnectorInstallRequest
@@ -342,9 +349,10 @@ func TestInstallConnector(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(AxonFlowConfig{
-		AgentURL: server.URL,
-		ClientID: "test",
-		Debug:    true,
+		AgentURL:        server.URL,
+		OrchestratorURL: server.URL, // Connector install is on orchestrator
+		ClientID:        "test",
+		Debug:           true,
 	})
 
 	err := client.InstallConnector(ConnectorInstallRequest{
@@ -1061,5 +1069,90 @@ func TestNonLocalHostIncludesAuth(t *testing.T) {
 	}
 	if client.config.AgentURL != "https://api.getaxonflow.com" {
 		t.Errorf("Expected non-localhost URL")
+	}
+}
+
+func TestOrchestratorHealthCheck(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"service": "axonflow-orchestrator",
+				"status":  "healthy",
+			})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		AgentURL:        server.URL,
+		OrchestratorURL: server.URL,
+		ClientID:        "test",
+		Cache:           CacheConfig{Enabled: false},
+	})
+
+	err := client.OrchestratorHealthCheck()
+	if err != nil {
+		t.Fatalf("OrchestratorHealthCheck failed: %v", err)
+	}
+}
+
+func TestOrchestratorHealthCheckUnhealthy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		AgentURL:        server.URL,
+		OrchestratorURL: server.URL,
+		ClientID:        "test",
+		Cache:           CacheConfig{Enabled: false},
+	})
+
+	err := client.OrchestratorHealthCheck()
+	if err == nil {
+		t.Error("Expected error for unhealthy orchestrator")
+	}
+}
+
+func TestUninstallConnector(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" && r.URL.Path == "/api/v1/connectors/postgres" {
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		AgentURL:        server.URL,
+		OrchestratorURL: server.URL,
+		ClientID:        "test",
+		Cache:           CacheConfig{Enabled: false},
+	})
+
+	err := client.UninstallConnector("postgres")
+	if err != nil {
+		t.Fatalf("UninstallConnector failed: %v", err)
+	}
+}
+
+func TestUninstallConnectorNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "connector not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		AgentURL:        server.URL,
+		OrchestratorURL: server.URL,
+		ClientID:        "test",
+		Cache:           CacheConfig{Enabled: false},
+	})
+
+	err := client.UninstallConnector("nonexistent")
+	if err == nil {
+		t.Error("Expected error for nonexistent connector")
 	}
 }

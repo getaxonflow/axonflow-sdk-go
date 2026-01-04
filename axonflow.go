@@ -637,6 +637,25 @@ func (c *AxonFlowClient) HealthCheck() error {
 	return nil
 }
 
+// OrchestratorHealthCheck checks if AxonFlow Orchestrator is healthy
+func (c *AxonFlowClient) OrchestratorHealthCheck() error {
+	resp, err := c.httpClient.Get(c.getOrchestratorURL() + "/health")
+	if err != nil {
+		return fmt.Errorf("orchestrator health check failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("orchestrator not healthy: status %d", resp.StatusCode)
+	}
+
+	if c.config.Debug {
+		log.Println("[AxonFlow] Orchestrator health check passed")
+	}
+
+	return nil
+}
+
 // getMetadataKeys returns the keys from a metadata map for debugging
 func getMetadataKeys(metadata map[string]interface{}) []string {
 	if metadata == nil {
@@ -651,7 +670,7 @@ func getMetadataKeys(metadata map[string]interface{}) []string {
 
 // ListConnectors returns all available MCP connectors from the marketplace
 func (c *AxonFlowClient) ListConnectors() ([]ConnectorMetadata, error) {
-	resp, err := c.httpClient.Get(c.config.AgentURL + "/api/connectors")
+	resp, err := c.httpClient.Get(c.getOrchestratorURL() + "/api/v1/connectors")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list connectors: %w", err)
 	}
@@ -662,16 +681,20 @@ func (c *AxonFlowClient) ListConnectors() ([]ConnectorMetadata, error) {
 		return nil, fmt.Errorf("list connectors failed: HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	var connectors []ConnectorMetadata
-	if err := json.NewDecoder(resp.Body).Decode(&connectors); err != nil {
+	// Response is wrapped: {"connectors": [...], "total": N}
+	var response struct {
+		Connectors []ConnectorMetadata `json:"connectors"`
+		Total      int                 `json:"total"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to decode connectors: %w", err)
 	}
 
 	if c.config.Debug {
-		log.Printf("[AxonFlow] Listed %d connectors", len(connectors))
+		log.Printf("[AxonFlow] Listed %d connectors", len(response.Connectors))
 	}
 
-	return connectors, nil
+	return response.Connectors, nil
 }
 
 // InstallConnector installs an MCP connector from the marketplace
@@ -681,7 +704,9 @@ func (c *AxonFlowClient) InstallConnector(req ConnectorInstallRequest) error {
 		return fmt.Errorf("failed to marshal install request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.config.AgentURL+"/api/connectors/install", bytes.NewReader(reqBody))
+	// Connector install is on Orchestrator: POST /api/v1/connectors/{id}/install
+	url := fmt.Sprintf("%s/api/v1/connectors/%s/install", c.getOrchestratorURL(), req.ConnectorID)
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("failed to create install request: %w", err)
 	}
@@ -710,6 +735,41 @@ func (c *AxonFlowClient) InstallConnector(req ConnectorInstallRequest) error {
 
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Connector installed: %s", req.Name)
+	}
+
+	return nil
+}
+
+// UninstallConnector removes an installed MCP connector
+func (c *AxonFlowClient) UninstallConnector(connectorName string) error {
+	url := fmt.Sprintf("%s/api/v1/connectors/%s", c.getOrchestratorURL(), connectorName)
+	httpReq, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create uninstall request: %w", err)
+	}
+
+	// Add auth headers only when credentials are provided
+	// Community/self-hosted mode works without credentials
+	if c.config.LicenseKey != "" {
+		httpReq.Header.Set("X-License-Key", c.config.LicenseKey)
+	}
+	if c.config.ClientSecret != "" {
+		httpReq.Header.Set("X-Client-Secret", c.config.ClientSecret)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("uninstall request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("uninstall failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Connector uninstalled: %s", connectorName)
 	}
 
 	return nil

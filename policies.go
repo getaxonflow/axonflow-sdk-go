@@ -295,6 +295,77 @@ type GetEffectiveRequest = EffectivePoliciesOptions
 // HTTP Helper for Policy Requests
 // ============================================================================
 
+// orchestratorPolicyRequest makes an HTTP request to the Orchestrator policy API (for dynamic policies)
+func (c *AxonFlowClient) orchestratorPolicyRequest(method, path string, body interface{}, result interface{}) error {
+	var reqBody io.Reader
+	if body != nil {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		reqBody = bytes.NewReader(bodyBytes)
+	}
+
+	fullURL := c.getOrchestratorURL() + path
+
+	req, err := http.NewRequest(method, fullURL, reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Skip auth headers for localhost (self-hosted mode)
+	isLocalhost := strings.Contains(c.getOrchestratorURL(), "localhost") ||
+		strings.Contains(c.getOrchestratorURL(), "127.0.0.1")
+	if !isLocalhost {
+		req.Header.Set("X-Client-Secret", c.config.ClientSecret)
+		if c.config.LicenseKey != "" {
+			req.Header.Set("X-License-Key", c.config.LicenseKey)
+		}
+	}
+
+	// Always set tenant ID for policy APIs (uses ClientID as tenant)
+	if c.config.ClientID != "" {
+		req.Header.Set("X-Tenant-ID", c.config.ClientID)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Orchestrator policy request: %s %s", method, path)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return &httpError{
+			statusCode: resp.StatusCode,
+			message:    string(respBody),
+		}
+	}
+
+	// Handle no-content responses
+	if resp.StatusCode == 204 || len(respBody) == 0 {
+		return nil
+	}
+
+	if result != nil {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // policyRequest makes an HTTP request to the policy API
 func (c *AxonFlowClient) policyRequest(method, path string, body interface{}, result interface{}) error {
 	var reqBody io.Reader
@@ -718,8 +789,9 @@ func (c *AxonFlowClient) ListPolicyOverrides() ([]PolicyOverride, error) {
 // ============================================================================
 
 // ListDynamicPolicies lists all dynamic policies with optional filtering.
+// Dynamic policies are stored on the Orchestrator (not Agent).
 func (c *AxonFlowClient) ListDynamicPolicies(options *ListDynamicPoliciesOptions) ([]DynamicPolicy, error) {
-	path := "/api/v1/policies"
+	path := "/api/v1/policies/dynamic"
 	if options != nil {
 		path += options.buildQueryParams()
 	}
@@ -729,7 +801,7 @@ func (c *AxonFlowClient) ListDynamicPolicies(options *ListDynamicPoliciesOptions
 	}
 
 	var policies []DynamicPolicy
-	if err := c.policyRequest("GET", path, nil, &policies); err != nil {
+	if err := c.orchestratorPolicyRequest("GET", path, nil, &policies); err != nil {
 		return nil, err
 	}
 
@@ -737,13 +809,14 @@ func (c *AxonFlowClient) ListDynamicPolicies(options *ListDynamicPoliciesOptions
 }
 
 // GetDynamicPolicy gets a specific dynamic policy by ID.
+// Dynamic policies are stored on the Orchestrator (not Agent).
 func (c *AxonFlowClient) GetDynamicPolicy(id string) (*DynamicPolicy, error) {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Getting dynamic policy: %s", id)
 	}
 
 	var policy DynamicPolicy
-	if err := c.policyRequest("GET", "/api/v1/policies/"+id, nil, &policy); err != nil {
+	if err := c.orchestratorPolicyRequest("GET", "/api/v1/policies/dynamic/"+id, nil, &policy); err != nil {
 		return nil, err
 	}
 
@@ -751,13 +824,14 @@ func (c *AxonFlowClient) GetDynamicPolicy(id string) (*DynamicPolicy, error) {
 }
 
 // CreateDynamicPolicy creates a new dynamic policy.
+// Dynamic policies are stored on the Orchestrator (not Agent).
 func (c *AxonFlowClient) CreateDynamicPolicy(req *CreateDynamicPolicyRequest) (*DynamicPolicy, error) {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Creating dynamic policy: %s", req.Name)
 	}
 
 	var policy DynamicPolicy
-	if err := c.policyRequest("POST", "/api/v1/policies", req, &policy); err != nil {
+	if err := c.orchestratorPolicyRequest("POST", "/api/v1/policies/dynamic", req, &policy); err != nil {
 		return nil, err
 	}
 
@@ -765,13 +839,14 @@ func (c *AxonFlowClient) CreateDynamicPolicy(req *CreateDynamicPolicyRequest) (*
 }
 
 // UpdateDynamicPolicy updates an existing dynamic policy.
+// Dynamic policies are stored on the Orchestrator (not Agent).
 func (c *AxonFlowClient) UpdateDynamicPolicy(id string, req *UpdateDynamicPolicyRequest) (*DynamicPolicy, error) {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Updating dynamic policy: %s", id)
 	}
 
 	var policy DynamicPolicy
-	if err := c.policyRequest("PUT", "/api/v1/policies/"+id, req, &policy); err != nil {
+	if err := c.orchestratorPolicyRequest("PUT", "/api/v1/policies/dynamic/"+id, req, &policy); err != nil {
 		return nil, err
 	}
 
@@ -779,15 +854,17 @@ func (c *AxonFlowClient) UpdateDynamicPolicy(id string, req *UpdateDynamicPolicy
 }
 
 // DeleteDynamicPolicy deletes a dynamic policy.
+// Dynamic policies are stored on the Orchestrator (not Agent).
 func (c *AxonFlowClient) DeleteDynamicPolicy(id string) error {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Deleting dynamic policy: %s", id)
 	}
 
-	return c.policyRequest("DELETE", "/api/v1/policies/"+id, nil, nil)
+	return c.orchestratorPolicyRequest("DELETE", "/api/v1/policies/dynamic/"+id, nil, nil)
 }
 
 // ToggleDynamicPolicy toggles a dynamic policy's enabled status.
+// Dynamic policies are stored on the Orchestrator (not Agent).
 func (c *AxonFlowClient) ToggleDynamicPolicy(id string, enabled bool) (*DynamicPolicy, error) {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Toggling dynamic policy: %s (enabled=%v)", id, enabled)
@@ -795,7 +872,7 @@ func (c *AxonFlowClient) ToggleDynamicPolicy(id string, enabled bool) (*DynamicP
 
 	body := map[string]bool{"enabled": enabled}
 	var policy DynamicPolicy
-	if err := c.policyRequest("PATCH", "/api/v1/policies/"+id, body, &policy); err != nil {
+	if err := c.orchestratorPolicyRequest("PATCH", "/api/v1/policies/dynamic/"+id, body, &policy); err != nil {
 		return nil, err
 	}
 
@@ -803,8 +880,9 @@ func (c *AxonFlowClient) ToggleDynamicPolicy(id string, enabled bool) (*DynamicP
 }
 
 // GetEffectiveDynamicPolicies gets effective dynamic policies with tier inheritance applied.
+// Dynamic policies are stored on the Orchestrator (not Agent).
 func (c *AxonFlowClient) GetEffectiveDynamicPolicies(options *EffectivePoliciesOptions) ([]DynamicPolicy, error) {
-	path := "/api/v1/policies/effective"
+	path := "/api/v1/policies/dynamic/effective"
 	if options != nil {
 		path += options.buildQueryParams()
 	}
@@ -814,7 +892,7 @@ func (c *AxonFlowClient) GetEffectiveDynamicPolicies(options *EffectivePoliciesO
 	}
 
 	var policies []DynamicPolicy
-	if err := c.policyRequest("GET", path, nil, &policies); err != nil {
+	if err := c.orchestratorPolicyRequest("GET", path, nil, &policies); err != nil {
 		return nil, err
 	}
 
