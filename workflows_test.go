@@ -1,0 +1,735 @@
+package axonflow
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
+
+// Sample workflow test data
+var sampleWorkflow = CreateWorkflowResponse{
+	WorkflowID:   "wf_test123",
+	WorkflowName: "test-workflow",
+	Source:       WorkflowSourceLangGraph,
+	Status:       WorkflowStatusInProgress,
+	CreatedAt:    time.Now(),
+}
+
+var sampleStepGateResponse = StepGateResponse{
+	Decision:  GateDecisionAllow,
+	StepID:    "step_abc123",
+	Reason:    "",
+	PolicyIDs: []string{},
+}
+
+var sampleWorkflowStatus = WorkflowStatusResponse{
+	WorkflowID:       "wf_test123",
+	WorkflowName:     "test-workflow",
+	Source:           WorkflowSourceLangGraph,
+	Status:           WorkflowStatusInProgress,
+	CurrentStepIndex: 1,
+	TotalSteps:       5,
+	StartedAt:        time.Now(),
+	Steps: []WorkflowStepInfo{
+		{
+			StepID:        "step_1",
+			StepIndex:     0,
+			StepName:      "Step 1",
+			StepType:      StepTypeLLMCall,
+			Decision:      GateDecisionAllow,
+			GateCheckedAt: time.Now(),
+		},
+	},
+}
+
+// TestWorkflowStatus tests WorkflowStatus constants and methods
+func TestWorkflowStatus(t *testing.T) {
+	tests := []struct {
+		status     WorkflowStatus
+		isTerminal bool
+	}{
+		{WorkflowStatusInProgress, false},
+		{WorkflowStatusCompleted, true},
+		{WorkflowStatusAborted, true},
+		{WorkflowStatusFailed, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.status), func(t *testing.T) {
+			if got := tt.status.IsTerminal(); got != tt.isTerminal {
+				t.Errorf("WorkflowStatus(%s).IsTerminal() = %v, want %v", tt.status, got, tt.isTerminal)
+			}
+		})
+	}
+}
+
+// TestGateDecision tests GateDecision constants and methods
+func TestGateDecision(t *testing.T) {
+	tests := []struct {
+		decision         GateDecision
+		isAllowed        bool
+		isBlocked        bool
+		requiresApproval bool
+	}{
+		{GateDecisionAllow, true, false, false},
+		{GateDecisionBlock, false, true, false},
+		{GateDecisionRequireApproval, false, false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.decision), func(t *testing.T) {
+			if got := tt.decision.IsAllowed(); got != tt.isAllowed {
+				t.Errorf("GateDecision(%s).IsAllowed() = %v, want %v", tt.decision, got, tt.isAllowed)
+			}
+			if got := tt.decision.IsBlocked(); got != tt.isBlocked {
+				t.Errorf("GateDecision(%s).IsBlocked() = %v, want %v", tt.decision, got, tt.isBlocked)
+			}
+			if got := tt.decision.RequiresApproval(); got != tt.requiresApproval {
+				t.Errorf("GateDecision(%s).RequiresApproval() = %v, want %v", tt.decision, got, tt.requiresApproval)
+			}
+		})
+	}
+}
+
+// TestStepGateResponseMethods tests StepGateResponse helper methods
+func TestStepGateResponseMethods(t *testing.T) {
+	tests := []struct {
+		name             string
+		response         StepGateResponse
+		isAllowed        bool
+		isBlocked        bool
+		requiresApproval bool
+	}{
+		{
+			name:             "allow decision",
+			response:         StepGateResponse{Decision: GateDecisionAllow, StepID: "s1"},
+			isAllowed:        true,
+			isBlocked:        false,
+			requiresApproval: false,
+		},
+		{
+			name:             "block decision",
+			response:         StepGateResponse{Decision: GateDecisionBlock, StepID: "s2", Reason: "Policy violation"},
+			isAllowed:        false,
+			isBlocked:        true,
+			requiresApproval: false,
+		},
+		{
+			name:             "require_approval decision",
+			response:         StepGateResponse{Decision: GateDecisionRequireApproval, StepID: "s3", ApprovalURL: "https://portal.example.com/approve/123"},
+			isAllowed:        false,
+			isBlocked:        false,
+			requiresApproval: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.response.IsAllowed(); got != tt.isAllowed {
+				t.Errorf("StepGateResponse.IsAllowed() = %v, want %v", got, tt.isAllowed)
+			}
+			if got := tt.response.IsBlocked(); got != tt.isBlocked {
+				t.Errorf("StepGateResponse.IsBlocked() = %v, want %v", got, tt.isBlocked)
+			}
+			if got := tt.response.RequiresApproval(); got != tt.requiresApproval {
+				t.Errorf("StepGateResponse.RequiresApproval() = %v, want %v", got, tt.requiresApproval)
+			}
+		})
+	}
+}
+
+// TestWorkflowStatusResponseMethods tests WorkflowStatusResponse helper methods
+func TestWorkflowStatusResponseMethods(t *testing.T) {
+	tests := []struct {
+		name       string
+		response   WorkflowStatusResponse
+		isTerminal bool
+	}{
+		{
+			name:       "in_progress",
+			response:   WorkflowStatusResponse{Status: WorkflowStatusInProgress},
+			isTerminal: false,
+		},
+		{
+			name:       "completed",
+			response:   WorkflowStatusResponse{Status: WorkflowStatusCompleted},
+			isTerminal: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.response.IsTerminal(); got != tt.isTerminal {
+				t.Errorf("WorkflowStatusResponse.IsTerminal() = %v, want %v", got, tt.isTerminal)
+			}
+		})
+	}
+}
+
+// TestCreateWorkflow tests workflow creation
+func TestCreateWorkflow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflows" {
+			t.Errorf("Expected path /api/v1/workflows, got %s", r.URL.Path)
+		}
+
+		var req CreateWorkflowRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		if req.WorkflowName != "test-workflow" {
+			t.Errorf("Expected workflow_name 'test-workflow', got '%s'", req.WorkflowName)
+		}
+		if req.Source != WorkflowSourceLangGraph {
+			t.Errorf("Expected source 'langgraph', got '%s'", req.Source)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sampleWorkflow)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	workflow, err := client.CreateWorkflow(CreateWorkflowRequest{
+		WorkflowName: "test-workflow",
+		Source:       WorkflowSourceLangGraph,
+		TotalSteps:   5,
+		Metadata:     map[string]interface{}{"key": "value"},
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if workflow.WorkflowID != "wf_test123" {
+		t.Errorf("Expected workflow_id 'wf_test123', got '%s'", workflow.WorkflowID)
+	}
+	if workflow.Status != WorkflowStatusInProgress {
+		t.Errorf("Expected status 'in_progress', got '%s'", workflow.Status)
+	}
+}
+
+// TestGetWorkflow tests getting workflow status
+func TestGetWorkflow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflows/wf_test123" {
+			t.Errorf("Expected path /api/v1/workflows/wf_test123, got %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sampleWorkflowStatus)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	status, err := client.GetWorkflow("wf_test123")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if status.WorkflowID != "wf_test123" {
+		t.Errorf("Expected workflow_id 'wf_test123', got '%s'", status.WorkflowID)
+	}
+	if status.CurrentStepIndex != 1 {
+		t.Errorf("Expected current_step_index 1, got %d", status.CurrentStepIndex)
+	}
+	if len(status.Steps) != 1 {
+		t.Errorf("Expected 1 step, got %d", len(status.Steps))
+	}
+}
+
+// TestGetWorkflowEmptyID tests error when workflow ID is empty
+func TestGetWorkflowEmptyID(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	_, err := client.GetWorkflow("")
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+}
+
+// TestStepGate tests step gate check
+func TestStepGate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		expectedPath := "/api/v1/workflows/wf_test123/steps/step_1/gate"
+		if r.URL.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+		}
+
+		var req StepGateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		if req.StepType != StepTypeLLMCall {
+			t.Errorf("Expected step_type 'llm_call', got '%s'", req.StepType)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sampleStepGateResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	gate, err := client.StepGate("wf_test123", "step_1", StepGateRequest{
+		StepName:  "Generate Code",
+		StepType:  StepTypeLLMCall,
+		Model:     "gpt-4",
+		Provider:  "openai",
+		StepInput: map[string]interface{}{"prompt": "Hello world"},
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if gate.Decision != GateDecisionAllow {
+		t.Errorf("Expected decision 'allow', got '%s'", gate.Decision)
+	}
+	if !gate.IsAllowed() {
+		t.Error("Expected IsAllowed() to return true")
+	}
+}
+
+// TestStepGateBlock tests step gate with block decision
+func TestStepGateBlock(t *testing.T) {
+	blockResponse := StepGateResponse{
+		Decision:  GateDecisionBlock,
+		StepID:    "step_blocked",
+		Reason:    "Policy violation: SQL injection detected",
+		PolicyIDs: []string{"pol_sqli_001"},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(blockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	gate, err := client.StepGate("wf_1", "s1", StepGateRequest{
+		StepType: StepTypeLLMCall,
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !gate.IsBlocked() {
+		t.Error("Expected IsBlocked() to return true")
+	}
+	if gate.Reason != "Policy violation: SQL injection detected" {
+		t.Errorf("Expected reason, got '%s'", gate.Reason)
+	}
+	if len(gate.PolicyIDs) != 1 || gate.PolicyIDs[0] != "pol_sqli_001" {
+		t.Errorf("Expected policy_ids ['pol_sqli_001'], got %v", gate.PolicyIDs)
+	}
+}
+
+// TestStepGateRequireApproval tests step gate with require_approval decision
+func TestStepGateRequireApproval(t *testing.T) {
+	approvalResponse := StepGateResponse{
+		Decision:    GateDecisionRequireApproval,
+		StepID:      "step_approval",
+		Reason:      "Human approval required for high-risk operation",
+		ApprovalURL: "https://portal.example.com/approve/abc123",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(approvalResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	gate, err := client.StepGate("wf_1", "s1", StepGateRequest{
+		StepType: StepTypeHumanTask,
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !gate.RequiresApproval() {
+		t.Error("Expected RequiresApproval() to return true")
+	}
+	if gate.ApprovalURL != "https://portal.example.com/approve/abc123" {
+		t.Errorf("Expected approval_url, got '%s'", gate.ApprovalURL)
+	}
+}
+
+// TestStepGateEmptyIDs tests error when IDs are empty
+func TestStepGateEmptyIDs(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	// Test empty workflow ID
+	_, err := client.StepGate("", "step_1", StepGateRequest{StepType: StepTypeLLMCall})
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+
+	// Test empty step ID
+	_, err = client.StepGate("wf_1", "", StepGateRequest{StepType: StepTypeLLMCall})
+	if err == nil {
+		t.Error("Expected error for empty step ID")
+	}
+}
+
+// TestCompleteWorkflow tests completing a workflow
+func TestCompleteWorkflow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflows/wf_test123/complete" {
+			t.Errorf("Expected path /api/v1/workflows/wf_test123/complete, got %s", r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.CompleteWorkflow("wf_test123")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestCompleteWorkflowEmptyID tests error when workflow ID is empty
+func TestCompleteWorkflowEmptyID(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	err := client.CompleteWorkflow("")
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+}
+
+// TestAbortWorkflow tests aborting a workflow
+func TestAbortWorkflow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflows/wf_test123/abort" {
+			t.Errorf("Expected path /api/v1/workflows/wf_test123/abort, got %s", r.URL.Path)
+		}
+
+		var req AbortWorkflowRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		if req.Reason != "User cancelled" {
+			t.Errorf("Expected reason 'User cancelled', got '%s'", req.Reason)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.AbortWorkflow("wf_test123", "User cancelled")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestAbortWorkflowEmptyID tests error when workflow ID is empty
+func TestAbortWorkflowEmptyID(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	err := client.AbortWorkflow("", "reason")
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+}
+
+// TestResumeWorkflow tests resuming a workflow
+func TestResumeWorkflow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflows/wf_test123/resume" {
+			t.Errorf("Expected path /api/v1/workflows/wf_test123/resume, got %s", r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.ResumeWorkflow("wf_test123")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestResumeWorkflowEmptyID tests error when workflow ID is empty
+func TestResumeWorkflowEmptyID(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	err := client.ResumeWorkflow("")
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+}
+
+// TestListWorkflows tests listing workflows
+func TestListWorkflows(t *testing.T) {
+	listResponse := ListWorkflowsResponse{
+		Workflows: []WorkflowStatusResponse{sampleWorkflowStatus},
+		Total:     1,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflows" {
+			t.Errorf("Expected path /api/v1/workflows, got %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(listResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	result, err := client.ListWorkflows(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Total != 1 {
+		t.Errorf("Expected total 1, got %d", result.Total)
+	}
+	if len(result.Workflows) != 1 {
+		t.Errorf("Expected 1 workflow, got %d", len(result.Workflows))
+	}
+}
+
+// TestListWorkflowsWithFilters tests listing workflows with filters
+func TestListWorkflowsWithFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+
+		if query.Get("status") != "in_progress" {
+			t.Errorf("Expected status=in_progress, got %s", query.Get("status"))
+		}
+		if query.Get("source") != "langgraph" {
+			t.Errorf("Expected source=langgraph, got %s", query.Get("source"))
+		}
+		if query.Get("limit") != "10" {
+			t.Errorf("Expected limit=10, got %s", query.Get("limit"))
+		}
+		if query.Get("offset") != "5" {
+			t.Errorf("Expected offset=5, got %s", query.Get("offset"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ListWorkflowsResponse{
+			Workflows: []WorkflowStatusResponse{},
+			Total:     0,
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.ListWorkflows(&ListWorkflowsOptions{
+		Status: WorkflowStatusInProgress,
+		Source: WorkflowSourceLangGraph,
+		Limit:  10,
+		Offset: 5,
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestStepTypes tests that all step type constants are correct
+func TestStepTypes(t *testing.T) {
+	expectedTypes := map[StepType]string{
+		StepTypeLLMCall:       "llm_call",
+		StepTypeToolCall:      "tool_call",
+		StepTypeConnectorCall: "connector_call",
+		StepTypeHumanTask:     "human_task",
+	}
+
+	for stepType, expected := range expectedTypes {
+		if string(stepType) != expected {
+			t.Errorf("StepType %v should be '%s', got '%s'", stepType, expected, string(stepType))
+		}
+	}
+}
+
+// TestWorkflowSources tests that all workflow source constants are correct
+func TestWorkflowSources(t *testing.T) {
+	expectedSources := map[WorkflowSource]string{
+		WorkflowSourceLangGraph: "langgraph",
+		WorkflowSourceLangChain: "langchain",
+		WorkflowSourceCrewAI:    "crewai",
+		WorkflowSourceExternal:  "external",
+	}
+
+	for source, expected := range expectedSources {
+		if string(source) != expected {
+			t.Errorf("WorkflowSource %v should be '%s', got '%s'", source, expected, string(source))
+		}
+	}
+}
+
+// TestApprovalStatuses tests that all approval status constants are correct
+func TestApprovalStatuses(t *testing.T) {
+	expectedStatuses := map[ApprovalStatus]string{
+		ApprovalStatusPending:  "pending",
+		ApprovalStatusApproved: "approved",
+		ApprovalStatusRejected: "rejected",
+	}
+
+	for status, expected := range expectedStatuses {
+		if string(status) != expected {
+			t.Errorf("ApprovalStatus %v should be '%s', got '%s'", status, expected, string(status))
+		}
+	}
+}
+
+// TestCreateWorkflowServerError tests error handling for server errors
+func TestCreateWorkflowServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Internal server error"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.CreateWorkflow(CreateWorkflowRequest{
+		WorkflowName: "test",
+	})
+
+	if err == nil {
+		t.Error("Expected error for server error response")
+	}
+}
+
+// TestStepGateWithAllFields tests step gate with all optional fields
+func TestStepGateWithAllFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req StepGateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request: %v", err)
+		}
+
+		// Verify all fields are present
+		if req.StepName != "Generate Code" {
+			t.Errorf("Expected step_name 'Generate Code', got '%s'", req.StepName)
+		}
+		if req.StepType != StepTypeLLMCall {
+			t.Errorf("Expected step_type 'llm_call', got '%s'", req.StepType)
+		}
+		if req.Model != "gpt-4" {
+			t.Errorf("Expected model 'gpt-4', got '%s'", req.Model)
+		}
+		if req.Provider != "openai" {
+			t.Errorf("Expected provider 'openai', got '%s'", req.Provider)
+		}
+		if req.StepInput == nil || req.StepInput["prompt"] != "Hello" {
+			t.Errorf("Expected step_input with prompt, got %v", req.StepInput)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(StepGateResponse{
+			Decision: GateDecisionAllow,
+			StepID:   "step_full",
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.StepGate("wf_1", "s1", StepGateRequest{
+		StepName:  "Generate Code",
+		StepType:  StepTypeLLMCall,
+		Model:     "gpt-4",
+		Provider:  "openai",
+		StepInput: map[string]interface{}{"prompt": "Hello"},
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
