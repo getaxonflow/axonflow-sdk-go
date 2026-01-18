@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Helper methods on `StepGateResponse`: `IsAllowed()`, `IsBlocked()`, `RequiresApproval()`
   - Helper methods on `WorkflowStatus` and `WorkflowStatusResponse`: `IsTerminal()`
 
+- **Workflow Policy Enforcement** (Issues #1019, #1020, #1021): Policy transparency for workflow operations
+  - `StepGateResponse` now includes `PoliciesEvaluated` and `PoliciesMatched` fields with `PolicyMatch` type
+  - `PolicyMatch` type with `PolicyID`, `PolicyName`, `Action`, `Reason` for policy transparency
+  - `PolicyEvaluationResult` type for MAP execution with `Allowed`, `AppliedPolicies`, `RiskScore`
+  - Workflow operations (`workflow_created`, `workflow_step_gate`, `workflow_completed`) logged to audit trail
+
 ---
 
 ## [2.4.0] - 2026-01-14

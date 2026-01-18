@@ -232,6 +232,40 @@ type DynamicPolicyMatch struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// ============================================================================
+// Workflow Policy Enforcement Types (Issues #1019, #1020, #1021)
+// ============================================================================
+
+// PolicyEvaluationResult contains comprehensive policy evaluation results.
+// This is used for MAP and WCP (Workflow Control Point) policy enforcement.
+type PolicyEvaluationResult struct {
+	// Allowed indicates whether the action was permitted by policies
+	Allowed bool `json:"allowed"`
+	// AppliedPolicies contains the IDs of policies that were applied
+	AppliedPolicies []string `json:"applied_policies"`
+	// RiskScore is the calculated risk score (0.0-1.0) based on policy evaluation
+	RiskScore float64 `json:"risk_score"`
+	// RequiredActions contains actions required before proceeding (e.g., "mfa_verification", "manager_approval")
+	RequiredActions []string `json:"required_actions"`
+	// ProcessingTimeMs is the time taken for policy evaluation in milliseconds
+	ProcessingTimeMs int64 `json:"processing_time_ms"`
+	// DatabaseAccessed indicates whether a database was accessed during policy evaluation
+	DatabaseAccessed bool `json:"database_accessed"`
+}
+
+// PolicyMatch contains details about a policy that matched during evaluation.
+// Used in workflow step gate responses to provide detailed policy match information.
+type PolicyMatch struct {
+	// PolicyID is the unique identifier of the matched policy
+	PolicyID string `json:"policy_id"`
+	// PolicyName is the human-readable name of the policy
+	PolicyName string `json:"policy_name"`
+	// Action is the action prescribed by the policy (allow, block, require_approval, log)
+	Action string `json:"action"`
+	// Reason explains why this policy matched
+	Reason string `json:"reason,omitempty"`
+}
+
 // PlanResponse represents a multi-agent plan generation response
 type PlanResponse struct {
 	PlanID            string                 `json:"plan_id"`
@@ -313,6 +347,8 @@ type PlanExecutionResponse struct {
 	TotalSteps             int          `json:"total_steps"`                        // Total number of steps
 	CurrentStep            string       `json:"current_step,omitempty"`             // Currently executing step
 	EstimatedTimeRemaining string       `json:"estimated_time_remaining,omitempty"` // For in-progress plans
+	// PolicyInfo contains policy evaluation results for MAP execution (Issue #1020)
+	PolicyInfo *PolicyEvaluationResult `json:"policy_info,omitempty"`
 }
 
 // StepResult represents the result of a single plan step execution
