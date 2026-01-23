@@ -222,7 +222,7 @@ type FEATAssessment struct {
 	EthicsScore           *int                   `json:"ethics_score,omitempty"`
 	AccountabilityScore   *int                   `json:"accountability_score,omitempty"`
 	TransparencyScore     *int                   `json:"transparency_score,omitempty"`
-	OverallScore          *int                   `json:"overall_score,omitempty"`
+	OverallScore          *float64               `json:"overall_score,omitempty"`
 	FairnessDetails       map[string]interface{} `json:"fairness_details,omitempty"`
 	EthicsDetails         map[string]interface{} `json:"ethics_details,omitempty"`
 	AccountabilityDetails map[string]interface{} `json:"accountability_details,omitempty"`
@@ -317,6 +317,51 @@ type KillSwitchEvent struct {
 	CreatedAt    time.Time              `json:"created_at"`
 }
 
+// killSwitchResponse handles nested API response format {kill_switch: {...}, message: "..."}
+type killSwitchResponse struct {
+	KillSwitch *KillSwitch `json:"kill_switch,omitempty"`
+	Message    string      `json:"message,omitempty"`
+}
+
+// killSwitchHistoryResponse handles nested API response format {history: [...], count: N}
+type killSwitchHistoryResponse struct {
+	History []killSwitchEventRaw `json:"history"`
+	Count   int                  `json:"count"`
+}
+
+// killSwitchEventRaw handles API response with alternate field names
+type killSwitchEventRaw struct {
+	ID             string                 `json:"id"`
+	KillSwitchID   string                 `json:"kill_switch_id"`
+	Action         string                 `json:"action"`
+	PreviousStatus string                 `json:"previous_status,omitempty"`
+	NewStatus      string                 `json:"new_status,omitempty"`
+	Reason         string                 `json:"reason,omitempty"`
+	PerformedBy    string                 `json:"performed_by,omitempty"`
+	PerformedAt    time.Time              `json:"performed_at"`
+	EventData      map[string]interface{} `json:"event_data,omitempty"`
+}
+
+// toKillSwitchEvent converts raw API response to KillSwitchEvent
+func (r *killSwitchEventRaw) toKillSwitchEvent() KillSwitchEvent {
+	eventData := r.EventData
+	if eventData == nil && (r.PreviousStatus != "" || r.NewStatus != "" || r.Reason != "") {
+		eventData = map[string]interface{}{
+			"previous_status": r.PreviousStatus,
+			"new_status":      r.NewStatus,
+			"reason":          r.Reason,
+		}
+	}
+	return KillSwitchEvent{
+		ID:           r.ID,
+		KillSwitchID: r.KillSwitchID,
+		EventType:    r.Action,
+		EventData:    eventData,
+		CreatedBy:    r.PerformedBy,
+		CreatedAt:    r.PerformedAt,
+	}
+}
+
 // ===========================================================================
 // MAS FEAT Registry Methods
 // ===========================================================================
@@ -336,6 +381,7 @@ func (c *AxonFlowClient) MASFEATRegisterSystem(req *RegisterSystemRequest) (*AIS
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -372,6 +418,7 @@ func (c *AxonFlowClient) MASFEATGetSystem(systemID string) (*AISystemRegistry, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get system request: %w", err)
 	}
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -411,6 +458,7 @@ func (c *AxonFlowClient) MASFEATUpdateSystem(systemID string, req *UpdateSystemR
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -464,6 +512,7 @@ func (c *AxonFlowClient) MASFEATListSystems(opts *ListSystemsOptions) ([]AISyste
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list systems request: %w", err)
 	}
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -505,6 +554,7 @@ func (c *AxonFlowClient) MASFEATActivateSystem(systemID string) (*AISystemRegist
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -573,6 +623,7 @@ func (c *AxonFlowClient) MASFEATGetRegistrySummary() (*RegistrySummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get registry summary request: %w", err)
 	}
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -616,6 +667,7 @@ func (c *AxonFlowClient) MASFEATCreateAssessment(req *CreateAssessmentRequest) (
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -652,6 +704,7 @@ func (c *AxonFlowClient) MASFEATGetAssessment(assessmentID string) (*FEATAssessm
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get assessment request: %w", err)
 	}
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -691,6 +744,7 @@ func (c *AxonFlowClient) MASFEATUpdateAssessment(assessmentID string, req *Updat
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -741,6 +795,7 @@ func (c *AxonFlowClient) MASFEATListAssessments(opts *ListAssessmentsOptions) ([
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list assessments request: %w", err)
 	}
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -775,6 +830,7 @@ func (c *AxonFlowClient) MASFEATSubmitAssessment(assessmentID string) (*FEATAsse
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -818,6 +874,7 @@ func (c *AxonFlowClient) MASFEATApproveAssessment(assessmentID string, req *Appr
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -861,6 +918,7 @@ func (c *AxonFlowClient) MASFEATRejectAssessment(assessmentID string, req *Rejec
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -897,6 +955,7 @@ func (c *AxonFlowClient) MASFEATGetKillSwitch(systemID string) (*KillSwitch, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get kill switch request: %w", err)
 	}
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -936,6 +995,7 @@ func (c *AxonFlowClient) MASFEATConfigureKillSwitch(systemID string, req *Config
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -979,6 +1039,7 @@ func (c *AxonFlowClient) MASFEATCheckKillSwitch(systemID string, req *CheckKillS
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -1022,6 +1083,7 @@ func (c *AxonFlowClient) MASFEATTriggerKillSwitch(systemID string, req *TriggerK
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -1038,16 +1100,27 @@ func (c *AxonFlowClient) MASFEATTriggerKillSwitch(systemID string, req *TriggerK
 		return nil, &httpError{statusCode: resp.StatusCode, message: string(respBody)}
 	}
 
-	var result KillSwitch
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	// Handle nested response format {kill_switch: {...}, message: "..."}
+	var wrapper killSwitchResponse
+	if err := json.Unmarshal(respBody, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal trigger kill switch response: %w", err)
+	}
+
+	// If nested format, use the wrapped kill_switch; otherwise try direct parse
+	result := wrapper.KillSwitch
+	if result == nil {
+		var direct KillSwitch
+		if err := json.Unmarshal(respBody, &direct); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal trigger kill switch response: %w", err)
+		}
+		result = &direct
 	}
 
 	if c.config.Debug {
 		log.Printf("[AxonFlow MASFEAT] Kill switch manually triggered: %s", systemID)
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 // MASFEATRestoreKillSwitch restores a triggered kill switch
@@ -1065,6 +1138,7 @@ func (c *AxonFlowClient) MASFEATRestoreKillSwitch(systemID string, req *RestoreK
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -1081,16 +1155,27 @@ func (c *AxonFlowClient) MASFEATRestoreKillSwitch(systemID string, req *RestoreK
 		return nil, &httpError{statusCode: resp.StatusCode, message: string(respBody)}
 	}
 
-	var result KillSwitch
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	// Handle nested response format {kill_switch: {...}, message: "..."}
+	var wrapper killSwitchResponse
+	if err := json.Unmarshal(respBody, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal restore kill switch response: %w", err)
+	}
+
+	// If nested format, use the wrapped kill_switch; otherwise try direct parse
+	result := wrapper.KillSwitch
+	if result == nil {
+		var direct KillSwitch
+		if err := json.Unmarshal(respBody, &direct); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal restore kill switch response: %w", err)
+		}
+		result = &direct
 	}
 
 	if c.config.Debug {
 		log.Printf("[AxonFlow MASFEAT] Kill switch restored: %s", systemID)
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 // MASFEATEnableKillSwitch enables a kill switch
@@ -1103,6 +1188,7 @@ func (c *AxonFlowClient) MASFEATEnableKillSwitch(systemID string) (*KillSwitch, 
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -1140,6 +1226,7 @@ func (c *AxonFlowClient) MASFEATDisableKillSwitch(systemID string, reason string
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -1175,6 +1262,7 @@ func (c *AxonFlowClient) MASFEATGetKillSwitchHistory(systemID string, limit int)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get kill switch history request: %w", err)
 	}
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -1191,9 +1279,16 @@ func (c *AxonFlowClient) MASFEATGetKillSwitchHistory(systemID string, limit int)
 		return nil, &httpError{statusCode: resp.StatusCode, message: string(body)}
 	}
 
-	var result []KillSwitchEvent
-	if err := json.Unmarshal(body, &result); err != nil {
+	// Handle nested response format {history: [...], count: N}
+	var wrapper killSwitchHistoryResponse
+	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal get kill switch history response: %w", err)
+	}
+
+	// Convert raw events to KillSwitchEvent with proper field mapping
+	result := make([]KillSwitchEvent, len(wrapper.History))
+	for i, raw := range wrapper.History {
+		result[i] = raw.toKillSwitchEvent()
 	}
 
 	return result, nil
