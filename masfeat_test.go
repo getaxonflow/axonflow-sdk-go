@@ -469,8 +469,8 @@ func TestMASFEATGetRegistrySummary(t *testing.T) {
 				MediumMaterialityCount: 4,
 				LowMaterialityCount:    3,
 				ByUseCase: map[string]int{
-					"credit_scoring": 5,
-					"fraud_detection": 3,
+					"credit_scoring":   5,
+					"fraud_detection":  3,
 					"customer_service": 2,
 				},
 				ByStatus: map[string]int{
@@ -521,13 +521,13 @@ func TestMASFEATGetSystem(t *testing.T) {
 			}
 
 			response := AISystemRegistry{
-				ID:         "uuid-123",
-				SystemID:   "test-system",
-				SystemName: "Test System",
-				Status:     SystemStatusActive,
+				ID:          "uuid-123",
+				SystemID:    "test-system",
+				SystemName:  "Test System",
+				Status:      SystemStatusActive,
 				Materiality: MaterialityHigh,
-				CreatedAt:  time.Now(),
-				UpdatedAt:  time.Now(),
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -568,12 +568,12 @@ func TestMASFEATUpdateAssessment(t *testing.T) {
 
 			overallScore := 82
 			response := FEATAssessment{
-				ID:             "assessment-123",
-				SystemID:       "test-system",
-				Status:         FEATStatusInProgress,
-				OverallScore:   &overallScore,
-				CreatedAt:      time.Now(),
-				UpdatedAt:      time.Now(),
+				ID:           "assessment-123",
+				SystemID:     "test-system",
+				Status:       FEATStatusInProgress,
+				OverallScore: &overallScore,
+				CreatedAt:    time.Now(),
+				UpdatedAt:    time.Now(),
 			}
 
 			w.Header().Set("Content-Type", "application/json")
