@@ -5,9 +5,21 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.7.0] - 2026-01-23
+## [2.7.0] - 2026-01-24
 
 ### Added
+
+- **Unified Execution Tracking** (Issue #1075 - EPIC #1074): Consistent status tracking for MAP plans and WCP workflows
+  - `GetExecutionStatus(executionID)` - Get unified execution status by ID
+  - `ListUnifiedExecutions(opts)` - List executions with type/status filters
+  - `ExecutionStatus` struct with unified fields for both MAP and WCP executions
+  - `ExecutionType` constants: `ExecutionTypeMAP`, `ExecutionTypeWCP`
+  - `ExecutionStatusValue` constants: `ExecutionStatusPending`, `ExecutionStatusRunning`, `ExecutionStatusCompleted`, `ExecutionStatusFailed`, `ExecutionStatusCancelled`, `ExecutionStatusAborted`, `ExecutionStatusExpired`
+  - `StepStatusValue` constants: `StepStatusPending`, `StepStatusRunning`, `StepStatusCompleted`, `StepStatusFailed`, `StepStatusSkipped`, `StepStatusBlocked`, `StepStatusApproval`
+  - `UnifiedStepType` constants: `StepTypeLLMCall`, `StepTypeToolCall`, `StepTypeConnectorCall`, `StepTypeHumanTask`, `StepTypeSynthesis`, `StepTypeAction`, `StepTypeGate`
+  - `UnifiedStepStatus` struct with step-level details (duration, cost, policy decisions)
+  - Helper methods: `IsTerminal()`, `IsStepTerminal()`, `IsStepBlocking()`, `CalculateProgress()`, `GetCurrentStep()`, `CalculateTotalCost()`
+  - Consistent response format across MAP Multi-Agent Planning and WCP Workflow Control Plane
 
 - **MAS FEAT Compliance Module** (Enterprise): Singapore financial services AI governance
   - AI System Registry: `MASFEATRegisterSystem()`, `MASFEATGetSystem()`, `MASFEATUpdateSystem()`, `MASFEATListSystems()`, `MASFEATActivateSystem()`, `MASFEATRetireSystem()`, `MASFEATGetRegistrySummary()`
