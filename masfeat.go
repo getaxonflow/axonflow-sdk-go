@@ -79,10 +79,10 @@ type RegisterSystemRequest struct {
 	UseCase         AISystemUseCase        `json:"use_case"`
 	OwnerTeam       string                 `json:"owner_team"`
 	TechnicalOwner  string                 `json:"technical_owner,omitempty"`
-	BusinessOwner   string                 `json:"business_owner,omitempty"`
-	CustomerImpact  int                    `json:"customer_impact"`
-	ModelComplexity int                    `json:"model_complexity"`
-	HumanReliance   int                    `json:"human_reliance"`
+	BusinessOwner   string                 `json:"owner_email,omitempty"`
+	CustomerImpact  int                    `json:"risk_rating_impact"`
+	ModelComplexity int                    `json:"risk_rating_complexity"`
+	HumanReliance   int                    `json:"risk_rating_reliance"`
 	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -92,10 +92,11 @@ type UpdateSystemRequest struct {
 	Description     *string                `json:"description,omitempty"`
 	OwnerTeam       *string                `json:"owner_team,omitempty"`
 	TechnicalOwner  *string                `json:"technical_owner,omitempty"`
-	BusinessOwner   *string                `json:"business_owner,omitempty"`
-	CustomerImpact  *int                   `json:"customer_impact,omitempty"`
-	ModelComplexity *int                   `json:"model_complexity,omitempty"`
-	HumanReliance   *int                   `json:"human_reliance,omitempty"`
+	BusinessOwner   *string                `json:"owner_email,omitempty"`
+	CustomerImpact  *int                   `json:"risk_rating_impact,omitempty"`
+	ModelComplexity *int                   `json:"risk_rating_complexity,omitempty"`
+	HumanReliance   *int                   `json:"risk_rating_reliance,omitempty"`
+	Status          *SystemStatus          `json:"status,omitempty"`
 	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -109,10 +110,10 @@ type AISystemRegistry struct {
 	UseCase         AISystemUseCase           `json:"use_case"`
 	OwnerTeam       string                    `json:"owner_team"`
 	TechnicalOwner  string                    `json:"technical_owner,omitempty"`
-	BusinessOwner   string                    `json:"business_owner,omitempty"`
-	CustomerImpact  int                       `json:"customer_impact"`
-	ModelComplexity int                       `json:"model_complexity"`
-	HumanReliance   int                       `json:"human_reliance"`
+	BusinessOwner   string                    `json:"owner_email,omitempty"`
+	CustomerImpact  int                       `json:"risk_rating_impact"`
+	ModelComplexity int                       `json:"risk_rating_complexity"`
+	HumanReliance   int                       `json:"risk_rating_reliance"`
 	Materiality     MaterialityClassification `json:"materiality"`
 	Status          SystemStatus              `json:"status"`
 	Metadata        map[string]interface{}    `json:"metadata,omitempty"`
@@ -450,9 +451,16 @@ func (c *AxonFlowClient) MASFEATListSystems(opts *ListSystemsOptions) ([]AISyste
 
 // MASFEATActivateSystem activates an AI system
 func (c *AxonFlowClient) MASFEATActivateSystem(systemID string) (*AISystemRegistry, error) {
-	url := fmt.Sprintf("%s/api/v1/masfeat/registry/%s/activate", c.config.Endpoint, systemID)
+	// Use PUT to update status - the /activate endpoint doesn't exist
+	url := fmt.Sprintf("%s/api/v1/masfeat/registry/%s", c.config.Endpoint, systemID)
 
-	httpReq, err := http.NewRequest("POST", url, nil)
+	reqBody := map[string]string{"status": "active"}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal activate system request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("PUT", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create activate system request: %w", err)
 	}
@@ -465,17 +473,17 @@ func (c *AxonFlowClient) MASFEATActivateSystem(systemID string) (*AISystemRegist
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read activate system response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, &httpError{statusCode: resp.StatusCode, message: string(body)}
+		return nil, &httpError{statusCode: resp.StatusCode, message: string(respBody)}
 	}
 
 	var result AISystemRegistry
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal activate system response: %w", err)
 	}
 
@@ -888,7 +896,7 @@ func (c *AxonFlowClient) MASFEATConfigureKillSwitch(systemID string, req *Config
 		return nil, fmt.Errorf("failed to marshal configure kill switch request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create configure kill switch request: %w", err)
 	}
