@@ -124,13 +124,13 @@ type AISystemRegistry struct {
 
 // RegistrySummary represents summary statistics for the registry
 type RegistrySummary struct {
-	TotalSystems          int            `json:"total_systems"`
-	ActiveSystems         int            `json:"active_systems"`
-	HighMaterialityCount  int            `json:"high_materiality_count"`
-	MediumMaterialityCount int           `json:"medium_materiality_count"`
-	LowMaterialityCount   int            `json:"low_materiality_count"`
-	ByUseCase             map[string]int `json:"by_use_case"`
-	ByStatus              map[string]int `json:"by_status"`
+	TotalSystems           int            `json:"total_systems"`
+	ActiveSystems          int            `json:"active_systems"`
+	HighMaterialityCount   int            `json:"high_materiality_count"`
+	MediumMaterialityCount int            `json:"medium_materiality_count"`
+	LowMaterialityCount    int            `json:"low_materiality_count"`
+	ByUseCase              map[string]int `json:"by_use_case"`
+	ByStatus               map[string]int `json:"by_status"`
 }
 
 // ListSystemsOptions represents options for listing AI systems
@@ -332,7 +332,6 @@ func (c *AxonFlowClient) MASFEATGetSystem(systemID string) (*AISystemRegistry, e
 		return nil, fmt.Errorf("failed to create get system request: %w", err)
 	}
 
-
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("get system request failed: %w", err)
@@ -425,7 +424,6 @@ func (c *AxonFlowClient) MASFEATListSystems(opts *ListSystemsOptions) ([]AISyste
 		return nil, fmt.Errorf("failed to create list systems request: %w", err)
 	}
 
-
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("list systems request failed: %w", err)
@@ -503,7 +501,6 @@ func (c *AxonFlowClient) MASFEATRetireSystem(systemID string) (*AISystemRegistry
 		return nil, fmt.Errorf("failed to create retire system request: %w", err)
 	}
 
-
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("retire system request failed: %w", err)
@@ -535,7 +532,6 @@ func (c *AxonFlowClient) MASFEATGetRegistrySummary() (*RegistrySummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get registry summary request: %w", err)
 	}
-
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -615,7 +611,6 @@ func (c *AxonFlowClient) MASFEATGetAssessment(assessmentID string) (*FEATAssessm
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get assessment request: %w", err)
 	}
-
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -705,7 +700,6 @@ func (c *AxonFlowClient) MASFEATListAssessments(opts *ListAssessmentsOptions) ([
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list assessments request: %w", err)
 	}
-
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -862,7 +856,6 @@ func (c *AxonFlowClient) MASFEATGetKillSwitch(systemID string) (*KillSwitch, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get kill switch request: %w", err)
 	}
-
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -1141,7 +1134,6 @@ func (c *AxonFlowClient) MASFEATGetKillSwitchHistory(systemID string, limit int)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get kill switch history request: %w", err)
 	}
-
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
