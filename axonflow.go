@@ -507,9 +507,21 @@ func Sandbox(apiKey string) *AxonFlowClient {
 	})
 }
 
-// ExecuteQuery sends a query through AxonFlow platform with policy enforcement.
+// ProxyLLMCall sends a query through AxonFlow platform with full policy enforcement.
+// This is Proxy Mode - AxonFlow acts as an intermediary, making the LLM call on your behalf.
+//
+// Use this when you want AxonFlow to:
+//   - Evaluate policies before the LLM call
+//   - Make the LLM call to the configured provider
+//   - Filter/redact sensitive data from responses
+//   - Automatically track costs and audit the interaction
+//
+// For Gateway Mode (lower latency, you make the LLM call), use:
+//   - GetPolicyApprovedContext() before your LLM call
+//   - AuditLLMCall() after your LLM call
+//
 // If userToken is empty, it defaults to "anonymous" for audit purposes.
-func (c *AxonFlowClient) ExecuteQuery(userToken, query, requestType string, context map[string]interface{}) (*ClientResponse, error) {
+func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, context map[string]interface{}) (*ClientResponse, error) {
 	// Default to "anonymous" if userToken is empty (community mode)
 	if userToken == "" {
 		userToken = "anonymous"
@@ -569,6 +581,18 @@ func (c *AxonFlowClient) ExecuteQuery(userToken, query, requestType string, cont
 	}
 
 	return resp, nil
+}
+
+// ExecuteQuery is deprecated and will be removed in v3.0.0.
+// Use ProxyLLMCall instead, which better describes the Proxy Mode behavior.
+//
+// Deprecated: ExecuteQuery will be removed in the next major version.
+// Migrate to ProxyLLMCall() which has identical behavior but clearer semantics.
+func (c *AxonFlowClient) ExecuteQuery(userToken, query, requestType string, context map[string]interface{}) (*ClientResponse, error) {
+	if c.config.Debug {
+		log.Printf("[AxonFlow] DEPRECATION WARNING: ExecuteQuery() is deprecated. Use ProxyLLMCall() instead. This method will be removed in v3.0.0.")
+	}
+	return c.ProxyLLMCall(userToken, query, requestType, context)
 }
 
 // executeWithRetry executes a request with exponential backoff retry
