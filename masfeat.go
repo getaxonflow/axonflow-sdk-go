@@ -67,6 +67,47 @@ const (
 	UseCaseOther                 AISystemUseCase = "other"
 )
 
+// FEATPillar represents the FEAT framework pillars
+type FEATPillar string
+
+const (
+	PillarFairness       FEATPillar = "fairness"
+	PillarEthics         FEATPillar = "ethics"
+	PillarAccountability FEATPillar = "accountability"
+	PillarTransparency   FEATPillar = "transparency"
+)
+
+// FindingSeverity represents the severity of a FEAT finding
+type FindingSeverity string
+
+const (
+	FindingSeverityCritical    FindingSeverity = "critical"
+	FindingSeverityMajor       FindingSeverity = "major"
+	FindingSeverityMinor       FindingSeverity = "minor"
+	FindingSeverityObservation FindingSeverity = "observation"
+)
+
+// FindingStatus represents the status of a FEAT finding
+type FindingStatus string
+
+const (
+	FindingStatusOpen     FindingStatus = "open"
+	FindingStatusResolved FindingStatus = "resolved"
+	FindingStatusAccepted FindingStatus = "accepted"
+)
+
+// Finding represents a FEAT assessment finding
+type Finding struct {
+	ID          string          `json:"id"`
+	Pillar      FEATPillar      `json:"pillar"`
+	Severity    FindingSeverity `json:"severity"`
+	Category    string          `json:"category"`
+	Description string          `json:"description"`
+	Status      FindingStatus   `json:"status"`
+	Remediation string          `json:"remediation,omitempty"`
+	DueDate     *time.Time      `json:"due_date,omitempty"`
+}
+
 // ===========================================================================
 // AI System Registry Types
 // ===========================================================================
@@ -163,7 +204,7 @@ type UpdateAssessmentRequest struct {
 	EthicsDetails         map[string]interface{} `json:"ethics_details,omitempty"`
 	AccountabilityDetails map[string]interface{} `json:"accountability_details,omitempty"`
 	TransparencyDetails   map[string]interface{} `json:"transparency_details,omitempty"`
-	Findings              []string               `json:"findings,omitempty"`
+	Findings              []Finding              `json:"findings,omitempty"`
 	Recommendations       []string               `json:"recommendations,omitempty"`
 	Assessors             []string               `json:"assessors,omitempty"`
 }
@@ -186,7 +227,7 @@ type FEATAssessment struct {
 	EthicsDetails         map[string]interface{} `json:"ethics_details,omitempty"`
 	AccountabilityDetails map[string]interface{} `json:"accountability_details,omitempty"`
 	TransparencyDetails   map[string]interface{} `json:"transparency_details,omitempty"`
-	Findings              []string               `json:"findings,omitempty"`
+	Findings              []Finding              `json:"findings,omitempty"`
 	Recommendations       []string               `json:"recommendations,omitempty"`
 	Assessors             []string               `json:"assessors,omitempty"`
 	ApprovedBy            string                 `json:"approved_by,omitempty"`
