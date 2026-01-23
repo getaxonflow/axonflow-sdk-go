@@ -406,23 +406,27 @@ func TestMASFEATGetKillSwitchHistory(t *testing.T) {
 				t.Errorf("expected method GET, got %s", r.Method)
 			}
 
-			response := []KillSwitchEvent{
-				{
-					ID:           "event-1",
-					KillSwitchID: "ks-123",
-					EventType:    "triggered",
-					EventData:    map[string]interface{}{"reason": "Accuracy below threshold"},
-					CreatedBy:    "monitoring-system",
-					CreatedAt:    time.Now(),
+			// API returns wrapped response: {history: [...], count: N}
+			response := map[string]interface{}{
+				"history": []map[string]interface{}{
+					{
+						"id":             "event-1",
+						"kill_switch_id": "ks-123",
+						"action":         "triggered",
+						"reason":         "Accuracy below threshold",
+						"performed_by":   "monitoring-system",
+						"performed_at":   time.Now().Format(time.RFC3339),
+					},
+					{
+						"id":             "event-2",
+						"kill_switch_id": "ks-123",
+						"action":         "restored",
+						"reason":         "Issues resolved",
+						"performed_by":   "ops-team@example.com",
+						"performed_at":   time.Now().Format(time.RFC3339),
+					},
 				},
-				{
-					ID:           "event-2",
-					KillSwitchID: "ks-123",
-					EventType:    "restored",
-					EventData:    map[string]interface{}{"reason": "Issues resolved"},
-					CreatedBy:    "ops-team@example.com",
-					CreatedAt:    time.Now(),
-				},
+				"count": 2,
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -566,7 +570,7 @@ func TestMASFEATUpdateAssessment(t *testing.T) {
 				t.Errorf("expected method PUT, got %s", r.Method)
 			}
 
-			overallScore := 82
+			overallScore := 82.0
 			response := FEATAssessment{
 				ID:           "assessment-123",
 				SystemID:     "test-system",
