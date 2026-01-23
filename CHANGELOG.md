@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MAS FEAT Compliance Module** (Enterprise): Singapore financial services AI governance
+  - AI System Registry: `MASFEATRegisterSystem()`, `MASFEATGetSystem()`, `MASFEATUpdateSystem()`, `MASFEATListSystems()`, `MASFEATActivateSystem()`, `MASFEATRetireSystem()`, `MASFEATGetRegistrySummary()`
+  - 3-Dimensional Risk Rating: Customer Impact × Model Complexity × Human Reliance
+  - Materiality Classification: High (sum≥12), Medium (sum≥8), Low (sum<8)
+  - FEAT Assessments: `MASFEATCreateAssessment()`, `MASFEATGetAssessment()`, `MASFEATUpdateAssessment()`, `MASFEATListAssessments()`, `MASFEATSubmitAssessment()`, `MASFEATApproveAssessment()`, `MASFEATRejectAssessment()`
+  - Assessment Lifecycle: pending → in_progress → completed → approved/rejected
+  - Kill Switch: `MASFEATGetKillSwitch()`, `MASFEATConfigureKillSwitch()`, `MASFEATCheckKillSwitch()`, `MASFEATTriggerKillSwitch()`, `MASFEATRestoreKillSwitch()`, `MASFEATEnableKillSwitch()`, `MASFEATDisableKillSwitch()`, `MASFEATGetKillSwitchHistory()`
+  - Automatic model shutdown based on accuracy, bias, and error rate thresholds
+  - New types: `AISystemRegistry`, `AISystemUseCase`, `MaterialityClassification`, `SystemStatus`, `FEATAssessment`, `FEATAssessmentStatus`, `FEATPillar`, `KillSwitch`, `KillSwitchStatus`, `KillSwitchEvent`, `KillSwitchEventType`, `RegistrySummary`
+
 - **ProxyLLMCall()**: New primary method for Proxy Mode with improved documentation
   - Clearly describes Proxy Mode behavior (AxonFlow makes the LLM call on your behalf)
   - Documents when to use Proxy Mode vs Gateway Mode
