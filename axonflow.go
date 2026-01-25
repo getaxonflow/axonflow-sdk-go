@@ -1347,14 +1347,14 @@ func (c *AxonFlowClient) PreCheck(
 //	// Audit the call
 //	client.AuditLLMCall(ctx.ContextID, "summary", "openai", "gpt-4", tokenUsage, latencyMs, nil)
 
-// requireCredentials checks if credentials are configured and returns an error if not.
-// Only ClientID is required; ClientSecret is optional for community mode.
-// Enterprise mode (with actual license validation) requires both.
-func (c *AxonFlowClient) requireCredentials(feature string) error {
-	if c.config.ClientID == "" {
-		return fmt.Errorf("%s requires ClientID. Set ClientID (ClientSecret is optional for community mode)", feature)
+// getEffectiveClientID returns the configured ClientID or a default value for community mode.
+// This enables zero-config usage for community/self-hosted deployments while still
+// supporting enterprise deployments with explicit credentials.
+func (c *AxonFlowClient) getEffectiveClientID() string {
+	if c.config.ClientID != "" {
+		return c.config.ClientID
 	}
-	return nil
+	return "community" // Smart default for community mode
 }
 
 func (c *AxonFlowClient) GetPolicyApprovedContext(
@@ -1363,11 +1363,6 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 	dataSources []string,
 	context map[string]interface{},
 ) (*PolicyApprovalResult, error) {
-	// Gateway Mode requires credentials (enterprise feature)
-	if err := c.requireCredentials("Gateway Mode (GetPolicyApprovedContext)"); err != nil {
-		return nil, err
-	}
-
 	if dataSources == nil {
 		dataSources = []string{}
 	}
@@ -1375,9 +1370,12 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 		context = map[string]interface{}{}
 	}
 
+	// Use smart default for clientId - enables zero-config community mode
+	clientID := c.getEffectiveClientID()
+
 	reqBody := map[string]interface{}{
 		"user_token":   userToken,
-		"client_id":    c.config.ClientID,
+		"client_id":    clientID,
 		"query":        query,
 		"data_sources": dataSources,
 		"context":      context,
@@ -1505,18 +1503,16 @@ func (c *AxonFlowClient) AuditLLMCall(
 	latencyMs int64,
 	metadata map[string]interface{},
 ) (*AuditResult, error) {
-	// Gateway Mode requires credentials (enterprise feature)
-	if err := c.requireCredentials("Gateway Mode (AuditLLMCall)"); err != nil {
-		return nil, err
-	}
-
 	if metadata == nil {
 		metadata = map[string]interface{}{}
 	}
 
+	// Use smart default for clientId - enables zero-config community mode
+	clientID := c.getEffectiveClientID()
+
 	reqBody := map[string]interface{}{
 		"context_id":       contextID,
-		"client_id":        c.config.ClientID,
+		"client_id":        clientID,
 		"response_summary": responseSummary,
 		"provider":         provider,
 		"model":            model,
