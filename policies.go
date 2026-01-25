@@ -25,10 +25,11 @@ const (
 	CategorySecurityAdmin PolicyCategory = "security-admin"
 
 	// Static policy categories - PII Detection
-	CategoryPIIGlobal PolicyCategory = "pii-global"
-	CategoryPIIUS     PolicyCategory = "pii-us"
-	CategoryPIIEU     PolicyCategory = "pii-eu"
-	CategoryPIIIndia  PolicyCategory = "pii-india"
+	CategoryPIIGlobal    PolicyCategory = "pii-global"
+	CategoryPIIUS        PolicyCategory = "pii-us"
+	CategoryPIIEU        PolicyCategory = "pii-eu"
+	CategoryPIIIndia     PolicyCategory = "pii-india"
+	CategoryPIISingapore PolicyCategory = "pii-singapore"
 
 	// Static policy categories - Code Governance
 	CategoryCodeSecrets    PolicyCategory = "code-secrets"
