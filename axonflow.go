@@ -94,6 +94,18 @@ type ClientResponse struct {
 	Blocked     bool                   `json:"blocked"`
 	BlockReason string                 `json:"block_reason,omitempty"`
 	PolicyInfo  *PolicyEvaluationInfo  `json:"policy_info,omitempty"`
+	BudgetInfo  *BudgetInfo            `json:"budget_info,omitempty"` // Budget enforcement status (Issue #1082)
+}
+
+// BudgetInfo provides budget status information (Issue #1082)
+type BudgetInfo struct {
+	BudgetID   string  `json:"budget_id,omitempty"`
+	BudgetName string  `json:"budget_name,omitempty"`
+	UsedUSD    float64 `json:"used_usd"`
+	LimitUSD   float64 `json:"limit_usd"`
+	Percentage float64 `json:"percentage"`
+	Exceeded   bool    `json:"exceeded"`
+	Action     string  `json:"action,omitempty"` // "warn", "block", "downgrade"
 }
 
 // PolicyEvaluationInfo contains policy evaluation metadata
@@ -445,10 +457,14 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 		config.Retry.MaxAttempts = 3
 		config.Retry.Enabled = true
 	}
+	// Set default cache TTL if not specified
+	// Issue #1082: Only enable cache by default if TTL is 0 (unset)
+	// To disable caching, set TTL to a non-zero value (e.g., 1ns) with Enabled=false
 	if config.Cache.TTL == 0 {
 		config.Cache.TTL = 60 * time.Second
 		config.Cache.Enabled = true
 	}
+	// If TTL is explicitly set, respect the Enabled flag as-is
 
 	// Configure TLS
 	tlsConfig := &tls.Config{}
@@ -679,8 +695,10 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 		log.Printf("[SDK-DEBUG] Raw response body (first 500 chars): %s...", string(body[:500]))
 	}
 
-	// For 403 (Forbidden), the request was blocked by policy - parse the response body
-	if resp.StatusCode == http.StatusForbidden {
+	// For 402 (Payment Required) or 403 (Forbidden), the request was blocked - parse the response body
+	// 402: Budget exceeded (Issue #1082)
+	// 403: Policy violation
+	if resp.StatusCode == http.StatusPaymentRequired || resp.StatusCode == http.StatusForbidden {
 		var clientResp ClientResponse
 		if err := json.Unmarshal(body, &clientResp); err != nil {
 			return nil, fmt.Errorf("failed to parse blocked response: %w", err)
