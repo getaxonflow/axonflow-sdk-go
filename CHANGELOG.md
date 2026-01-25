@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.7.1] - 2026-01-25
 
+### Changed
+
+- **Gateway Mode smart defaults**: `GetPolicyApprovedContext()` and `AuditLLMCall()` now use `"community"` as default clientId when not configured, enabling zero-config usage for community/self-hosted deployments
+
 ### Fixed
 
 - **PolicyCategory**: Added `CategoryPIISingapore` constant for Singapore PII detection policies (NRIC, FIN, UEN patterns)
