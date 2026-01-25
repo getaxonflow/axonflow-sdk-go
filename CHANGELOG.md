@@ -5,7 +5,7 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.7.0] - 2026-01-24
+## [2.7.0] - 2026-01-25
 
 ### Added
 
@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Clearly describes Proxy Mode behavior (AxonFlow makes the LLM call on your behalf)
   - Documents when to use Proxy Mode vs Gateway Mode
   - Same functionality as ExecuteQuery, but with clearer naming
+
+- **BudgetInfo**: `QueryResponse.BudgetInfo` for budget enforcement (HTTP 402)
 
 ### Deprecated
 
