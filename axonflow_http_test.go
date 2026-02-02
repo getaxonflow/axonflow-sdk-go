@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestExecuteQuery(t *testing.T) {
+func TestProxyLLMCall(t *testing.T) {
 	// Create a mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/request" {
@@ -36,9 +36,9 @@ func TestExecuteQuery(t *testing.T) {
 		},
 	})
 
-	resp, err := client.ExecuteQuery("user-123", "test query", "chat", nil)
+	resp, err := client.ProxyLLMCall("user-123", "test query", "chat", nil)
 	if err != nil {
-		t.Fatalf("ExecuteQuery failed: %v", err)
+		t.Fatalf("ProxyLLMCall failed: %v", err)
 	}
 
 	if !resp.Success {
@@ -50,7 +50,7 @@ func TestExecuteQuery(t *testing.T) {
 	}
 }
 
-func TestExecuteQueryWithCache(t *testing.T) {
+func TestProxyLLMCallWithCache(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/request" {
@@ -76,15 +76,15 @@ func TestExecuteQueryWithCache(t *testing.T) {
 	})
 
 	// First call
-	_, err := client.ExecuteQuery("user-123", "same query", "chat", nil)
+	_, err := client.ProxyLLMCall("user-123", "same query", "chat", nil)
 	if err != nil {
-		t.Fatalf("First ExecuteQuery failed: %v", err)
+		t.Fatalf("First ProxyLLMCall failed: %v", err)
 	}
 
 	// Second call with same parameters (should use cache)
-	_, err = client.ExecuteQuery("user-123", "same query", "chat", nil)
+	_, err = client.ProxyLLMCall("user-123", "same query", "chat", nil)
 	if err != nil {
-		t.Fatalf("Second ExecuteQuery failed: %v", err)
+		t.Fatalf("Second ProxyLLMCall failed: %v", err)
 	}
 
 	// Server should only have been called once due to caching
@@ -93,7 +93,7 @@ func TestExecuteQueryWithCache(t *testing.T) {
 	}
 }
 
-func TestExecuteQueryBlocked(t *testing.T) {
+func TestProxyLLMCallBlocked(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/request" {
 			w.Header().Set("Content-Type", "application/json")
@@ -113,9 +113,9 @@ func TestExecuteQueryBlocked(t *testing.T) {
 		Cache:        CacheConfig{Enabled: false},
 	})
 
-	resp, err := client.ExecuteQuery("user-123", "blocked query", "chat", nil)
+	resp, err := client.ProxyLLMCall("user-123", "blocked query", "chat", nil)
 	if err != nil {
-		t.Fatalf("ExecuteQuery failed: %v", err)
+		t.Fatalf("ProxyLLMCall failed: %v", err)
 	}
 
 	if resp.Success {
@@ -127,7 +127,7 @@ func TestExecuteQueryBlocked(t *testing.T) {
 	}
 }
 
-func TestExecuteQueryWithNestedData(t *testing.T) {
+func TestProxyLLMCallWithNestedData(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/request" {
 			w.Header().Set("Content-Type", "application/json")
@@ -149,9 +149,9 @@ func TestExecuteQueryWithNestedData(t *testing.T) {
 		Cache:    CacheConfig{Enabled: false},
 	})
 
-	resp, err := client.ExecuteQuery("user", "query", "chat", nil)
+	resp, err := client.ProxyLLMCall("user", "query", "chat", nil)
 	if err != nil {
-		t.Fatalf("ExecuteQuery failed: %v", err)
+		t.Fatalf("ProxyLLMCall failed: %v", err)
 	}
 
 	if resp.Result != "Nested result" {
@@ -163,7 +163,7 @@ func TestExecuteQueryWithNestedData(t *testing.T) {
 	}
 }
 
-func TestExecuteQueryWithError(t *testing.T) {
+func TestProxyLLMCallWithError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/request" {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -184,13 +184,13 @@ func TestExecuteQueryWithError(t *testing.T) {
 		Cache: CacheConfig{Enabled: false},
 	})
 
-	_, err := client.ExecuteQuery("user", "query", "chat", nil)
+	_, err := client.ProxyLLMCall("user", "query", "chat", nil)
 	if err == nil {
 		t.Error("Expected error for 500 response")
 	}
 }
 
-func TestExecuteQueryFailOpen(t *testing.T) {
+func TestProxyLLMCallFailOpen(t *testing.T) {
 	// Create a server that doesn't respond (connection refused simulation)
 	client := NewClient(AxonFlowConfig{
 		Endpoint: "http://localhost:19999", // Non-existent server
@@ -205,7 +205,7 @@ func TestExecuteQueryFailOpen(t *testing.T) {
 		Cache:   CacheConfig{Enabled: false},
 	})
 
-	resp, err := client.ExecuteQuery("user", "query", "chat", nil)
+	resp, err := client.ProxyLLMCall("user", "query", "chat", nil)
 	if err != nil {
 		t.Fatalf("Expected fail-open, got error: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestExecuteQueryFailOpen(t *testing.T) {
 	}
 }
 
-func TestExecuteQueryEmptyUserTokenDefaultsToAnonymous(t *testing.T) {
+func TestProxyLLMCallEmptyUserTokenDefaultsToAnonymous(t *testing.T) {
 	var receivedUserToken string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -242,9 +242,9 @@ func TestExecuteQueryEmptyUserTokenDefaultsToAnonymous(t *testing.T) {
 	})
 
 	// Call with empty userToken
-	_, err := client.ExecuteQuery("", "test query", "chat", nil)
+	_, err := client.ProxyLLMCall("", "test query", "chat", nil)
 	if err != nil {
-		t.Fatalf("ExecuteQuery failed: %v", err)
+		t.Fatalf("ProxyLLMCall failed: %v", err)
 	}
 
 	// Verify the server received "anonymous" as userToken
@@ -1159,7 +1159,7 @@ func TestRetryWith4xxError(t *testing.T) {
 		Cache: CacheConfig{Enabled: false},
 	})
 
-	_, err := client.ExecuteQuery("user", "query", "chat", nil)
+	_, err := client.ProxyLLMCall("user", "query", "chat", nil)
 	if err == nil {
 		t.Error("Expected error")
 	}
@@ -1187,7 +1187,7 @@ func TestAuthHeadersSentWithCredentials(t *testing.T) {
 		Cache:        CacheConfig{Enabled: false},
 	})
 
-	_, _ = client.ExecuteQuery("user", "query", "chat", nil)
+	_, _ = client.ProxyLLMCall("user", "query", "chat", nil)
 
 	// Auth header SHOULD be set with OAuth2 Basic auth format
 	expectedBasic := "Basic " + base64.StdEncoding.EncodeToString([]byte("test:secret"))
@@ -1459,5 +1459,32 @@ func TestMCPExecute(t *testing.T) {
 
 	if resp.RowsAffected != 1 {
 		t.Errorf("Expected 1 affected row, got %d", resp.RowsAffected)
+	}
+}
+
+func TestConnectorResponse_WasRedacted(t *testing.T) {
+	tests := []struct {
+		name     string
+		resp     ConnectorResponse
+		expected bool
+	}{
+		{
+			name:     "not redacted",
+			resp:     ConnectorResponse{Redacted: false},
+			expected: false,
+		},
+		{
+			name:     "redacted",
+			resp:     ConnectorResponse{Redacted: true, RedactedFields: []string{"data[0].ssn"}},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.resp.WasRedacted(); got != tt.expected {
+				t.Errorf("WasRedacted() = %v, want %v", got, tt.expected)
+			}
+		})
 	}
 }

@@ -177,6 +177,11 @@ type ConnectorResponse struct {
 	PolicyInfo     *PolicyInfo `json:"policy_info,omitempty"`
 }
 
+// WasRedacted returns true if any fields were redacted by policy evaluation.
+func (r *ConnectorResponse) WasRedacted() bool {
+	return r.Redacted
+}
+
 // PolicyInfo contains information about policy evaluation results.
 // This is returned with MCP connector responses when policies are evaluated.
 type PolicyInfo struct {
@@ -599,18 +604,6 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 	return resp, nil
 }
 
-// ExecuteQuery is deprecated and will be removed in v3.0.0.
-// Use ProxyLLMCall instead, which better describes the Proxy Mode behavior.
-//
-// Deprecated: ExecuteQuery will be removed in the next major version.
-// Migrate to ProxyLLMCall() which has identical behavior but clearer semantics.
-func (c *AxonFlowClient) ExecuteQuery(userToken, query, requestType string, context map[string]interface{}) (*ClientResponse, error) {
-	if c.config.Debug {
-		log.Printf("[AxonFlow] DEPRECATION WARNING: ExecuteQuery() is deprecated. Use ProxyLLMCall() instead. This method will be removed in v3.0.0.")
-	}
-	return c.ProxyLLMCall(userToken, query, requestType, context)
-}
-
 // executeWithRetry executes a request with exponential backoff retry
 func (c *AxonFlowClient) executeWithRetry(req ClientRequest) (*ClientResponse, error) {
 	var lastErr error
@@ -992,7 +985,7 @@ func (c *AxonFlowClient) QueryConnector(userToken, connectorName, query string, 
 		"params":    params,
 	}
 
-	resp, err := c.ExecuteQuery(userToken, query, "mcp-query", context)
+	resp, err := c.ProxyLLMCall(userToken, query, "mcp-query", context)
 	if err != nil {
 		return nil, err
 	}
@@ -1227,7 +1220,7 @@ func (c *AxonFlowClient) ExecutePlan(planID string, userToken ...string) (*PlanE
 		token = userToken[0]
 	}
 
-	resp, err := c.ExecuteQuery(token, "", "execute-plan", context)
+	resp, err := c.ProxyLLMCall(token, "", "execute-plan", context)
 	if err != nil {
 		return nil, err
 	}

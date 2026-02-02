@@ -173,7 +173,7 @@ func TestContractPolicyContextResponse(t *testing.T) {
 func TestContractPlanResponse(t *testing.T) {
 	data := loadFixture(t, "plan_generate.json")
 
-	// First parse as ClientResponse (this is what ExecuteQuery returns)
+	// First parse as ClientResponse (this is what ProxyLLMCall returns)
 	var response ClientResponse
 	if err := json.Unmarshal(data, &response); err != nil {
 		t.Fatalf("failed to unmarshal plan response: %v", err)

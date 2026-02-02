@@ -124,10 +124,10 @@ We use Go's built-in testing framework. When adding new features:
 Example test structure:
 
 ```go
-func TestClientExecuteQuery(t *testing.T) {
+func TestClientProxyLLMCall(t *testing.T) {
     client := NewClientSimple("https://example.com", "id", "secret")
 
-    resp, err := client.ExecuteQuery("token", "query", "chat", nil)
+    resp, err := client.ProxyLLMCall("token", "query", "chat", nil)
 
     if err != nil {
         t.Errorf("Expected no error, got %v", err)

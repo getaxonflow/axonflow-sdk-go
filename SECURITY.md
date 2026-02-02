@@ -115,7 +115,7 @@ func processUserQuery(userInput string) error {
     sanitized := sanitizeInput(userInput)
 
     // Send to AxonFlow
-    resp, err := client.ExecuteQuery("user-token", sanitized, "chat", nil)
+    resp, err := client.ProxyLLMCall("user-token", sanitized, "chat", nil)
     // ...
 }
 ```
@@ -125,7 +125,7 @@ func processUserQuery(userInput string) error {
 Never expose sensitive information in error messages:
 
 ```go
-resp, err := client.ExecuteQuery(token, query, "chat", nil)
+resp, err := client.ProxyLLMCall(token, query, "chat", nil)
 if err != nil {
     // ❌ BAD - Exposes details
     return fmt.Errorf("query failed with token %s: %v", token, err)

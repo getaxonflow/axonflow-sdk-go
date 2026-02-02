@@ -7,8 +7,8 @@
 //
 //	import (
 //		"github.com/sashabaranov/go-openai"
-//		"github.com/getaxonflow/axonflow-sdk-go/v2"
-//		"github.com/getaxonflow/axonflow-sdk-go/v2/interceptors"
+//		"github.com/getaxonflow/axonflow-sdk-go/v3"
+//		"github.com/getaxonflow/axonflow-sdk-go/v3/interceptors"
 //	)
 //
 //	client := openai.NewClient("your-api-key")
@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v2"
+	"github.com/getaxonflow/axonflow-sdk-go/v3"
 )
 
 // ChatMessage represents a chat message for LLM calls
@@ -132,7 +132,7 @@ func (w *WrappedOpenAIClient) CreateChatCompletion(ctx context.Context, req Chat
 
 	// Check with AxonFlow
 	startTime := time.Now()
-	response, err := w.axonflow.ExecuteQuery(w.userToken, prompt, "llm_chat", evalContext)
+	response, err := w.axonflow.ProxyLLMCall(w.userToken, prompt, "llm_chat", evalContext)
 	if err != nil {
 		return ChatCompletionResponse{}, err
 	}
@@ -240,7 +240,7 @@ func WrapOpenAIFunc(
 
 		// Check with AxonFlow
 		startTime := time.Now()
-		response, err := axonflowClient.ExecuteQuery(userToken, prompt, "llm_chat", evalContext)
+		response, err := axonflowClient.ProxyLLMCall(userToken, prompt, "llm_chat", evalContext)
 		if err != nil {
 			return ChatCompletionResponse{}, err
 		}

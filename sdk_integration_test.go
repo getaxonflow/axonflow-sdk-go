@@ -55,13 +55,13 @@ func TestIntegration_HealthCheck(t *testing.T) {
 	t.Log("Health check passed")
 }
 
-// TestExecuteQuery_Simple tests a basic query
-func TestIntegration_ExecuteQuery_Simple(t *testing.T) {
+// TestProxyLLMCall_Simple tests a basic query
+func TestIntegration_ProxyLLMCall_Simple(t *testing.T) {
 	client := NewClient(getTestConfig(t))
 
-	resp, err := client.ExecuteQuery("demo-user", "What is 2+2?", "chat", nil)
+	resp, err := client.ProxyLLMCall("demo-user", "What is 2+2?", "chat", nil)
 	if err != nil {
-		t.Fatalf("ExecuteQuery failed: %v", err)
+		t.Fatalf("ProxyLLMCall failed: %v", err)
 	}
 
 	// SDK's fail-open behavior returns success=true but the inner error may indicate LLM issues
@@ -79,14 +79,14 @@ func TestIntegration_ExecuteQuery_Simple(t *testing.T) {
 	t.Logf("Response: success=%v, blocked=%v", resp.Success, resp.Blocked)
 }
 
-// TestExecuteQuery_SQLInjection tests that SQL injection is blocked
-func TestIntegration_ExecuteQuery_SQLInjection(t *testing.T) {
+// TestProxyLLMCall_SQLInjection tests that SQL injection is blocked
+func TestIntegration_ProxyLLMCall_SQLInjection(t *testing.T) {
 	client := NewClient(getTestConfig(t))
 
 	// SQL injection should be blocked
 	// Note: The Agent returns HTTP 403 for blocked requests, which the SDK may treat
 	// as an error with fail-open behavior. Check both the response and error message.
-	resp, err := client.ExecuteQuery("demo-user", "SELECT * FROM users; DROP TABLE users;--", "sql", nil)
+	resp, err := client.ProxyLLMCall("demo-user", "SELECT * FROM users; DROP TABLE users;--", "sql", nil)
 
 	// Check if blocked via response
 	if resp != nil && resp.Blocked {
@@ -110,18 +110,18 @@ func TestIntegration_ExecuteQuery_SQLInjection(t *testing.T) {
 	if resp != nil {
 		t.Errorf("Expected SQL injection to be blocked, got blocked=%v, error=%s", resp.Blocked, resp.Error)
 	} else if err != nil {
-		t.Fatalf("ExecuteQuery failed unexpectedly: %v", err)
+		t.Fatalf("ProxyLLMCall failed unexpectedly: %v", err)
 	}
 }
 
-// TestExecuteQuery_PIIDetection tests that PII is blocked
-func TestIntegration_ExecuteQuery_PIIDetection(t *testing.T) {
+// TestProxyLLMCall_PIIDetection tests that PII is blocked
+func TestIntegration_ProxyLLMCall_PIIDetection(t *testing.T) {
 	client := NewClient(getTestConfig(t))
 
 	// SSN should be blocked (with PII_BLOCK_CRITICAL=true default)
 	// Note: The Agent returns HTTP 403 for blocked requests, which the SDK may treat
 	// as an error with fail-open behavior. Check both the response and error message.
-	resp, err := client.ExecuteQuery("demo-user", "My SSN is 123-45-6789", "chat", nil)
+	resp, err := client.ProxyLLMCall("demo-user", "My SSN is 123-45-6789", "chat", nil)
 
 	// Check if blocked via response
 	if resp != nil && resp.Blocked {
@@ -159,7 +159,7 @@ func TestIntegration_ExecuteQuery_PIIDetection(t *testing.T) {
 	if resp != nil {
 		t.Errorf("Expected PII to be blocked, got blocked=%v, error=%s", resp.Blocked, resp.Error)
 	} else if err != nil {
-		t.Fatalf("ExecuteQuery failed unexpectedly: %v", err)
+		t.Fatalf("ProxyLLMCall failed unexpectedly: %v", err)
 	}
 }
 

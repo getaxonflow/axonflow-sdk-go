@@ -191,9 +191,9 @@ func TestZeroConfig_GatewayMode_FullFlow(t *testing.T) {
 // 3. PROXY MODE WITHOUT AUTHENTICATION
 // ============================================================
 
-// TestZeroConfig_ProxyMode_ExecuteQueryEmptyToken tests that ExecuteQuery works
+// TestZeroConfig_ProxyMode_ProxyLLMCallEmptyToken tests that ProxyLLMCall works
 // with empty user token in self-hosted mode
-func TestZeroConfig_ProxyMode_ExecuteQueryEmptyToken(t *testing.T) {
+func TestZeroConfig_ProxyMode_ProxyLLMCallEmptyToken(t *testing.T) {
 	config := getZeroConfigTestConfig()
 	if !isLocalhostURL(config.Endpoint) {
 		t.Skip("Zero-config tests require localhost endpoint")
@@ -201,7 +201,7 @@ func TestZeroConfig_ProxyMode_ExecuteQueryEmptyToken(t *testing.T) {
 
 	client := NewClient(config)
 
-	resp, err := client.ExecuteQuery(
+	resp, err := client.ProxyLLMCall(
 		"", // Empty token
 		"What is 2 + 2?",
 		"chat",
