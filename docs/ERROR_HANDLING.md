@@ -49,7 +49,7 @@ Use `errors.Is()` and `errors.As()` for type checking:
 ```go
 import "errors"
 
-result, err := client.ExecuteQuery(ctx, request)
+result, err := client.ProxyLLMCall(ctx, request)
 if err != nil {
     // Check for specific error conditions
     var apiErr *axonflow.APIError
@@ -148,7 +148,7 @@ if errors.Is(err, ErrNotFound) {
 ```go
 // Handle at the appropriate abstraction level
 func processRequest(ctx context.Context, client *axonflow.Client) error {
-    result, err := client.ExecuteQuery(ctx, req)
+    result, err := client.ProxyLLMCall(ctx, req)
     if err != nil {
         // Log here if this is the top-level handler
         // Or return wrapped error if caller should handle it
@@ -179,7 +179,7 @@ Always pass context for cancellation and timeout support:
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 defer cancel()
 
-result, err := client.ExecuteQuery(ctx, request)
+result, err := client.ProxyLLMCall(ctx, request)
 if err != nil {
     if errors.Is(err, context.DeadlineExceeded) {
         log.Printf("request timed out after 30s")

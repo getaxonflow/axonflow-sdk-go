@@ -8,7 +8,7 @@ import (
 
 // MockAxonFlowClient is a mock for testing
 type MockAxonFlowClient struct {
-	ExecuteQueryFn func(userToken, query, requestType string, context map[string]interface{}) (*MockClientResponse, error)
+	ProxyLLMCallFn func(userToken, query, requestType string, context map[string]interface{}) (*MockClientResponse, error)
 	AuditLLMCallFn func(contextID, summary, provider, model string, tokenUsage MockTokenUsage, latencyMs int64, metadata map[string]interface{}) (*MockAuditResult, error)
 }
 

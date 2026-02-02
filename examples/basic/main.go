@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v2"
+	"github.com/getaxonflow/axonflow-sdk-go/v3"
 )
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
 
 	// Execute a simple query
 	fmt.Println("\nExecuting governed query...")
-	resp, err := client.ExecuteQuery(
+	resp, err := client.ProxyLLMCall(
 		"demo-user-token",
 		"What is the capital of France?",
 		"chat",
@@ -78,7 +78,7 @@ func main() {
 	fmt.Println("Testing PII detection and redaction...")
 	fmt.Println(strings.Repeat("=", 60))
 
-	resp2, err := client.ExecuteQuery(
+	resp2, err := client.ProxyLLMCall(
 		"demo-user-token",
 		"My email is john.doe@example.com and my SSN is 123-45-6789",
 		"chat",

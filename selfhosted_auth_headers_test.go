@@ -48,7 +48,7 @@ func TestAuthHeaders_NotSentWithoutCredentials(t *testing.T) {
 		Cache: CacheConfig{Enabled: false},
 	})
 
-	_, _ = client.ExecuteQuery("user", "query", "chat", nil)
+	_, _ = client.ProxyLLMCall("user", "query", "chat", nil)
 
 	// Auth headers should NOT be set when no credentials are provided
 	if receivedAuthHeader != "" {
@@ -90,7 +90,7 @@ func TestAuthHeaders_OAuth2Basic(t *testing.T) {
 		Cache:        CacheConfig{Enabled: false},
 	})
 
-	_, _ = client.ExecuteQuery("user", "query", "chat", nil)
+	_, _ = client.ProxyLLMCall("user", "query", "chat", nil)
 
 	// Should send Authorization: Basic header (OAuth2-style)
 	expectedBasic := "Basic " + base64.StdEncoding.EncodeToString([]byte("my-client:my-secret"))
@@ -128,7 +128,7 @@ func TestAuthHeaders_ClientIDWithoutSecret(t *testing.T) {
 		Cache: CacheConfig{Enabled: false},
 	})
 
-	_, _ = client.ExecuteQuery("user", "query", "chat", nil)
+	_, _ = client.ProxyLLMCall("user", "query", "chat", nil)
 
 	// Should NOT send Authorization header since ClientSecret is missing
 	if receivedAuthHeader != "" {

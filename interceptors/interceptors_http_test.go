@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	axonflow "github.com/getaxonflow/axonflow-sdk-go/v2"
+	axonflow "github.com/getaxonflow/axonflow-sdk-go/v3"
 )
 
 // createMockAxonFlowServer creates a test server that mimics AxonFlow responses
@@ -37,7 +37,7 @@ func createApprovedServer(t *testing.T) *httptest.Server {
 	})
 }
 
-// createGatewayModeServer creates a server that handles both ExecuteQuery and Gateway Mode endpoints
+// createGatewayModeServer creates a server that handles both ProxyLLMCall and Gateway Mode endpoints
 func createGatewayModeServer(t *testing.T, approved bool) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -66,7 +66,7 @@ func createGatewayModeServer(t *testing.T, approved bool) *httptest.Server {
 				"audit_id": "audit-456",
 			})
 		} else {
-			// Default response for other endpoints (ExecuteQuery)
+			// Default response for other endpoints (ProxyLLMCall)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"success":    approved,
 				"blocked":    !approved,

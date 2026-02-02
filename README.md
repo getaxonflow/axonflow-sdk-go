@@ -1,6 +1,6 @@
 # AxonFlow SDK for Go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v2.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v2)
+[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v3.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v3)
 [![Go Report Card](https://goreportcard.com/badge/github.com/getaxonflow/axonflow-sdk-go)](https://goreportcard.com/report/github.com/getaxonflow/axonflow-sdk-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -23,7 +23,7 @@ If you're new to AxonFlow, this short video shows how the control plane and SDKs
 ## Installation
 
 ```bash
-go get github.com/getaxonflow/axonflow-sdk-go/v2
+go get github.com/getaxonflow/axonflow-sdk-go/v3
 ```
 
 ## Quick Start
@@ -38,7 +38,7 @@ import (
     "log"
     "os"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v2"
+    "github.com/getaxonflow/axonflow-sdk-go/v3"
 )
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
     })
 
     // Execute a governed query
-    resp, err := client.ExecuteQuery(
+    resp, err := client.ProxyLLMCall(
         "user-token",
         "What is the capital of France?",
         "chat",
@@ -76,7 +76,7 @@ func main() {
 import (
     "time"
     "os"
-    "github.com/getaxonflow/axonflow-sdk-go/v2"
+    "github.com/getaxonflow/axonflow-sdk-go/v3"
 )
 
 // Full configuration with all features
@@ -114,7 +114,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v2"
+    "github.com/getaxonflow/axonflow-sdk-go/v3"
 )
 
 func main() {
@@ -125,7 +125,7 @@ func main() {
     })
 
     // Use normally - same features as production
-    resp, err := client.ExecuteQuery(
+    resp, err := client.ProxyLLMCall(
         "user-token",
         "Test with self-hosted AxonFlow",
         "chat",
@@ -163,7 +163,7 @@ docker-compose up
 // Quick sandbox client for testing
 client := axonflow.Sandbox("demo-client", "demo-secret")
 
-resp, err := client.ExecuteQuery(
+resp, err := client.ProxyLLMCall(
     "",
     "Test query with sensitive data: SSN 123-45-6789",
     "chat",
@@ -195,7 +195,7 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 })
 
 // Automatically retries on 5xx errors or network failures
-resp, err := client.ExecuteQuery(...)
+resp, err := client.ProxyLLMCall(...)
 ```
 
 ### ✅ In-Memory Caching with TTL
@@ -214,10 +214,10 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 })
 
 // First call: hits AxonFlow
-resp1, _ := client.ExecuteQuery("token", "query", "chat", nil)
+resp1, _ := client.ProxyLLMCall("token", "query", "chat", nil)
 
 // Second call (within 60s): served from cache
-resp2, _ := client.ExecuteQuery("token", "query", "chat", nil)
+resp2, _ := client.ProxyLLMCall("token", "query", "chat", nil)
 ```
 
 ### ✅ Fail-Open Strategy (Production Mode)
@@ -234,7 +234,7 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 })
 
 // If AxonFlow is unavailable, request proceeds with warning
-resp, err := client.ExecuteQuery(...)
+resp, err := client.ProxyLLMCall(...)
 // err == nil, resp.Success == true, resp.Error contains warning
 ```
 
@@ -248,8 +248,8 @@ Wrap your LLM clients with automatic AxonFlow governance using the interceptors 
 import (
     "context"
     "github.com/sashabaranov/go-openai"
-    "github.com/getaxonflow/axonflow-sdk-go/v2"
-    "github.com/getaxonflow/axonflow-sdk-go/v2/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v3"
+    "github.com/getaxonflow/axonflow-sdk-go/v3/interceptors"
 )
 
 // Initialize AxonFlow client
@@ -301,8 +301,8 @@ if err != nil {
 ```go
 import (
     "context"
-    "github.com/getaxonflow/axonflow-sdk-go/v2"
-    "github.com/getaxonflow/axonflow-sdk-go/v2/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v3"
+    "github.com/getaxonflow/axonflow-sdk-go/v3/interceptors"
 )
 
 // Create Anthropic interceptor
@@ -656,7 +656,7 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ## Error Handling
 
 ```go
-resp, err := client.ExecuteQuery(...)
+resp, err := client.ProxyLLMCall(...)
 if err != nil {
     // Network errors, timeouts, or AxonFlow unavailability
     log.Printf("Request failed: %v", err)

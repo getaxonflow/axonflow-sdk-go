@@ -5,6 +5,23 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - Unreleased
+
+### Breaking Changes
+
+- **Removed `ExecuteQuery()`**: Use `ProxyLLMCall()` instead (deprecated since v2.7.0)
+- **Module path changed**: `github.com/getaxonflow/axonflow-sdk-go/v2` → `github.com/getaxonflow/axonflow-sdk-go/v3`
+
+### Added
+
+- **`WasRedacted()` helper**: Convenience method on `MCPExecuteResponse` to check if any fields were redacted by PII policies
+
+### Changed
+
+- Updated all internal references and examples from `ExecuteQuery` to `ProxyLLMCall`
+
+---
+
 ## [2.7.1] - 2026-01-25
 
 ### Changed

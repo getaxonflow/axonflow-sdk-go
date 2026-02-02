@@ -4,8 +4,8 @@
 //
 //	import (
 //		"github.com/anthropics/anthropic-sdk-go"
-//		"github.com/getaxonflow/axonflow-sdk-go/v2"
-//		"github.com/getaxonflow/axonflow-sdk-go/v2/interceptors"
+//		"github.com/getaxonflow/axonflow-sdk-go/v3"
+//		"github.com/getaxonflow/axonflow-sdk-go/v3/interceptors"
 //	)
 //
 //	client := anthropic.NewClient()
@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v2"
+	"github.com/getaxonflow/axonflow-sdk-go/v3"
 )
 
 // AnthropicContentBlock represents a content block in an Anthropic message
@@ -119,7 +119,7 @@ func (w *WrappedAnthropicClient) CreateMessage(ctx context.Context, req Anthropi
 
 	// Check with AxonFlow
 	startTime := time.Now()
-	response, err := w.axonflow.ExecuteQuery(w.userToken, prompt, "llm_chat", evalContext)
+	response, err := w.axonflow.ProxyLLMCall(w.userToken, prompt, "llm_chat", evalContext)
 	if err != nil {
 		return AnthropicMessageResponse{}, err
 	}
@@ -233,7 +233,7 @@ func WrapAnthropicFunc(
 
 		// Check with AxonFlow
 		startTime := time.Now()
-		response, err := axonflowClient.ExecuteQuery(userToken, prompt, "llm_chat", evalContext)
+		response, err := axonflowClient.ProxyLLMCall(userToken, prompt, "llm_chat", evalContext)
 		if err != nil {
 			return AnthropicMessageResponse{}, err
 		}
