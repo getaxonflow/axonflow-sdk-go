@@ -248,9 +248,9 @@ type ListDynamicPoliciesOptions struct {
 type CreateDynamicPolicyRequest struct {
 	Name           string                   `json:"name"`
 	Description    string                   `json:"description,omitempty"`
-	Type           string                   `json:"type"`               // "risk", "content", "user", "cost"
-	Category       string                   `json:"category,omitempty"` // Must start with "dynamic-"
-	Tier           PolicyTier               `json:"tier,omitempty"`     // Policy tier: TierSystem, TierOrganization, TierTenant
+	Type           string                   `json:"type"`                      // "risk", "content", "user", "cost"
+	Category       string                   `json:"category,omitempty"`        // Must start with "dynamic-"
+	Tier           PolicyTier               `json:"tier,omitempty"`            // Policy tier: TierSystem, TierOrganization, TierTenant
 	OrganizationID string                   `json:"organization_id,omitempty"` // Organization ID for organization-tier policies (Enterprise)
 	Conditions     []DynamicPolicyCondition `json:"conditions,omitempty"`
 	Actions        []DynamicPolicyAction    `json:"actions,omitempty"`
