@@ -9,11 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`Tier` field on `CreateDynamicPolicyRequest`**: Allows setting the policy tier (`TierSystem`, `TierOrganization`, `TierTenant`) when creating dynamic policies. Uses the `PolicyTier` type for type safety, matching static policies.
-- **`Tier` field on `UpdateDynamicPolicyRequest`**: Allows changing the tier when updating a dynamic policy. Uses `*PolicyTier` (pointer) to support partial updates.
-- **`OrganizationID` field**: Added to `DynamicPolicy`, `CreateDynamicPolicyRequest`, and `UpdateDynamicPolicyRequest` for organization-tier policy support (Enterprise).
-- **Default tier for dynamic policies**: `CreateDynamicPolicy()` now defaults to `TierTenant` when no tier is specified, matching `CreateStaticPolicy()` behavior.
-- **Tier and OrganizationID filters on `ListDynamicPoliciesOptions`**: Filter dynamic policies by tier and organization ID, matching static policy list options.
+- **Dynamic policy tier support**: `Tier` (`PolicyTier`) and `OrganizationID` fields on `CreateDynamicPolicyRequest`, `UpdateDynamicPolicyRequest`, and `DynamicPolicy` response. Defaults to `TierTenant` when not specified, matching `CreateStaticPolicy()` behavior.
+- **`ListDynamicPoliciesOptions` filters**: Filter dynamic policies by `Tier` and `OrganizationID`, matching static policy list options.
+
+---
 
 ## [3.1.0] - 2026-02-04
 
