@@ -9,9 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- No functional Go SDK code changes were introduced in this version.
-- No new Go SDK APIs were added in this version.
-- No runtime behavior changes were introduced in this version.
+- Version bump to keep Go aligned with the 3.1.0 cross-SDK release train.
+- No functional Go SDK code, API, or runtime behavior changes in this release.
 
 ## [3.0.0] - 2026-02-03
 
