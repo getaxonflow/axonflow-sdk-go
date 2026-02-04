@@ -210,31 +210,34 @@ type DynamicPolicyAction struct {
 //
 //	Actions: []DynamicPolicyAction{{Type: "route", Config: map[string]interface{}{"allowed_providers": []string{"ollama", "azure-eu"}}}}
 type DynamicPolicy struct {
-	ID          string                   `json:"id"`
-	Name        string                   `json:"name"`
-	Description string                   `json:"description,omitempty"`
-	Type        string                   `json:"type"`               // "risk", "content", "user", "cost"
-	Category    string                   `json:"category,omitempty"` // "dynamic-risk", "dynamic-compliance", etc.
-	Tier        string                   `json:"tier,omitempty"`     // "system", "organization", "tenant"
-	Conditions  []DynamicPolicyCondition `json:"conditions,omitempty"`
-	Actions     []DynamicPolicyAction    `json:"actions,omitempty"`
-	Priority    int                      `json:"priority"`
-	Enabled     bool                     `json:"enabled"`
-	Version     int                      `json:"version,omitempty"`
-	TenantID    string                   `json:"tenant_id,omitempty"`
-	CreatedAt   time.Time                `json:"created_at"`
-	UpdatedAt   time.Time                `json:"updated_at"`
+	ID             string                   `json:"id"`
+	Name           string                   `json:"name"`
+	Description    string                   `json:"description,omitempty"`
+	Type           string                   `json:"type"`               // "risk", "content", "user", "cost"
+	Category       string                   `json:"category,omitempty"` // "dynamic-risk", "dynamic-compliance", etc.
+	Tier           PolicyTier               `json:"tier,omitempty"`     // Policy tier: TierSystem, TierOrganization, TierTenant
+	OrganizationID string                   `json:"organization_id,omitempty"`
+	Conditions     []DynamicPolicyCondition `json:"conditions,omitempty"`
+	Actions        []DynamicPolicyAction    `json:"actions,omitempty"`
+	Priority       int                      `json:"priority"`
+	Enabled        bool                     `json:"enabled"`
+	Version        int                      `json:"version,omitempty"`
+	TenantID       string                   `json:"tenant_id,omitempty"`
+	CreatedAt      time.Time                `json:"created_at"`
+	UpdatedAt      time.Time                `json:"updated_at"`
 }
 
 // ListDynamicPoliciesOptions represents options for listing dynamic policies
 type ListDynamicPoliciesOptions struct {
-	Type      string // Filter by policy type: "risk", "content", "user", "cost"
-	Enabled   *bool
-	Limit     int
-	Offset    int
-	SortBy    string
-	SortOrder string
-	Search    string
+	Type           string     // Filter by policy type: "risk", "content", "user", "cost"
+	Tier           PolicyTier // Filter by tier: TierSystem, TierOrganization, TierTenant
+	OrganizationID string     // Filter by organization ID (Enterprise)
+	Enabled        *bool
+	Limit          int
+	Offset         int
+	SortBy         string
+	SortOrder      string
+	Search         string
 }
 
 // CreateDynamicPolicyRequest represents a request to create a dynamic policy
@@ -243,30 +246,32 @@ type ListDynamicPoliciesOptions struct {
 //
 //	Actions: []DynamicPolicyAction{{Type: "route", Config: map[string]interface{}{"allowed_providers": []string{"ollama"}}}}
 type CreateDynamicPolicyRequest struct {
-	Name        string                   `json:"name"`
-	Description string                   `json:"description,omitempty"`
-	Type        string                   `json:"type"`               // "risk", "content", "user", "cost"
-	Category    string                   `json:"category,omitempty"` // Must start with "dynamic-"
-	Tier        string                   `json:"tier,omitempty"`     // "system", "organization", "tenant"
-	Conditions  []DynamicPolicyCondition `json:"conditions,omitempty"`
-	Actions     []DynamicPolicyAction    `json:"actions,omitempty"`
-	Priority    int                      `json:"priority"`
-	Enabled     bool                     `json:"enabled"`
+	Name           string                   `json:"name"`
+	Description    string                   `json:"description,omitempty"`
+	Type           string                   `json:"type"`               // "risk", "content", "user", "cost"
+	Category       string                   `json:"category,omitempty"` // Must start with "dynamic-"
+	Tier           PolicyTier               `json:"tier,omitempty"`     // Policy tier: TierSystem, TierOrganization, TierTenant
+	OrganizationID string                   `json:"organization_id,omitempty"` // Organization ID for organization-tier policies (Enterprise)
+	Conditions     []DynamicPolicyCondition `json:"conditions,omitempty"`
+	Actions        []DynamicPolicyAction    `json:"actions,omitempty"`
+	Priority       int                      `json:"priority"`
+	Enabled        bool                     `json:"enabled"`
 }
 
 // UpdateDynamicPolicyRequest represents a request to update a dynamic policy
 //
 // For provider restrictions, use action config with "allowed_providers" key.
 type UpdateDynamicPolicyRequest struct {
-	Name        *string                  `json:"name,omitempty"`
-	Description *string                  `json:"description,omitempty"`
-	Type        *string                  `json:"type,omitempty"`
-	Category    *string                  `json:"category,omitempty"`
-	Tier        *string                  `json:"tier,omitempty"`
-	Conditions  []DynamicPolicyCondition `json:"conditions,omitempty"`
-	Actions     []DynamicPolicyAction    `json:"actions,omitempty"`
-	Priority    *int                     `json:"priority,omitempty"`
-	Enabled     *bool                    `json:"enabled,omitempty"`
+	Name           *string                  `json:"name,omitempty"`
+	Description    *string                  `json:"description,omitempty"`
+	Type           *string                  `json:"type,omitempty"`
+	Category       *string                  `json:"category,omitempty"`
+	Tier           *PolicyTier              `json:"tier,omitempty"`
+	OrganizationID *string                  `json:"organization_id,omitempty"` // Organization ID for organization-tier policies (Enterprise)
+	Conditions     []DynamicPolicyCondition `json:"conditions,omitempty"`
+	Actions        []DynamicPolicyAction    `json:"actions,omitempty"`
+	Priority       *int                     `json:"priority,omitempty"`
+	Enabled        *bool                    `json:"enabled,omitempty"`
 }
 
 // ============================================================================
@@ -539,6 +544,12 @@ func (o *ListDynamicPoliciesOptions) buildQueryParams() string {
 	params := url.Values{}
 	if o.Type != "" {
 		params.Set("type", o.Type)
+	}
+	if o.Tier != "" {
+		params.Set("tier", string(o.Tier))
+	}
+	if o.OrganizationID != "" {
+		params.Set("organization_id", o.OrganizationID)
 	}
 	if o.Enabled != nil {
 		if *o.Enabled {
@@ -844,6 +855,11 @@ func (c *AxonFlowClient) GetDynamicPolicy(id string) (*DynamicPolicy, error) {
 func (c *AxonFlowClient) CreateDynamicPolicy(req *CreateDynamicPolicyRequest) (*DynamicPolicy, error) {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Creating dynamic policy: %s", req.Name)
+	}
+
+	// Set default tier if not specified
+	if req.Tier == "" {
+		req.Tier = TierTenant
 	}
 
 	var response dynamicPolicyResponse
