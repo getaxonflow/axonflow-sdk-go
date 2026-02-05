@@ -5,6 +5,15 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-02-05
+
+### Added
+
+- **Dynamic policy tier support**: `Tier` (`PolicyTier`) and `OrganizationID` fields on `CreateDynamicPolicyRequest`, `UpdateDynamicPolicyRequest`, and `DynamicPolicy` response. Defaults to `TierTenant` when not specified, matching `CreateStaticPolicy()` behavior.
+- **`ListDynamicPoliciesOptions` filters**: Filter dynamic policies by `Tier` and `OrganizationID`, matching static policy list options.
+
+---
+
 ## [3.1.0] - 2026-02-04
 
 ### Changed
