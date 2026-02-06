@@ -428,7 +428,12 @@ func (c *AxonFlowClient) CancelExecution(executionID string, reason string) erro
 	}
 
 	fullURL := fmt.Sprintf("%s/api/v1/unified/executions/%s/cancel", c.config.Endpoint, executionID)
-	body := map[string]string{"reason": reason}
+	var body interface{}
+	if reason != "" {
+		body = map[string]string{"reason": reason}
+	} else {
+		body = map[string]string{}
+	}
 
 	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, body, nil); err != nil {
 		return fmt.Errorf("failed to cancel execution: %w", err)
