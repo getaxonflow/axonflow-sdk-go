@@ -1031,3 +1031,114 @@ func TestGetPendingApprovalsServerError(t *testing.T) {
 		t.Error("Expected error for server error response")
 	}
 }
+
+// ============================================================================
+// MarkStepCompleted Tests
+// ============================================================================
+
+// TestMarkStepCompleted tests marking a step as completed with output
+func TestMarkStepCompleted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		expectedPath := "/api/v1/workflows/wf_test123/steps/step_1/complete"
+		if r.URL.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+		}
+
+		var req MarkStepCompletedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		if req.Output == nil || req.Output["result"] != "success" {
+			t.Errorf("Expected output with result=success, got %v", req.Output)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	err := client.MarkStepCompleted("wf_test123", "step_1", &MarkStepCompletedRequest{
+		Output: map[string]interface{}{"result": "success"},
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestMarkStepCompletedNilRequest tests marking a step as completed with nil request
+func TestMarkStepCompletedNilRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		expectedPath := "/api/v1/workflows/wf_test123/steps/step_1/complete"
+		if r.URL.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.MarkStepCompleted("wf_test123", "step_1", nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestMarkStepCompletedEmptyIDs tests error when IDs are empty
+func TestMarkStepCompletedEmptyIDs(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	// Test empty workflow ID
+	err := client.MarkStepCompleted("", "step_1", nil)
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+
+	// Test empty step ID
+	err = client.MarkStepCompleted("wf_1", "", nil)
+	if err == nil {
+		t.Error("Expected error for empty step ID")
+	}
+}
+
+// TestMarkStepCompletedServerError tests error handling for server errors
+func TestMarkStepCompletedServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Internal server error"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.MarkStepCompleted("wf_1", "step_1", &MarkStepCompletedRequest{
+		Output: map[string]interface{}{"result": "data"},
+	})
+	if err == nil {
+		t.Error("Expected error for server error response")
+	}
+}
