@@ -733,3 +733,301 @@ func TestStepGateWithAllFields(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 }
+
+// ============================================================================
+// WCP Approval Tests (Feature 5)
+// ============================================================================
+
+// TestApproveStep tests approving a workflow step
+func TestApproveStep(t *testing.T) {
+	expectedResponse := ApproveStepResponse{
+		WorkflowID: "wf_test123",
+		StepID:     "step_456",
+		Status:     "approved",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		expectedPath := "/api/v1/workflow-control/wf_test123/steps/step_456/approve"
+		if r.URL.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(expectedResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	resp, err := client.ApproveStep("wf_test123", "step_456")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if resp.WorkflowID != "wf_test123" {
+		t.Errorf("Expected workflow_id 'wf_test123', got '%s'", resp.WorkflowID)
+	}
+	if resp.StepID != "step_456" {
+		t.Errorf("Expected step_id 'step_456', got '%s'", resp.StepID)
+	}
+	if resp.Status != "approved" {
+		t.Errorf("Expected status 'approved', got '%s'", resp.Status)
+	}
+}
+
+// TestApproveStepEmptyIDs tests error when IDs are empty
+func TestApproveStepEmptyIDs(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	// Test empty workflow ID
+	_, err := client.ApproveStep("", "step_1")
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+
+	// Test empty step ID
+	_, err = client.ApproveStep("wf_1", "")
+	if err == nil {
+		t.Error("Expected error for empty step ID")
+	}
+}
+
+// TestApproveStepServerError tests error handling for server errors
+func TestApproveStepServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Internal server error"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.ApproveStep("wf_1", "step_1")
+	if err == nil {
+		t.Error("Expected error for server error response")
+	}
+}
+
+// TestRejectStep tests rejecting a workflow step
+func TestRejectStep(t *testing.T) {
+	expectedResponse := RejectStepResponse{
+		WorkflowID: "wf_test123",
+		StepID:     "step_456",
+		Status:     "rejected",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		expectedPath := "/api/v1/workflow-control/wf_test123/steps/step_456/reject"
+		if r.URL.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(expectedResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	resp, err := client.RejectStep("wf_test123", "step_456")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if resp.WorkflowID != "wf_test123" {
+		t.Errorf("Expected workflow_id 'wf_test123', got '%s'", resp.WorkflowID)
+	}
+	if resp.StepID != "step_456" {
+		t.Errorf("Expected step_id 'step_456', got '%s'", resp.StepID)
+	}
+	if resp.Status != "rejected" {
+		t.Errorf("Expected status 'rejected', got '%s'", resp.Status)
+	}
+}
+
+// TestRejectStepEmptyIDs tests error when IDs are empty
+func TestRejectStepEmptyIDs(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	// Test empty workflow ID
+	_, err := client.RejectStep("", "step_1")
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+
+	// Test empty step ID
+	_, err = client.RejectStep("wf_1", "")
+	if err == nil {
+		t.Error("Expected error for empty step ID")
+	}
+}
+
+// TestRejectStepServerError tests error handling for server errors
+func TestRejectStepServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Internal server error"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.RejectStep("wf_1", "step_1")
+	if err == nil {
+		t.Error("Expected error for server error response")
+	}
+}
+
+// TestGetPendingApprovals tests listing pending approvals
+func TestGetPendingApprovals(t *testing.T) {
+	expectedResponse := PendingApprovalsResponse{
+		Approvals: []PendingApproval{
+			{
+				WorkflowID:   "wf_test123",
+				WorkflowName: "test-workflow",
+				StepID:       "step_456",
+				StepName:     "Generate Code",
+				StepType:     "llm_call",
+				CreatedAt:    "2026-02-07T10:00:00Z",
+			},
+		},
+		Total: 1,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflow-control/pending-approvals" {
+			t.Errorf("Expected path /api/v1/workflow-control/pending-approvals, got %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(expectedResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	result, err := client.GetPendingApprovals(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Total != 1 {
+		t.Errorf("Expected total 1, got %d", result.Total)
+	}
+	if len(result.Approvals) != 1 {
+		t.Errorf("Expected 1 approval, got %d", len(result.Approvals))
+	}
+	if result.Approvals[0].WorkflowID != "wf_test123" {
+		t.Errorf("Expected workflow_id 'wf_test123', got '%s'", result.Approvals[0].WorkflowID)
+	}
+	if result.Approvals[0].StepName != "Generate Code" {
+		t.Errorf("Expected step_name 'Generate Code', got '%s'", result.Approvals[0].StepName)
+	}
+}
+
+// TestGetPendingApprovalsWithLimit tests listing pending approvals with limit
+func TestGetPendingApprovalsWithLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		if query.Get("limit") != "5" {
+			t.Errorf("Expected limit=5, got %s", query.Get("limit"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PendingApprovalsResponse{
+			Approvals: []PendingApproval{},
+			Total:     0,
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.GetPendingApprovals(&PendingApprovalsOptions{
+		Limit: 5,
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestGetPendingApprovalsEmpty tests listing pending approvals when there are none
+func TestGetPendingApprovalsEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PendingApprovalsResponse{
+			Approvals: []PendingApproval{},
+			Total:     0,
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	result, err := client.GetPendingApprovals(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Total != 0 {
+		t.Errorf("Expected total 0, got %d", result.Total)
+	}
+	if len(result.Approvals) != 0 {
+		t.Errorf("Expected 0 approvals, got %d", len(result.Approvals))
+	}
+}
+
+// TestGetPendingApprovalsServerError tests error handling for server errors
+func TestGetPendingApprovalsServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Internal server error"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.GetPendingApprovals(nil)
+	if err == nil {
+		t.Error("Expected error for server error response")
+	}
+}

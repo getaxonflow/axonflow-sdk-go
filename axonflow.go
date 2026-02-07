@@ -352,6 +352,84 @@ type AuditResult struct {
 	AuditID string `json:"audit_id"`
 }
 
+// ExecutionMode represents plan execution strategies
+type ExecutionMode string
+
+const (
+	ExecutionModeAuto       ExecutionMode = "auto"
+	ExecutionModeSequential ExecutionMode = "sequential"
+	ExecutionModeParallel   ExecutionMode = "parallel"
+	ExecutionModeBalanced   ExecutionMode = "balanced"
+	ExecutionModeConfirm    ExecutionMode = "confirm"
+	ExecutionModeStep       ExecutionMode = "step"
+)
+
+// GeneratePlanOptions provides additional options for plan generation.
+type GeneratePlanOptions struct {
+	ExecutionMode ExecutionMode `json:"execution_mode,omitempty"`
+}
+
+// CancelPlanResponse represents the response from cancelling a plan.
+type CancelPlanResponse struct {
+	PlanID  string `json:"plan_id"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// UpdatePlanRequest represents a request to update a plan's configuration.
+type UpdatePlanRequest struct {
+	ExpectedVersion int           `json:"version"`
+	ExecutionMode   ExecutionMode `json:"execution_mode,omitempty"`
+	Domain          string        `json:"domain,omitempty"`
+}
+
+// UpdatePlanResponse represents the response from updating a plan.
+type UpdatePlanResponse struct {
+	PlanID  string `json:"plan_id"`
+	Version int    `json:"version"`
+	Status  string `json:"status"`
+	Success bool   `json:"success"`
+}
+
+// PlanVersionEntry represents a single version in a plan's version history.
+type PlanVersionEntry struct {
+	Version       int    `json:"version"`
+	ChangedAt     string `json:"changed_at"`
+	ChangedBy     string `json:"changed_by,omitempty"`
+	ChangeType    string `json:"change_type"`
+	ChangeSummary string `json:"change_summary,omitempty"`
+}
+
+// PlanVersionsResponse represents the response from querying plan version history.
+type PlanVersionsResponse struct {
+	PlanID   string             `json:"plan_id"`
+	Versions []PlanVersionEntry `json:"versions"`
+}
+
+// ResumePlanResponse represents the response from resuming a paused plan.
+type ResumePlanResponse struct {
+	PlanID   string `json:"plan_id"`
+	Status   string `json:"status"`
+	Approved bool   `json:"approved"`
+	Message  string `json:"message"`
+}
+
+// RollbackPlanRequest represents a request to rollback a plan to a previous version.
+type RollbackPlanRequest struct {
+	TargetVersion int `json:"target_version"`
+}
+
+// RollbackPlanResponse represents the response from rolling back a plan.
+type RollbackPlanResponse struct {
+	PlanID          string `json:"plan_id"`
+	Version         int    `json:"version"`
+	PreviousVersion int    `json:"previous_version"`
+	Status          string `json:"status"`
+}
+
+// ErrVersionConflict indicates the plan was modified by another request
+var ErrVersionConflict = fmt.Errorf("version conflict: plan was modified by another request")
+
 // PlanExecutionResponse represents the result of plan execution
 type PlanExecutionResponse struct {
 	PlanID                 string       `json:"plan_id"`
@@ -1301,6 +1379,341 @@ func (c *AxonFlowClient) GetPlanStatus(planID string) (*PlanExecutionResponse, e
 	}
 
 	return &status, nil
+}
+
+// CancelPlan cancels a running or pending plan.
+// An optional reason can be provided to explain why the plan was cancelled.
+// Usage: CancelPlan(planID) or CancelPlan(planID, "reason for cancellation")
+func (c *AxonFlowClient) CancelPlan(planID string, reason ...string) (*CancelPlanResponse, error) {
+	cancelReason := ""
+	if len(reason) > 0 {
+		cancelReason = reason[0]
+	}
+
+	reqBody := map[string]interface{}{
+		"reason": cancelReason,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cancel request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/plan/%s/cancel", c.config.Endpoint, planID)
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cancel request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Cancelling plan: %s", planID)
+	}
+
+	resp, err := c.mapHttpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("cancel plan request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cancel response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("cancel plan failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var cancelResp CancelPlanResponse
+	if err := json.Unmarshal(body, &cancelResp); err != nil {
+		return nil, fmt.Errorf("failed to decode cancel response: %w", err)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Plan cancelled: %s - Status: %s", planID, cancelResp.Status)
+	}
+
+	return &cancelResp, nil
+}
+
+// UpdatePlan updates a plan's configuration (execution mode, domain).
+// Uses optimistic concurrency control via ExpectedVersion in the request.
+// Returns ErrVersionConflict if the plan was modified by another request (HTTP 409).
+func (c *AxonFlowClient) UpdatePlan(planID string, req UpdatePlanRequest) (*UpdatePlanResponse, error) {
+	reqBody := map[string]interface{}{
+		"version": req.ExpectedVersion,
+	}
+	if req.ExecutionMode != "" {
+		reqBody["execution_mode"] = req.ExecutionMode
+	}
+	if req.Domain != "" {
+		reqBody["domain"] = req.Domain
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal update request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/plan/%s", c.config.Endpoint, planID)
+	httpReq, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create update request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Updating plan: %s (expected version: %d)", planID, req.ExpectedVersion)
+	}
+
+	resp, err := c.mapHttpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("update plan request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read update response: %w", err)
+	}
+
+	// Handle version conflict (409 Conflict)
+	if resp.StatusCode == http.StatusConflict {
+		return nil, ErrVersionConflict
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("update plan failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var updateResp UpdatePlanResponse
+	if err := json.Unmarshal(body, &updateResp); err != nil {
+		return nil, fmt.Errorf("failed to decode update response: %w", err)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Plan updated: %s - Version: %d, Status: %s", planID, updateResp.Version, updateResp.Status)
+	}
+
+	return &updateResp, nil
+}
+
+// GetPlanVersions retrieves the version history of a plan.
+func (c *AxonFlowClient) GetPlanVersions(planID string) (*PlanVersionsResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/plan/%s/versions", c.config.Endpoint, planID)
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create versions request: %w", err)
+	}
+
+	c.addAuthHeaders(httpReq)
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Getting plan versions: %s", planID)
+	}
+
+	resp, err := c.mapHttpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("get plan versions request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read versions response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get plan versions failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var versionsResp PlanVersionsResponse
+	if err := json.Unmarshal(body, &versionsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode versions response: %w", err)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Plan %s has %d versions", planID, len(versionsResp.Versions))
+	}
+
+	return &versionsResp, nil
+}
+
+// ResumePlan resumes a paused plan (e.g., one waiting for approval in "confirm" or "step" mode).
+// The approved parameter is optional; if not provided, it defaults to true.
+// Usage: ResumePlan(planID) or ResumePlan(planID, false)
+func (c *AxonFlowClient) ResumePlan(planID string, approved ...bool) (*ResumePlanResponse, error) {
+	isApproved := true
+	if len(approved) > 0 {
+		isApproved = approved[0]
+	}
+
+	reqBody := map[string]interface{}{
+		"approved": isApproved,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal resume request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/plan/%s/resume", c.config.Endpoint, planID)
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resume request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Resuming plan: %s (approved: %v)", planID, isApproved)
+	}
+
+	resp, err := c.mapHttpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("resume plan request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read resume response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("resume plan failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resumeResp ResumePlanResponse
+	if err := json.Unmarshal(body, &resumeResp); err != nil {
+		return nil, fmt.Errorf("failed to decode resume response: %w", err)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Plan resumed: %s - Status: %s, Approved: %v", planID, resumeResp.Status, resumeResp.Approved)
+	}
+
+	return &resumeResp, nil
+}
+
+// RollbackPlan rolls back a plan to a previous version.
+// The targetVersion specifies which version to revert to.
+func (c *AxonFlowClient) RollbackPlan(planID string, targetVersion int) (*RollbackPlanResponse, error) {
+	reqBody := RollbackPlanRequest{
+		TargetVersion: targetVersion,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal rollback request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/plan/%s/rollback/%d", c.config.Endpoint, planID, targetVersion)
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create rollback request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(httpReq)
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Rolling back plan: %s to version %d", planID, targetVersion)
+	}
+
+	resp, err := c.mapHttpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("rollback plan request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rollback response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("rollback plan failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var rollbackResp RollbackPlanResponse
+	if err := json.Unmarshal(body, &rollbackResp); err != nil {
+		return nil, fmt.Errorf("failed to decode rollback response: %w", err)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Plan rolled back: %s - Version: %d, Previous: %d, Status: %s",
+			planID, rollbackResp.Version, rollbackResp.PreviousVersion, rollbackResp.Status)
+	}
+
+	return &rollbackResp, nil
+}
+
+// GeneratePlanWithOptions creates a multi-agent execution plan with additional options.
+// This extends GeneratePlan with support for execution mode selection.
+// The userToken parameter is optional; if not provided, it defaults to the client ID.
+// Usage: GeneratePlanWithOptions(query, domain, opts) or GeneratePlanWithOptions(query, domain, opts, userToken)
+// Note: This uses MapTimeout (default 120s) as MAP operations involve multiple LLM calls.
+func (c *AxonFlowClient) GeneratePlanWithOptions(query string, domain string, opts GeneratePlanOptions, userToken ...string) (*PlanResponse, error) {
+	context := map[string]interface{}{}
+	if domain != "" {
+		context["domain"] = domain
+	}
+	if opts.ExecutionMode != "" {
+		context["execution_mode"] = opts.ExecutionMode
+	}
+
+	// Use client ID as fallback if no user token provided
+	token := c.config.ClientID
+	if len(userToken) > 0 && userToken[0] != "" {
+		token = userToken[0]
+	}
+
+	// Use executeMapRequest with longer timeout for MAP operations
+	req := ClientRequest{
+		Query:       query,
+		UserToken:   token,
+		ClientID:    c.config.ClientID,
+		RequestType: "multi-agent-plan",
+		Context:     context,
+	}
+
+	resp, err := c.executeMapRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("plan generation failed: %s", resp.Error)
+	}
+
+	// Parse plan from response
+	planData, ok := resp.Data.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected plan response format")
+	}
+
+	// Convert to PlanResponse
+	planBytes, _ := json.Marshal(planData)
+	var plan PlanResponse
+	if err := json.Unmarshal(planBytes, &plan); err != nil {
+		return nil, fmt.Errorf("failed to parse plan: %w", err)
+	}
+
+	plan.PlanID = resp.PlanID
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Plan generated with options: %s (%d steps, mode: %s)", plan.PlanID, len(plan.Steps), opts.ExecutionMode)
+	}
+
+	return &plan, nil
 }
 
 // ============================================================================

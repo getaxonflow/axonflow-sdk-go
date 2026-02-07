@@ -1488,3 +1488,123 @@ func TestConnectorResponse_WasRedacted(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// Plan Rollback Tests (Feature 7)
+// ============================================================================
+
+func TestRollbackPlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		expectedPath := "/api/v1/plan/plan-123/rollback/2"
+		if r.URL.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+		}
+
+		// Verify request body
+		body, _ := io.ReadAll(r.Body)
+		var req RollbackPlanRequest
+		json.Unmarshal(body, &req)
+		if req.TargetVersion != 2 {
+			t.Errorf("Expected target_version 2, got %d", req.TargetVersion)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(RollbackPlanResponse{
+			PlanID:          "plan-123",
+			Version:         2,
+			PreviousVersion: 5,
+			Status:          "rolled_back",
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	resp, err := client.RollbackPlan("plan-123", 2)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if resp.PlanID != "plan-123" {
+		t.Errorf("Expected plan_id 'plan-123', got '%s'", resp.PlanID)
+	}
+	if resp.Version != 2 {
+		t.Errorf("Expected version 2, got %d", resp.Version)
+	}
+	if resp.PreviousVersion != 5 {
+		t.Errorf("Expected previous_version 5, got %d", resp.PreviousVersion)
+	}
+	if resp.Status != "rolled_back" {
+		t.Errorf("Expected status 'rolled_back', got '%s'", resp.Status)
+	}
+}
+
+func TestRollbackPlanServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "Plan not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.RollbackPlan("nonexistent-plan", 1)
+	if err == nil {
+		t.Error("Expected error for not found response")
+	}
+}
+
+func TestRollbackPlanVersionConflict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Target version does not exist"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.RollbackPlan("plan-123", 999)
+	if err == nil {
+		t.Error("Expected error for invalid target version")
+	}
+}
+
+func TestRollbackPlanResponseDeserialization(t *testing.T) {
+	jsonData := `{
+		"plan_id": "plan_deser_001",
+		"version": 3,
+		"previous_version": 7,
+		"status": "rolled_back"
+	}`
+
+	var resp RollbackPlanResponse
+	err := json.Unmarshal([]byte(jsonData), &resp)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal RollbackPlanResponse: %v", err)
+	}
+
+	if resp.PlanID != "plan_deser_001" {
+		t.Errorf("Expected plan_id 'plan_deser_001', got '%s'", resp.PlanID)
+	}
+	if resp.Version != 3 {
+		t.Errorf("Expected version 3, got %d", resp.Version)
+	}
+	if resp.PreviousVersion != 7 {
+		t.Errorf("Expected previous_version 7, got %d", resp.PreviousVersion)
+	}
+	if resp.Status != "rolled_back" {
+		t.Errorf("Expected status 'rolled_back', got '%s'", resp.Status)
+	}
+}
