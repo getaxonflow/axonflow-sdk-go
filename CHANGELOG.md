@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **WCP Approval Gates** (Issue #1169): HITL approval and rejection for workflow steps
+  - `ApproveStep(workflowID, stepID)` - Approve a pending workflow step
+  - `RejectStep(workflowID, stepID, reason)` - Reject a step with reason
+  - `GetPendingApprovals(opts)` - List steps awaiting human approval
+
+- **MAP Plan Cancellation** (Issue #1072): Cancel running multi-agent plans
+  - `CancelPlan(planID, reason)` - Cancel a plan with optional reason (omits reason from body when empty)
+
+- **MAP Plan Update** (Issue #1072): Modify plan configuration before or during execution
+  - `UpdatePlan(planID, request)` - Update execution mode, domain, or version
+
+- **MAP Plan Versioning and Rollback** (Issue #1072): Version history and rollback support
+  - `GetPlanVersions(planID)` - List plan version history
+  - `RollbackPlan(planID, version)` - Rollback to a previous version (returns `ErrVersionConflict` on 409)
+  - New types: `RollbackPlanResponse`, `PlanVersion`
+
+- **Webhook Subscriptions** (Issue #1169): Event notification management
+  - `CreateWebhook(request)` - Create a webhook subscription
+  - `ListWebhooks()` - List active webhook subscriptions
+  - `GetWebhook(webhookID)` - Get webhook details
+  - `UpdateWebhook(webhookID, request)` - Update webhook configuration
+  - `DeleteWebhook(webhookID)` - Delete a webhook subscription
+  - New type: `WebhookSubscription`
+
 - **Unified Execution Cancellation** (EPIC #1074): Cancel running executions across both MAP and WCP subsystems
   - `CancelExecution(executionID, reason)` - Cancel a unified execution via `POST /api/v1/unified/executions/{id}/cancel`
   - Propagates to MAP `CancelPlan()` or WCP `AbortWorkflow()` based on execution type
@@ -17,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Unified execution API URLs** (EPIC #1074): `GetExecutionStatus()` and `ListUnifiedExecutions()` now use correct `/api/v1/unified/executions` path (was incorrectly pointing to `/api/v1/executions` which is the Execution Replay API)
+- **`RollbackPlan` request body**: Removed redundant version from request body (version is already in URL path)
+- **`CancelPlan` empty reason**: No longer sends `"reason": ""` when reason is empty
 
 ---
 
