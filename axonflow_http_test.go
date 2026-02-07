@@ -1503,12 +1503,10 @@ func TestRollbackPlan(t *testing.T) {
 			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
 
-		// Verify request body
+		// Body should be empty — target version is in the URL path
 		body, _ := io.ReadAll(r.Body)
-		var req RollbackPlanRequest
-		json.Unmarshal(body, &req)
-		if req.TargetVersion != 2 {
-			t.Errorf("Expected target_version 2, got %d", req.TargetVersion)
+		if len(body) != 0 {
+			t.Errorf("Expected empty body, got %s", string(body))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1565,8 +1563,8 @@ func TestRollbackPlanServerError(t *testing.T) {
 
 func TestRollbackPlanVersionConflict(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error": "Target version does not exist"}`))
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error": "Version conflict"}`))
 	}))
 	defer server.Close()
 
@@ -1577,7 +1575,10 @@ func TestRollbackPlanVersionConflict(t *testing.T) {
 
 	_, err := client.RollbackPlan("plan-123", 999)
 	if err == nil {
-		t.Error("Expected error for invalid target version")
+		t.Error("Expected error for version conflict")
+	}
+	if err != ErrVersionConflict {
+		t.Errorf("Expected ErrVersionConflict, got %v", err)
 	}
 }
 
@@ -1664,8 +1665,8 @@ func TestCancelPlanNoReason(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]interface{}
 		json.Unmarshal(body, &req)
-		if req["reason"] != "" {
-			t.Errorf("Expected empty reason, got '%v'", req["reason"])
+		if _, hasReason := req["reason"]; hasReason {
+			t.Errorf("Expected no reason key in body, got '%v'", req["reason"])
 		}
 
 		w.Header().Set("Content-Type", "application/json")

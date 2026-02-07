@@ -1390,8 +1390,9 @@ func (c *AxonFlowClient) CancelPlan(planID string, reason ...string) (*CancelPla
 		cancelReason = reason[0]
 	}
 
-	reqBody := map[string]interface{}{
-		"reason": cancelReason,
+	reqBody := map[string]interface{}{}
+	if cancelReason != "" {
+		reqBody["reason"] = cancelReason
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -1443,17 +1444,7 @@ func (c *AxonFlowClient) CancelPlan(planID string, reason ...string) (*CancelPla
 // Uses optimistic concurrency control via ExpectedVersion in the request.
 // Returns ErrVersionConflict if the plan was modified by another request (HTTP 409).
 func (c *AxonFlowClient) UpdatePlan(planID string, req UpdatePlanRequest) (*UpdatePlanResponse, error) {
-	reqBody := map[string]interface{}{
-		"version": req.ExpectedVersion,
-	}
-	if req.ExecutionMode != "" {
-		reqBody["execution_mode"] = req.ExecutionMode
-	}
-	if req.Domain != "" {
-		reqBody["domain"] = req.Domain
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
+	bodyBytes, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal update request: %w", err)
 	}
@@ -1606,22 +1597,12 @@ func (c *AxonFlowClient) ResumePlan(planID string, approved ...bool) (*ResumePla
 // RollbackPlan rolls back a plan to a previous version.
 // The targetVersion specifies which version to revert to.
 func (c *AxonFlowClient) RollbackPlan(planID string, targetVersion int) (*RollbackPlanResponse, error) {
-	reqBody := RollbackPlanRequest{
-		TargetVersion: targetVersion,
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal rollback request: %w", err)
-	}
-
 	url := fmt.Sprintf("%s/api/v1/plan/%s/rollback/%d", c.config.Endpoint, planID, targetVersion)
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	httpReq, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create rollback request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
 	if c.config.Debug {
@@ -1637,6 +1618,11 @@ func (c *AxonFlowClient) RollbackPlan(planID string, targetVersion int) (*Rollba
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read rollback response: %w", err)
+	}
+
+	// Handle version conflict (409 Conflict)
+	if resp.StatusCode == http.StatusConflict {
+		return nil, ErrVersionConflict
 	}
 
 	if resp.StatusCode != http.StatusOK {
