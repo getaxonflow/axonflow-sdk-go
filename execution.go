@@ -341,7 +341,7 @@ func (c *AxonFlowClient) GetExecutionStatus(executionID string) (*ExecutionStatu
 		return nil, fmt.Errorf("execution ID is required")
 	}
 
-	fullURL := fmt.Sprintf("%s/api/v1/executions/%s", c.config.Endpoint, executionID)
+	fullURL := fmt.Sprintf("%s/api/v1/unified/executions/%s", c.config.Endpoint, executionID)
 	var result ExecutionStatus
 
 	if err := c.makeJSONRequest(context.Background(), "GET", fullURL, nil, &result); err != nil {
@@ -396,7 +396,7 @@ func (c *AxonFlowClient) ListUnifiedExecutions(opts *UnifiedListExecutionsReques
 		}
 	}
 
-	fullURL := c.config.Endpoint + "/api/v1/executions"
+	fullURL := c.config.Endpoint + "/api/v1/unified/executions"
 	if len(params) > 0 {
 		fullURL += "?" + params.Encode()
 	}
@@ -408,4 +408,36 @@ func (c *AxonFlowClient) ListUnifiedExecutions(opts *UnifiedListExecutionsReques
 	}
 
 	return &result, nil
+}
+
+// CancelExecution cancels a running execution (MAP plan or WCP workflow).
+//
+// The cancellation is propagated to the appropriate subsystem:
+//   - WCP workflows are aborted via AbortWorkflow
+//   - MAP plans are cancelled via CancelPlan
+//
+// Example:
+//
+//	err := client.CancelExecution("wf_abc123", "no longer needed")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+func (c *AxonFlowClient) CancelExecution(executionID string, reason string) error {
+	if executionID == "" {
+		return fmt.Errorf("execution ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/unified/executions/%s/cancel", c.config.Endpoint, executionID)
+	var body interface{}
+	if reason != "" {
+		body = map[string]string{"reason": reason}
+	} else {
+		body = map[string]string{}
+	}
+
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, body, nil); err != nil {
+		return fmt.Errorf("failed to cancel execution: %w", err)
+	}
+
+	return nil
 }

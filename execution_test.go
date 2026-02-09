@@ -15,6 +15,9 @@
 package axonflow
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -287,5 +290,326 @@ func TestUnifiedApprovalStatusConstants(t *testing.T) {
 	}
 	if UnifiedApprovalStatusRejected != "rejected" {
 		t.Errorf("UnifiedApprovalStatusRejected = %v, want rejected", UnifiedApprovalStatusRejected)
+	}
+}
+
+// ============================================================================
+// GetExecutionStatus HTTP Tests
+// ============================================================================
+
+func TestGetExecutionStatus(t *testing.T) {
+	now := time.Now()
+	expectedResp := ExecutionStatus{
+		ExecutionID:      "exec_test123",
+		ExecutionType:    ExecutionTypeWCP,
+		Name:             "test-workflow",
+		Source:           "langgraph",
+		Status:           ExecutionStatusRunning,
+		CurrentStepIndex: 1,
+		TotalSteps:       3,
+		ProgressPercent:  33.3,
+		StartedAt:        now,
+		Steps: []UnifiedStepStatus{
+			{StepID: "step-1", StepIndex: 0, Status: StepStatusCompleted},
+			{StepID: "step-2", StepIndex: 1, Status: StepStatusRunning},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/unified/executions/exec_test123" {
+			t.Errorf("Expected path /api/v1/unified/executions/exec_test123, got %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(expectedResp)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	status, err := client.GetExecutionStatus("exec_test123")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if status.ExecutionID != "exec_test123" {
+		t.Errorf("Expected execution_id 'exec_test123', got '%s'", status.ExecutionID)
+	}
+	if status.ExecutionType != ExecutionTypeWCP {
+		t.Errorf("Expected execution_type 'wcp_workflow', got '%s'", status.ExecutionType)
+	}
+	if status.Status != ExecutionStatusRunning {
+		t.Errorf("Expected status 'running', got '%s'", status.Status)
+	}
+	if status.TotalSteps != 3 {
+		t.Errorf("Expected total_steps 3, got %d", status.TotalSteps)
+	}
+	if len(status.Steps) != 2 {
+		t.Errorf("Expected 2 steps, got %d", len(status.Steps))
+	}
+}
+
+func TestGetExecutionStatusEmptyID(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	_, err := client.GetExecutionStatus("")
+	if err == nil {
+		t.Error("Expected error for empty execution ID")
+	}
+}
+
+func TestGetExecutionStatusServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "Execution not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.GetExecutionStatus("nonexistent")
+	if err == nil {
+		t.Error("Expected error for not found response")
+	}
+}
+
+// ============================================================================
+// ListUnifiedExecutions HTTP Tests
+// ============================================================================
+
+func TestListUnifiedExecutions(t *testing.T) {
+	now := time.Now()
+	expectedResp := UnifiedListExecutionsResponse{
+		Executions: []ExecutionStatus{
+			{
+				ExecutionID:   "exec_1",
+				ExecutionType: ExecutionTypeMAP,
+				Name:          "plan-alpha",
+				Status:        ExecutionStatusCompleted,
+				TotalSteps:    5,
+				StartedAt:     now,
+			},
+			{
+				ExecutionID:   "exec_2",
+				ExecutionType: ExecutionTypeWCP,
+				Name:          "workflow-beta",
+				Status:        ExecutionStatusRunning,
+				TotalSteps:    3,
+				StartedAt:     now,
+			},
+		},
+		Total:   2,
+		Limit:   50,
+		Offset:  0,
+		HasMore: false,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/unified/executions" {
+			t.Errorf("Expected path /api/v1/unified/executions, got %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(expectedResp)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	result, err := client.ListUnifiedExecutions(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Total != 2 {
+		t.Errorf("Expected total 2, got %d", result.Total)
+	}
+	if len(result.Executions) != 2 {
+		t.Errorf("Expected 2 executions, got %d", len(result.Executions))
+	}
+	if result.HasMore {
+		t.Error("Expected has_more to be false")
+	}
+}
+
+func TestListUnifiedExecutionsWithFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+
+		if query.Get("execution_type") != "wcp_workflow" {
+			t.Errorf("Expected execution_type=wcp_workflow, got %s", query.Get("execution_type"))
+		}
+		if query.Get("status") != "running" {
+			t.Errorf("Expected status=running, got %s", query.Get("status"))
+		}
+		if query.Get("tenant_id") != "tenant-001" {
+			t.Errorf("Expected tenant_id=tenant-001, got %s", query.Get("tenant_id"))
+		}
+		if query.Get("org_id") != "org-001" {
+			t.Errorf("Expected org_id=org-001, got %s", query.Get("org_id"))
+		}
+		if query.Get("limit") != "10" {
+			t.Errorf("Expected limit=10, got %s", query.Get("limit"))
+		}
+		if query.Get("offset") != "20" {
+			t.Errorf("Expected offset=20, got %s", query.Get("offset"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(UnifiedListExecutionsResponse{
+			Executions: []ExecutionStatus{},
+			Total:      0,
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.ListUnifiedExecutions(&UnifiedListExecutionsRequest{
+		ExecutionType: ExecutionTypeWCP,
+		Status:        ExecutionStatusRunning,
+		TenantID:      "tenant-001",
+		OrgID:         "org-001",
+		Limit:         10,
+		Offset:        20,
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestListUnifiedExecutionsServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Internal server error"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	_, err := client.ListUnifiedExecutions(nil)
+	if err == nil {
+		t.Error("Expected error for server error response")
+	}
+}
+
+// ============================================================================
+// CancelExecution HTTP Tests
+// ============================================================================
+
+func TestCancelExecution(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		expectedPath := "/api/v1/unified/executions/exec_test123/cancel"
+		if r.URL.Path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+		}
+
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		if req["reason"] != "no longer needed" {
+			t.Errorf("Expected reason 'no longer needed', got '%s'", req["reason"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	err := client.CancelExecution("exec_test123", "no longer needed")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestCancelExecutionEmptyReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		// When reason is empty, an empty map should still be sent
+		if _, ok := req["reason"]; ok && req["reason"] != "" {
+			t.Errorf("Expected empty reason, got '%s'", req["reason"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.CancelExecution("exec_test123", "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestCancelExecutionEmptyID(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	err := client.CancelExecution("", "some reason")
+	if err == nil {
+		t.Error("Expected error for empty execution ID")
+	}
+}
+
+func TestCancelExecutionServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "Execution not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.CancelExecution("nonexistent", "reason")
+	if err == nil {
+		t.Error("Expected error for not found response")
 	}
 }

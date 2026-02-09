@@ -534,3 +534,178 @@ func (c *AxonFlowClient) ListWorkflows(opts *ListWorkflowsOptions) (*ListWorkflo
 
 	return &result, nil
 }
+
+// ============================================================================
+// WCP Approval Types (Feature 5)
+// ============================================================================
+
+// ApproveStepRequest is the request to approve a workflow step.
+type ApproveStepRequest struct {
+	// ApprovedBy identifies who approved the step (optional)
+	ApprovedBy string `json:"approved_by,omitempty"`
+}
+
+// ApproveStepResponse is the response from approving a workflow step.
+type ApproveStepResponse struct {
+	// WorkflowID is the workflow containing the step
+	WorkflowID string `json:"workflow_id"`
+
+	// StepID is the step that was approved
+	StepID string `json:"step_id"`
+
+	// Status is the new status of the step after approval
+	Status string `json:"status"`
+}
+
+// RejectStepRequest is the request to reject a workflow step.
+type RejectStepRequest struct {
+	// Reason explains why the step was rejected (optional)
+	Reason string `json:"reason,omitempty"`
+}
+
+// RejectStepResponse is the response from rejecting a workflow step.
+type RejectStepResponse struct {
+	// WorkflowID is the workflow containing the step
+	WorkflowID string `json:"workflow_id"`
+
+	// StepID is the step that was rejected
+	StepID string `json:"step_id"`
+
+	// Status is the new status of the step after rejection
+	Status string `json:"status"`
+}
+
+// PendingApproval represents a workflow step awaiting human approval.
+type PendingApproval struct {
+	// WorkflowID is the workflow containing the pending step
+	WorkflowID string `json:"workflow_id"`
+
+	// WorkflowName is the human-readable name of the workflow
+	WorkflowName string `json:"workflow_name"`
+
+	// StepID is the step awaiting approval
+	StepID string `json:"step_id"`
+
+	// StepName is the human-readable name of the step
+	StepName string `json:"step_name"`
+
+	// StepType is the type of the step
+	StepType string `json:"step_type"`
+
+	// CreatedAt is when the approval request was created
+	CreatedAt string `json:"created_at"`
+}
+
+// PendingApprovalsResponse is the response from listing pending approvals.
+type PendingApprovalsResponse struct {
+	// Approvals is the list of pending approvals
+	Approvals []PendingApproval `json:"approvals"`
+
+	// Total is the total count of pending approvals
+	Total int `json:"total"`
+}
+
+// PendingApprovalsOptions contains options for listing pending approvals.
+type PendingApprovalsOptions struct {
+	// Limit is the maximum number of results to return
+	Limit int
+}
+
+// ============================================================================
+// WCP Approval Methods (Feature 5)
+// ============================================================================
+
+// ApproveStep approves a workflow step that requires human approval.
+//
+// Call this to approve a step that returned GateDecisionRequireApproval from StepGate.
+//
+// Example:
+//
+//	resp, err := client.ApproveStep("wf_123", "step_456")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Step %s approved, status: %s\n", resp.StepID, resp.Status)
+func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepResponse, error) {
+	if workflowID == "" {
+		return nil, fmt.Errorf("workflow ID is required")
+	}
+	if stepID == "" {
+		return nil, fmt.Errorf("step ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/workflow-control/%s/steps/%s/approve", c.config.Endpoint, workflowID, stepID)
+	req := ApproveStepRequest{}
+	var result ApproveStepResponse
+
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, &result); err != nil {
+		return nil, fmt.Errorf("failed to approve step: %w", err)
+	}
+
+	return &result, nil
+}
+
+// RejectStep rejects a workflow step that requires human approval.
+//
+// Call this to reject a step that returned GateDecisionRequireApproval from StepGate.
+//
+// Example:
+//
+//	resp, err := client.RejectStep("wf_123", "step_456")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Step %s rejected, status: %s\n", resp.StepID, resp.Status)
+func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepResponse, error) {
+	if workflowID == "" {
+		return nil, fmt.Errorf("workflow ID is required")
+	}
+	if stepID == "" {
+		return nil, fmt.Errorf("step ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/workflow-control/%s/steps/%s/reject", c.config.Endpoint, workflowID, stepID)
+	req := RejectStepRequest{}
+	var result RejectStepResponse
+
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, &result); err != nil {
+		return nil, fmt.Errorf("failed to reject step: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetPendingApprovals lists all workflow steps awaiting human approval.
+//
+// Example:
+//
+//	pending, err := client.GetPendingApprovals(&PendingApprovalsOptions{Limit: 10})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Found %d pending approvals\n", pending.Total)
+//	for _, a := range pending.Approvals {
+//	    fmt.Printf("  Workflow %s, Step %s (%s)\n", a.WorkflowID, a.StepID, a.StepName)
+//	}
+func (c *AxonFlowClient) GetPendingApprovals(opts *PendingApprovalsOptions) (*PendingApprovalsResponse, error) {
+	params := url.Values{}
+
+	if opts != nil {
+		if opts.Limit > 0 {
+			params.Set("limit", strconv.Itoa(opts.Limit))
+		}
+	}
+
+	fullURL := c.config.Endpoint + "/api/v1/workflow-control/pending-approvals"
+	if len(params) > 0 {
+		fullURL += "?" + params.Encode()
+	}
+
+	var result PendingApprovalsResponse
+
+	if err := c.makeJSONRequest(context.Background(), "GET", fullURL, nil, &result); err != nil {
+		return nil, fmt.Errorf("failed to get pending approvals: %w", err)
+	}
+
+	return &result, nil
+}
