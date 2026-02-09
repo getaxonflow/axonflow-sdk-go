@@ -15,10 +15,15 @@
 package axonflow
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -440,4 +445,161 @@ func (c *AxonFlowClient) CancelExecution(executionID string, reason string) erro
 	}
 
 	return nil
+}
+
+// StreamExecutionStatus connects to the SSE streaming endpoint and returns
+// channels that receive real-time ExecutionStatus updates.
+//
+// The method establishes a Server-Sent Events (SSE) connection to
+// GET /api/v1/executions/{executionID}/stream and parses incoming events
+// into ExecutionStatus objects.
+//
+// Returns:
+//   - A read-only channel of ExecutionStatus updates
+//   - A read-only error channel for stream errors
+//   - An error if the initial connection fails
+//
+// Both channels are closed when the stream ends (terminal status received),
+// the context is cancelled, or the server closes the connection.
+//
+// Example:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+//	defer cancel()
+//
+//	statusCh, errCh, err := client.StreamExecutionStatus(ctx, "exec_123")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	for status := range statusCh {
+//	    fmt.Printf("Status: %s, Progress: %.1f%%\n", status.Status, status.ProgressPercent)
+//	    if status.IsTerminal() {
+//	        fmt.Println("Execution finished:", status.Status)
+//	    }
+//	}
+//	// Check for stream errors
+//	if err := <-errCh; err != nil {
+//	    log.Printf("Stream error: %v", err)
+//	}
+func (c *AxonFlowClient) StreamExecutionStatus(ctx context.Context, executionID string) (<-chan ExecutionStatus, <-chan error, error) {
+	if executionID == "" {
+		return nil, nil, fmt.Errorf("execution ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/executions/%s/stream", c.config.Endpoint, executionID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create stream request: %w", err)
+	}
+
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
+	c.addAuthHeaders(req)
+
+	// Use a client without timeout for SSE streaming — context controls lifetime
+	streamClient := &http.Client{
+		Transport: c.httpClient.Transport,
+		// No timeout — SSE connections are long-lived
+	}
+
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to stream: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, nil, &httpError{
+			statusCode: resp.StatusCode,
+			message:    fmt.Sprintf("stream connection failed for execution %s", executionID),
+		}
+	}
+
+	statusCh := make(chan ExecutionStatus, 16)
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(statusCh)
+		defer close(errCh)
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// Check context cancellation
+			select {
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			default:
+			}
+
+			// SSE protocol: skip empty lines and comments
+			if line == "" || strings.HasPrefix(line, ":") {
+				continue
+			}
+
+			// Parse "data: {json}" lines
+			if !strings.HasPrefix(line, "data: ") && !strings.HasPrefix(line, "data:") {
+				continue
+			}
+
+			// Extract JSON payload
+			data := strings.TrimPrefix(line, "data: ")
+			data = strings.TrimPrefix(data, "data:")
+			data = strings.TrimSpace(data)
+
+			if data == "" {
+				continue
+			}
+
+			var status ExecutionStatus
+			if err := json.Unmarshal([]byte(data), &status); err != nil {
+				if c.config.Debug {
+					log.Printf("[AxonFlow] SSE: failed to parse status event: %v", err)
+				}
+				continue
+			}
+
+			// Send status update
+			select {
+			case statusCh <- status:
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			}
+
+			if c.config.Debug {
+				log.Printf("[AxonFlow] SSE: execution %s status=%s progress=%.1f%%",
+					executionID, status.Status, status.ProgressPercent)
+			}
+
+			// Stop reading if terminal status reached
+			if status.Status.IsTerminal() {
+				return
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			// Context cancellation produces an error from the scanner — only
+			// report it if the context is still active
+			select {
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+			default:
+				errCh <- fmt.Errorf("SSE stream read error: %w", err)
+			}
+		}
+	}()
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] SSE: connected to execution stream for %s", executionID)
+	}
+
+	return statusCh, errCh, nil
 }
