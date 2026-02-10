@@ -438,7 +438,7 @@ var ErrVersionConflict = fmt.Errorf("version conflict: plan was modified by anot
 // PlanExecutionResponse represents the result of plan execution
 type PlanExecutionResponse struct {
 	PlanID                 string       `json:"plan_id"`
-	Status                 string       `json:"status"` // "running", "completed", "failed", "partial", "awaiting_approval"
+	Status                 string       `json:"status"`                // "running", "completed", "failed", "partial", "awaiting_approval"
 	WorkflowID             string       `json:"workflow_id,omitempty"` // WCP workflow ID for confirm/step mode
 	Result                 string       `json:"result,omitempty"`
 	StepResults            []StepResult `json:"step_results,omitempty"`
