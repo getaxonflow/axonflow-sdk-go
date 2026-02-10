@@ -660,8 +660,8 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 	var resp *ClientResponse
 	var err error
 
-	// Execute with retry if enabled
-	if c.config.Retry.Enabled {
+	// Execute with retry if enabled (skip retry for mutations — they are not idempotent)
+	if c.config.Retry.Enabled && !isMutation {
 		resp, err = c.executeWithRetry(req)
 	} else {
 		resp, err = c.executeRequest(req)
