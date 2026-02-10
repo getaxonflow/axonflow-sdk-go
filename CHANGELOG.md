@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ExecutePlan` status hardcoded**: `ExecutePlan()` always returned `Status: "completed"` regardless of actual server response. Now reads status from response (`data.status` > `metadata.status` > default), correctly surfacing `"awaiting_approval"` for WCP confirm mode.
 - **Unified execution API URLs** (EPIC #1074): `GetExecutionStatus()` and `ListUnifiedExecutions()` now use correct `/api/v1/unified/executions` path (was incorrectly pointing to `/api/v1/executions` which is the Execution Replay API)
 - **`RollbackPlan` request body**: Removed redundant version from request body (version is already in URL path)
 - **`CancelPlan` empty reason**: No longer sends `"reason": ""` when reason is empty
