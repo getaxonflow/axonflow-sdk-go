@@ -38,6 +38,22 @@ If you're new to AxonFlow, this short video shows how the control plane and SDKs
 go get github.com/getaxonflow/axonflow-sdk-go/v3
 ```
 
+## Evaluation Tier (Free License)
+
+Need more capacity than Community without moving to Enterprise? Evaluation uses the same core features with higher limits:
+
+| Limit | Community | Evaluation (Free) | Enterprise |
+|-------|-----------|-------------------|------------|
+| Tenant policies | 20 | 50 | Unlimited |
+| Org-wide policies | 0 | 5 | Unlimited |
+| Audit retention | 3 days | 14 days | 3650 days |
+| Concurrent executions | 5 | 25 | Unlimited |
+| Execution history | 50 | 500 | Unlimited |
+
+Also includes higher limits for LLM providers and MAP planning.
+
+[Get a free Evaluation license](https://getaxonflow.com/evaluation-license?utm_source=readme_sdk_go_eval) · [Full tier matrix](https://docs.getaxonflow.com/docs/features/community-vs-enterprise)
+
 ## Quick Start
 
 ### Basic Usage (OAuth2 Client Credentials)
