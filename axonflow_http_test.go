@@ -1008,8 +1008,12 @@ func TestExecutePlanFailed(t *testing.T) {
 	})
 
 	result, err := client.ExecutePlan("plan-failed")
-	if err != nil {
-		t.Fatalf("ExecutePlan failed: %v", err)
+	if err == nil {
+		t.Fatalf("Expected error for failed plan, got nil")
+	}
+
+	if result == nil {
+		t.Fatalf("Expected result even on failure, got nil")
 	}
 
 	if result.Status != "failed" {

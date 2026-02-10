@@ -408,10 +408,15 @@ type PlanVersionsResponse struct {
 
 // ResumePlanResponse represents the response from resuming a paused plan.
 type ResumePlanResponse struct {
-	PlanID   string `json:"plan_id"`
-	Status   string `json:"status"`
-	Approved bool   `json:"approved"`
-	Message  string `json:"message"`
+	PlanID       string      `json:"plan_id"`
+	WorkflowID   string      `json:"workflow_id,omitempty"`
+	Status       string      `json:"status"`
+	Approved     bool        `json:"approved,omitempty"`
+	Message      string      `json:"message,omitempty"`
+	StepResult   interface{} `json:"step_result,omitempty"`
+	NextStep     int         `json:"next_step,omitempty"`
+	NextStepName string      `json:"next_step_name,omitempty"`
+	TotalSteps   int         `json:"total_steps,omitempty"`
 }
 
 // RollbackPlanRequest represents a request to rollback a plan to a previous version.
@@ -433,7 +438,8 @@ var ErrVersionConflict = fmt.Errorf("version conflict: plan was modified by anot
 // PlanExecutionResponse represents the result of plan execution
 type PlanExecutionResponse struct {
 	PlanID                 string       `json:"plan_id"`
-	Status                 string       `json:"status"` // "running", "completed", "failed", "partial"
+	Status                 string       `json:"status"`                // "running", "completed", "failed", "partial", "awaiting_approval"
+	WorkflowID             string       `json:"workflow_id,omitempty"` // WCP workflow ID for confirm/step mode
 	Result                 string       `json:"result,omitempty"`
 	StepResults            []StepResult `json:"step_results,omitempty"`
 	Error                  string       `json:"error,omitempty"`
@@ -629,8 +635,12 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 	// Generate cache key
 	cacheKey := fmt.Sprintf("%s:%s:%s", requestType, query, userToken)
 
-	// Check cache if enabled
-	if c.cache != nil {
+	// Plan operations are mutations and must not be cached
+	isMutation := requestType == "execute-plan" || requestType == "generate-plan" ||
+		requestType == "cancel-plan" || requestType == "update-plan"
+
+	// Check cache if enabled (skip for mutations)
+	if c.cache != nil && !isMutation {
 		if cached, found := c.cache.get(cacheKey); found {
 			if c.config.Debug {
 				log.Printf("[AxonFlow] Cache hit for query: %s", query[:min(50, len(query))])
@@ -650,8 +660,8 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 	var resp *ClientResponse
 	var err error
 
-	// Execute with retry if enabled
-	if c.config.Retry.Enabled {
+	// Execute with retry if enabled (skip retry for mutations — they are not idempotent)
+	if c.config.Retry.Enabled && !isMutation {
 		resp, err = c.executeWithRetry(req)
 	} else {
 		resp, err = c.executeRequest(req)
@@ -674,8 +684,8 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 		return nil, err
 	}
 
-	// Cache successful responses
-	if c.cache != nil && resp.Success {
+	// Cache successful responses (skip mutations — plan operations)
+	if c.cache != nil && resp.Success && !isMutation {
 		c.cache.set(cacheKey, resp)
 	}
 
@@ -1310,6 +1320,30 @@ func (c *AxonFlowClient) ExecutePlan(planID string, userToken ...string) (*PlanE
 		Error:  resp.Error,
 	}
 
+	// Read status from response data if available (e.g., "awaiting_approval" for confirm mode)
+	if resp.Data != nil {
+		if dataMap, ok := resp.Data.(map[string]interface{}); ok {
+			if status, ok := dataMap["status"].(string); ok && status != "" {
+				execResp.Status = status
+			}
+			if wfID, ok := dataMap["workflow_id"].(string); ok {
+				execResp.WorkflowID = wfID
+			}
+			if cs, ok := dataMap["current_step"].(float64); ok {
+				execResp.CurrentStep = fmt.Sprintf("%.0f", cs)
+			}
+			if ts, ok := dataMap["total_steps"].(float64); ok {
+				execResp.TotalSteps = int(ts)
+			}
+		}
+	}
+	// Also check metadata for status
+	if execResp.Status == "completed" && resp.Metadata != nil {
+		if status, ok := resp.Metadata["status"].(string); ok && status != "" {
+			execResp.Status = status
+		}
+	}
+
 	if resp.Metadata != nil {
 		if duration, ok := resp.Metadata["duration"].(string); ok {
 			execResp.Duration = duration
@@ -1351,6 +1385,14 @@ func (c *AxonFlowClient) ExecutePlan(planID string, userToken ...string) (*PlanE
 
 	if !resp.Success {
 		execResp.Status = "failed"
+		if c.config.Debug {
+			log.Printf("[AxonFlow] Plan executed: %s - Status: %s", planID, execResp.Status)
+		}
+		errMsg := resp.Error
+		if errMsg == "" {
+			errMsg = "plan execution failed"
+		}
+		return execResp, fmt.Errorf("%s", errMsg)
 	}
 
 	if c.config.Debug {
