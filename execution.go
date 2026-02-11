@@ -451,7 +451,7 @@ func (c *AxonFlowClient) CancelExecution(executionID string, reason string) erro
 // channels that receive real-time ExecutionStatus updates.
 //
 // The method establishes a Server-Sent Events (SSE) connection to
-// GET /api/v1/executions/{executionID}/stream and parses incoming events
+// GET /api/v1/unified/executions/{executionID}/stream and parses incoming events
 // into ExecutionStatus objects.
 //
 // Returns:
@@ -487,7 +487,7 @@ func (c *AxonFlowClient) StreamExecutionStatus(ctx context.Context, executionID 
 		return nil, nil, fmt.Errorf("execution ID is required")
 	}
 
-	fullURL := fmt.Sprintf("%s/api/v1/executions/%s/stream", c.config.Endpoint, executionID)
+	fullURL := fmt.Sprintf("%s/api/v1/unified/executions/%s/stream", c.config.Endpoint, executionID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 	if err != nil {
