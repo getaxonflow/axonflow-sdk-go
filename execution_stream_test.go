@@ -70,7 +70,7 @@ func TestStreamExecutionStatus(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("Expected GET method, got %s", r.Method)
 		}
-		expectedPath := "/api/v1/executions/exec_stream_1/stream"
+		expectedPath := "/api/v1/unified/executions/exec_stream_1/stream"
 		if r.URL.Path != expectedPath {
 			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
