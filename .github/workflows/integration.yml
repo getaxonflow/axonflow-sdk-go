@@ -11,6 +11,9 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # Monday 6am UTC
 
+permissions:
+  contents: read
+
 jobs:
   # Contract tests run on all PRs and pushes - they don't need the stack
   contract-tests:

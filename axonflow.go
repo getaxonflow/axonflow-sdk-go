@@ -558,7 +558,8 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	// Configure TLS
 	tlsConfig := &tls.Config{}
 	if os.Getenv("NODE_TLS_REJECT_UNAUTHORIZED") == "0" {
-		tlsConfig.InsecureSkipVerify = true
+		log.Printf("[AxonFlow] WARNING: TLS certificate verification disabled via NODE_TLS_REJECT_UNAUTHORIZED=0. This should only be used in development.")
+		tlsConfig.InsecureSkipVerify = true // #nosec G402 -- opt-in via environment variable for development use only
 	}
 
 	transport := &http.Transport{
