@@ -495,6 +495,53 @@ func TestAbortWorkflowEmptyID(t *testing.T) {
 	}
 }
 
+// TestFailWorkflow tests failing a workflow
+func TestFailWorkflow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/workflows/wf_test123/fail" {
+			t.Errorf("Expected path /api/v1/workflows/wf_test123/fail, got %s", r.URL.Path)
+		}
+
+		var req FailWorkflowRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		if req.Reason != "Unrecoverable error in step 3" {
+			t.Errorf("Expected reason 'Unrecoverable error in step 3', got '%s'", req.Reason)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+	})
+
+	err := client.FailWorkflow("wf_test123", "Unrecoverable error in step 3")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestFailWorkflowEmptyID tests error when workflow ID is empty
+func TestFailWorkflowEmptyID(t *testing.T) {
+	client := NewClient(AxonFlowConfig{
+		Endpoint: "http://localhost",
+		ClientID: "test",
+	})
+
+	err := client.FailWorkflow("", "reason")
+	if err == nil {
+		t.Error("Expected error for empty workflow ID")
+	}
+}
+
 // TestResumeWorkflow tests resuming a workflow
 func TestResumeWorkflow(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
