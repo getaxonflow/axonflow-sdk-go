@@ -12,9 +12,9 @@
 >
 > No commitment required. We reply within 48 hours.
 
-> **AxonFlow Feedback Week (Feb 5–12, 2026)** — We're shipping 3 improvements from user feedback.
+> **Questions or feedback?**
 >
-> [Share feedback](https://github.com/getaxonflow/axonflow/discussions/239) or email [hello@getaxonflow.com](mailto:hello@getaxonflow.com) for private feedback.
+> Comment in [GitHub Discussions](https://github.com/getaxonflow/axonflow/discussions/239) or email [hello@getaxonflow.com](mailto:hello@getaxonflow.com) for private feedback.
 
 Enterprise-grade Go SDK for AxonFlow AI governance platform. Add invisible AI governance to your applications with production-ready features including retry logic, caching, fail-open strategy, and debug mode.
 
