@@ -5,6 +5,21 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-02-13
+
+### Added
+
+- **FailWorkflow** (#1187): Fail a workflow with optional reason
+  - `FailWorkflow(workflowID, reason string) error` — sends `POST /api/v1/workflows/{id}/fail`
+  - Follows same pattern as `AbortWorkflow()`
+- **HITL Queue API** (Enterprise): Human-in-the-loop approval queue management
+  - `ListHITLQueue(opts HITLQueueListOptions) (*HITLQueueListResponse, error)` — list pending approvals
+  - `GetHITLRequest(requestID string) (*HITLApprovalRequest, error)` — get approval details
+  - `ApproveHITLRequest(requestID string, review HITLReviewInput) error` — approve a request
+  - `RejectHITLRequest(requestID string, review HITLReviewInput) error` — reject a request
+  - `GetHITLStats() (*HITLStats, error)` — dashboard statistics
+  - New types: `HITLApprovalRequest`, `HITLQueueListOptions`, `HITLQueueListResponse`, `HITLReviewInput`, `HITLStats`
+
 ## [3.3.1] - 2026-02-12
 
 ### Fixed

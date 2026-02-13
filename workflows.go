@@ -278,6 +278,12 @@ type AbortWorkflowRequest struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// FailWorkflowRequest is the request to fail a workflow.
+type FailWorkflowRequest struct {
+	// Reason is the reason for failing the workflow
+	Reason string `json:"reason,omitempty"`
+}
+
 // MarkStepCompletedRequest is the request to mark a step as completed.
 type MarkStepCompletedRequest struct {
 	// Output is the output of the completed step
@@ -424,6 +430,31 @@ func (c *AxonFlowClient) AbortWorkflow(workflowID string, reason string) error {
 
 	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, nil); err != nil {
 		return fmt.Errorf("failed to abort workflow: %w", err)
+	}
+
+	return nil
+}
+
+// FailWorkflow fails a workflow with a reason.
+//
+// Call this when a workflow encounters an unrecoverable error and cannot continue.
+//
+// Example:
+//
+//	err := client.FailWorkflow("wf_123", "Step 3 encountered an unrecoverable error")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+func (c *AxonFlowClient) FailWorkflow(workflowID string, reason string) error {
+	if workflowID == "" {
+		return fmt.Errorf("workflow ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/fail", c.config.Endpoint, workflowID)
+	req := FailWorkflowRequest{Reason: reason}
+
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, nil); err != nil {
+		return fmt.Errorf("failed to fail workflow: %w", err)
 	}
 
 	return nil
