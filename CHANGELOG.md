@@ -10,14 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **FailWorkflow** (#1187): Fail a workflow with optional reason
-  - `FailWorkflow(workflowID, reason string) error` — sends `POST /api/v1/workflows/{id}/fail`
+  - `FailWorkflow(workflowID, reason string) error`: sends `POST /api/v1/workflows/{id}/fail`
   - Follows same pattern as `AbortWorkflow()`
 - **HITL Queue API** (Enterprise): Human-in-the-loop approval queue management
-  - `ListHITLQueue(opts HITLQueueListOptions) (*HITLQueueListResponse, error)` — list pending approvals
-  - `GetHITLRequest(requestID string) (*HITLApprovalRequest, error)` — get approval details
-  - `ApproveHITLRequest(requestID string, review HITLReviewInput) error` — approve a request
-  - `RejectHITLRequest(requestID string, review HITLReviewInput) error` — reject a request
-  - `GetHITLStats() (*HITLStats, error)` — dashboard statistics
+  - `ListHITLQueue(opts HITLQueueListOptions) (*HITLQueueListResponse, error)`: list pending approvals
+  - `GetHITLRequest(requestID string) (*HITLApprovalRequest, error)`: get approval details
+  - `ApproveHITLRequest(requestID string, review HITLReviewInput) error`: approve a request
+  - `RejectHITLRequest(requestID string, review HITLReviewInput) error`: reject a request
+  - `GetHITLStats() (*HITLStats, error)`: dashboard statistics
   - New types: `HITLApprovalRequest`, `HITLQueueListOptions`, `HITLQueueListResponse`, `HITLReviewInput`, `HITLStats`
 
 ## [3.3.1] - 2026-02-12
@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unified Execution Cancellation** (EPIC #1074): Cancel running executions across both MAP and WCP subsystems
   - `CancelExecution(executionID, reason)` - Cancel a unified execution via `POST /api/v1/unified/executions/{id}/cancel`
   - Propagates to MAP `CancelPlan()` or WCP `AbortWorkflow()` based on execution type
-  - Reason is optional — pass empty string to cancel without a reason
+  - Reason is optional: pass empty string to cancel without a reason
 
 ### Fixed
 
