@@ -43,7 +43,8 @@ type MediaAnalysisResult struct {
 	IsSensitiveDocument bool     `json:"is_sensitive_document"`
 	HasPII              bool     `json:"has_pii"`
 	PIITypes            []string `json:"pii_types,omitempty"`
-	ExtractedText       string   `json:"extracted_text,omitempty"`
+	HasExtractedText    bool     `json:"has_extracted_text"`
+	ExtractedTextLength int      `json:"extracted_text_length"`
 	EstimatedCostUSD    float64  `json:"estimated_cost_usd"`
 	Warnings            []string `json:"warnings,omitempty"`
 }

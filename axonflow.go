@@ -711,8 +711,11 @@ func (c *AxonFlowClient) ProxyLLMCallWithMedia(userToken, query, requestType str
 	isMutation := requestType == "execute-plan" || requestType == "generate-plan" ||
 		requestType == "cancel-plan" || requestType == "update-plan"
 
-	// Check cache if enabled (skip for mutations)
-	if c.cache != nil && !isMutation {
+	// Media requests must not be cached — binary content makes cache keys unreliable
+	hasMedia := len(media) > 0
+
+	// Check cache if enabled (skip for mutations and media requests)
+	if c.cache != nil && !isMutation && !hasMedia {
 		if cached, found := c.cache.get(cacheKey); found {
 			if c.config.Debug {
 				log.Printf("[AxonFlow] Cache hit for query: %s", query[:min(50, len(query))])
@@ -757,8 +760,8 @@ func (c *AxonFlowClient) ProxyLLMCallWithMedia(userToken, query, requestType str
 		return nil, err
 	}
 
-	// Cache successful responses (skip mutations — plan operations)
-	if c.cache != nil && resp.Success && !isMutation {
+	// Cache successful responses (skip mutations and media requests)
+	if c.cache != nil && resp.Success && !isMutation && !hasMedia {
 		c.cache.set(cacheKey, resp)
 	}
 
