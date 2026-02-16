@@ -16,7 +16,7 @@ package axonflow
 
 // MediaContent represents a media item (image) to include with a request.
 type MediaContent struct {
-	Source     string `json:"source"`               // "base64" or "url"
+	Source     string `json:"source"`                // "base64" or "url"
 	Base64Data string `json:"base64_data,omitempty"` // Base64-encoded image data
 	URL        string `json:"url,omitempty"`         // Image URL
 	MIMEType   string `json:"mime_type"`             // e.g., "image/jpeg"
@@ -25,8 +25,8 @@ type MediaContent struct {
 // MediaAnalysisResponse contains aggregated media analysis results.
 type MediaAnalysisResponse struct {
 	Results        []MediaAnalysisResult `json:"results"`
-	TotalCostUSD   float64              `json:"total_cost_usd"`
-	AnalysisTimeMs int64                `json:"analysis_time_ms"`
+	TotalCostUSD   float64               `json:"total_cost_usd"`
+	AnalysisTimeMs int64                 `json:"analysis_time_ms"`
 }
 
 // MediaAnalysisResult contains analysis results for a single media item.
