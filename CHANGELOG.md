@@ -5,6 +5,23 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-02-19
+
+### Added
+
+- **Media Governance Types**: `MediaContent`, `MediaAnalysisResult`, `MediaAnalysisResponse` for multimodal image governance
+- **`ProxyLLMCallWithMedia()`**: Send images (base64 or URL) alongside queries for governance analysis before LLM routing
+
+### Changed
+
+- **Response cache skipped for media requests**: Requests containing media bypass the response cache (binary content makes cache keys unreliable)
+
+### Breaking
+
+- `MediaAnalysisResult.ExtractedText` replaced by `HasExtractedText` (bool) and `ExtractedTextLength` (int). Raw extracted text is no longer exposed in API responses.
+
+---
+
 ## [3.4.0] - 2026-02-13
 
 ### Added
