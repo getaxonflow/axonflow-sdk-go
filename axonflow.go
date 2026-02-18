@@ -2115,6 +2115,52 @@ func min(a, b int) int {
 }
 
 // ============================================================================
+// Media Governance Methods
+// ============================================================================
+
+// GetMediaGovernanceConfig retrieves the current tenant's media governance configuration.
+func (c *AxonFlowClient) GetMediaGovernanceConfig() (*MediaGovernanceConfig, error) {
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Getting media governance config")
+	}
+
+	var config MediaGovernanceConfig
+	if err := c.policyRequest("GET", "/api/v1/media-governance/config", nil, &config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+// UpdateMediaGovernanceConfig updates the current tenant's media governance configuration.
+func (c *AxonFlowClient) UpdateMediaGovernanceConfig(req UpdateMediaGovernanceConfigRequest) (*MediaGovernanceConfig, error) {
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Updating media governance config")
+	}
+
+	var config MediaGovernanceConfig
+	if err := c.policyRequest("PUT", "/api/v1/media-governance/config", req, &config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+// GetMediaGovernanceStatus retrieves the media governance feature availability status.
+func (c *AxonFlowClient) GetMediaGovernanceStatus() (*MediaGovernanceStatus, error) {
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Getting media governance status")
+	}
+
+	var status MediaGovernanceStatus
+	if err := c.policyRequest("GET", "/api/v1/media-governance/status", nil, &status); err != nil {
+		return nil, err
+	}
+
+	return &status, nil
+}
+
+// ============================================================================
 // Portal Authentication Methods
 // ============================================================================
 

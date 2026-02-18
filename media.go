@@ -48,3 +48,26 @@ type MediaAnalysisResult struct {
 	EstimatedCostUSD    float64  `json:"estimated_cost_usd"`
 	Warnings            []string `json:"warnings,omitempty"`
 }
+
+// MediaGovernanceConfig represents per-tenant media governance configuration.
+type MediaGovernanceConfig struct {
+	TenantID         string   `json:"tenant_id"`
+	Enabled          bool     `json:"enabled"`
+	AllowedAnalyzers []string `json:"allowed_analyzers,omitempty"`
+	UpdatedAt        string   `json:"updated_at"`
+	UpdatedBy        string   `json:"updated_by,omitempty"`
+}
+
+// MediaGovernanceStatus represents the feature availability status.
+type MediaGovernanceStatus struct {
+	Available        bool   `json:"available"`
+	EnabledByDefault bool   `json:"enabled_by_default"`
+	PerTenantControl bool   `json:"per_tenant_control"`
+	Tier             string `json:"tier"`
+}
+
+// UpdateMediaGovernanceConfigRequest is the request body for updating config.
+type UpdateMediaGovernanceConfigRequest struct {
+	Enabled          *bool    `json:"enabled,omitempty"`
+	AllowedAnalyzers []string `json:"allowed_analyzers,omitempty"`
+}
