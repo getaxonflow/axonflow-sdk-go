@@ -2188,7 +2188,7 @@ func TestProxyLLMCallWithMediaSkipsCache(t *testing.T) {
 	media := []MediaContent{
 		{
 			Source:     "base64",
-			MIMEType:  "image/png",
+			MIMEType:   "image/png",
 			Base64Data: base64.StdEncoding.EncodeToString([]byte("test-image")),
 		},
 	}
