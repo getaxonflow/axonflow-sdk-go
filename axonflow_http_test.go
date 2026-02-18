@@ -2158,3 +2158,95 @@ func TestGeneratePlanWithOptionsError(t *testing.T) {
 		t.Error("Expected error for failed plan generation")
 	}
 }
+
+// --- Media cache tests ---
+
+func TestProxyLLMCallWithMediaSkipsCache(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/request" {
+			callCount++
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"result":  "Media result",
+			})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+		Cache: CacheConfig{
+			Enabled: true,
+			TTL:     5 * time.Minute,
+		},
+	})
+
+	media := []MediaContent{
+		{
+			Source:     "base64",
+			MIMEType:   "image/png",
+			Base64Data: base64.StdEncoding.EncodeToString([]byte("test-image")),
+		},
+	}
+
+	// First call with media
+	_, err := client.ProxyLLMCallWithMedia("user-123", "describe image", "chat", media, nil)
+	if err != nil {
+		t.Fatalf("First call failed: %v", err)
+	}
+
+	// Second call with same parameters + media — should NOT use cache
+	_, err = client.ProxyLLMCallWithMedia("user-123", "describe image", "chat", media, nil)
+	if err != nil {
+		t.Fatalf("Second call failed: %v", err)
+	}
+
+	// Server should have been called twice (no caching for media)
+	if callCount != 2 {
+		t.Errorf("Expected 2 server calls (no cache for media), got %d", callCount)
+	}
+}
+
+func TestProxyLLMCallWithoutMediaStillUsesCache(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/request" {
+			callCount++
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"result":  "Cached result",
+			})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+		Cache: CacheConfig{
+			Enabled: true,
+			TTL:     5 * time.Minute,
+		},
+	})
+
+	// Two calls without media — second should use cache
+	_, err := client.ProxyLLMCallWithMedia("user-123", "hello", "chat", nil, nil)
+	if err != nil {
+		t.Fatalf("First call failed: %v", err)
+	}
+
+	_, err = client.ProxyLLMCallWithMedia("user-123", "hello", "chat", nil, nil)
+	if err != nil {
+		t.Fatalf("Second call failed: %v", err)
+	}
+
+	if callCount != 1 {
+		t.Errorf("Expected 1 server call (cached), got %d", callCount)
+	}
+}

@@ -80,21 +80,23 @@ type ClientRequest struct {
 	ClientID    string                 `json:"client_id"`
 	RequestType string                 `json:"request_type"` // "multi-agent-plan", "sql", "chat", "mcp-query"
 	Context     map[string]interface{} `json:"context"`
+	Media       []MediaContent         `json:"media,omitempty"` // Optional media (images) for multimodal requests
 }
 
 // ClientResponse represents response from AxonFlow Agent
 type ClientResponse struct {
-	Success     bool                   `json:"success"`
-	Data        interface{}            `json:"data,omitempty"`
-	Result      string                 `json:"result,omitempty"`     // For multi-agent planning
-	PlanID      string                 `json:"plan_id,omitempty"`    // For multi-agent planning
-	RequestID   string                 `json:"request_id,omitempty"` // Unique request identifier
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	Error       string                 `json:"error,omitempty"`
-	Blocked     bool                   `json:"blocked"`
-	BlockReason string                 `json:"block_reason,omitempty"`
-	PolicyInfo  *PolicyEvaluationInfo  `json:"policy_info,omitempty"`
-	BudgetInfo  *BudgetInfo            `json:"budget_info,omitempty"` // Budget enforcement status (Issue #1082)
+	Success       bool                   `json:"success"`
+	Data          interface{}            `json:"data,omitempty"`
+	Result        string                 `json:"result,omitempty"`     // For multi-agent planning
+	PlanID        string                 `json:"plan_id,omitempty"`    // For multi-agent planning
+	RequestID     string                 `json:"request_id,omitempty"` // Unique request identifier
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	Error         string                 `json:"error,omitempty"`
+	Blocked       bool                   `json:"blocked"`
+	BlockReason   string                 `json:"block_reason,omitempty"`
+	PolicyInfo    *PolicyEvaluationInfo  `json:"policy_info,omitempty"`
+	BudgetInfo    *BudgetInfo            `json:"budget_info,omitempty"`    // Budget enforcement status (Issue #1082)
+	MediaAnalysis *MediaAnalysisResponse `json:"media_analysis,omitempty"` // Media governance results
 }
 
 // BudgetInfo provides budget status information (Issue #1082)
@@ -687,6 +689,79 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 
 	// Cache successful responses (skip mutations — plan operations)
 	if c.cache != nil && resp.Success && !isMutation {
+		c.cache.set(cacheKey, resp)
+	}
+
+	return resp, nil
+}
+
+// ProxyLLMCallWithMedia sends a request with media content (images) to AxonFlow for governance + routing.
+// Media items are analyzed for PII, content safety, biometric data, and document classification
+// before being forwarded to the LLM provider.
+func (c *AxonFlowClient) ProxyLLMCallWithMedia(userToken, query, requestType string, media []MediaContent, context map[string]interface{}) (*ClientResponse, error) {
+	// Default to "anonymous" if userToken is empty (community mode)
+	if userToken == "" {
+		userToken = "anonymous"
+	}
+
+	// Generate cache key
+	cacheKey := fmt.Sprintf("%s:%s:%s", requestType, query, userToken)
+
+	// Plan operations are mutations and must not be cached
+	isMutation := requestType == "execute-plan" || requestType == "generate-plan" ||
+		requestType == "cancel-plan" || requestType == "update-plan"
+
+	// Media requests must not be cached — binary content makes cache keys unreliable
+	hasMedia := len(media) > 0
+
+	// Check cache if enabled (skip for mutations and media requests)
+	if c.cache != nil && !isMutation && !hasMedia {
+		if cached, found := c.cache.get(cacheKey); found {
+			if c.config.Debug {
+				log.Printf("[AxonFlow] Cache hit for query: %s", query[:min(50, len(query))])
+			}
+			return cached.(*ClientResponse), nil
+		}
+	}
+
+	req := ClientRequest{
+		Query:       query,
+		UserToken:   userToken,
+		ClientID:    c.config.ClientID,
+		RequestType: requestType,
+		Context:     context,
+		Media:       media,
+	}
+
+	var resp *ClientResponse
+	var err error
+
+	// Execute with retry if enabled (skip retry for mutations — they are not idempotent)
+	if c.config.Retry.Enabled && !isMutation {
+		resp, err = c.executeWithRetry(req)
+	} else {
+		resp, err = c.executeRequest(req)
+	}
+
+	// Handle fail-open in production mode
+	if err != nil && c.config.Mode == "production" && c.isAxonFlowError(err) {
+		if c.config.Debug {
+			log.Printf("[AxonFlow] AxonFlow unavailable, failing open: %v", err)
+		}
+		// Return a success response indicating the request was allowed through
+		return &ClientResponse{
+			Success: true,
+			Data:    nil,
+			Error:   fmt.Sprintf("AxonFlow unavailable (fail-open): %v", err),
+		}, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache successful responses (skip mutations and media requests)
+	if c.cache != nil && resp.Success && !isMutation && !hasMedia {
 		c.cache.set(cacheKey, resp)
 	}
 
