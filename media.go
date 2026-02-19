@@ -68,6 +68,6 @@ type MediaGovernanceStatus struct {
 
 // UpdateMediaGovernanceConfigRequest is the request body for updating config.
 type UpdateMediaGovernanceConfigRequest struct {
-	Enabled          *bool    `json:"enabled,omitempty"`
-	AllowedAnalyzers []string `json:"allowed_analyzers,omitempty"`
+	Enabled          *bool     `json:"enabled,omitempty"`
+	AllowedAnalyzers *[]string `json:"allowed_analyzers,omitempty"`
 }
