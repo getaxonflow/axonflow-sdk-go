@@ -288,6 +288,15 @@ type FailWorkflowRequest struct {
 type MarkStepCompletedRequest struct {
 	// Output is the output of the completed step
 	Output map[string]interface{} `json:"output,omitempty"`
+
+	// TokensIn is the number of input tokens consumed by this step (optional)
+	TokensIn *int `json:"tokens_in,omitempty"`
+
+	// TokensOut is the number of output tokens produced by this step (optional)
+	TokensOut *int `json:"tokens_out,omitempty"`
+
+	// CostUSD is the estimated cost in USD for this step (optional)
+	CostUSD *float64 `json:"cost_usd,omitempty"`
 }
 
 // CreateWorkflow creates a new workflow for governance tracking.

@@ -39,6 +39,12 @@ const (
 	// Sensitive data category
 	CategorySensitiveData PolicyCategory = "sensitive-data"
 
+	// Media governance categories
+	CategoryMediaSafety    PolicyCategory = "media-safety"
+	CategoryMediaBiometric PolicyCategory = "media-biometric"
+	CategoryMediaDocument  PolicyCategory = "media-document"
+	CategoryMediaPII       PolicyCategory = "media-pii"
+
 	// Dynamic policy categories
 	CategoryDynamicRisk       PolicyCategory = "dynamic-risk"
 	CategoryDynamicCompliance PolicyCategory = "dynamic-compliance"
