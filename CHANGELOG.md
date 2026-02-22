@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Media governance configuration methods: `GetMediaGovernanceConfig()`, `UpdateMediaGovernanceConfig()`, `GetMediaGovernanceStatus()`
 - Media governance types: `MediaGovernanceConfig`, `MediaGovernanceStatus`
 - Media policy category constants: `CategoryMediaSafety`, `CategoryMediaBiometric`, `CategoryMediaPII`, `CategoryMediaDocument`
+- StepComplete now accepts post-execution metrics (tokens_in, tokens_out, cost_usd)
 
 ---
 
