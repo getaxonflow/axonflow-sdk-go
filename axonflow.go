@@ -1234,6 +1234,65 @@ func (c *AxonFlowClient) MCPExecute(ctx context.Context, req MCPExecuteRequest) 
 	return &result, nil
 }
 
+// MCPCheckInputRequest represents a request to validate input against MCP policies.
+type MCPCheckInputRequest struct {
+	ConnectorType string                 `json:"connector_type"`
+	Statement     string                 `json:"statement"`
+	Parameters    map[string]interface{} `json:"parameters,omitempty"`
+	Operation     string                 `json:"operation,omitempty"`
+}
+
+// MCPCheckInputResponse represents the result of input policy evaluation.
+type MCPCheckInputResponse struct {
+	Allowed           bool       `json:"allowed"`
+	BlockReason       string     `json:"block_reason,omitempty"`
+	PoliciesEvaluated int        `json:"policies_evaluated"`
+	PolicyInfo        *PolicyInfo `json:"policy_info,omitempty"`
+}
+
+// MCPCheckOutputRequest represents a request to validate output against MCP policies.
+type MCPCheckOutputRequest struct {
+	ConnectorType string                   `json:"connector_type"`
+	ResponseData  []map[string]interface{} `json:"response_data,omitempty"`
+	Message       string                   `json:"message,omitempty"`
+	Metadata      map[string]interface{}   `json:"metadata,omitempty"`
+	RowCount      int                      `json:"row_count,omitempty"`
+}
+
+// MCPCheckOutputResponse represents the result of output policy evaluation.
+type MCPCheckOutputResponse struct {
+	Allowed           bool                   `json:"allowed"`
+	BlockReason       string                 `json:"block_reason,omitempty"`
+	RedactedData      interface{}            `json:"redacted_data,omitempty"`
+	PoliciesEvaluated int                    `json:"policies_evaluated"`
+	ExfiltrationInfo  *ExfiltrationCheckInfo `json:"exfiltration_info,omitempty"`
+	PolicyInfo        *PolicyInfo            `json:"policy_info,omitempty"`
+}
+
+// MCPCheckInput validates an MCP request against configured policies without executing it.
+// Use this when an external orchestrator (e.g., LangGraph, CrewAI) manages MCP execution
+// but needs AxonFlow policy enforcement as a pre-execution gate.
+func (c *AxonFlowClient) MCPCheckInput(ctx context.Context, req MCPCheckInputRequest) (*MCPCheckInputResponse, error) {
+	url := c.config.Endpoint + "/api/v1/mcp/check-input"
+	var result MCPCheckInputResponse
+	if err := c.makeJSONRequest(ctx, "POST", url, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// MCPCheckOutput validates MCP response data against configured policies without executing a query.
+// Use this when an external orchestrator manages MCP execution but needs AxonFlow policy
+// enforcement as a post-execution gate (PII redaction, exfiltration limits).
+func (c *AxonFlowClient) MCPCheckOutput(ctx context.Context, req MCPCheckOutputRequest) (*MCPCheckOutputResponse, error) {
+	url := c.config.Endpoint + "/api/v1/mcp/check-output"
+	var result MCPCheckOutputResponse
+	if err := c.makeJSONRequest(ctx, "POST", url, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // GeneratePlan creates a multi-agent execution plan from a natural language query.
 // The userToken parameter is optional; if not provided, it defaults to the client ID.
 // Usage: GeneratePlan(query, domain) or GeneratePlan(query, domain, userToken)
