@@ -1244,9 +1244,9 @@ type MCPCheckInputRequest struct {
 
 // MCPCheckInputResponse represents the result of input policy evaluation.
 type MCPCheckInputResponse struct {
-	Allowed           bool       `json:"allowed"`
-	BlockReason       string     `json:"block_reason,omitempty"`
-	PoliciesEvaluated int        `json:"policies_evaluated"`
+	Allowed           bool        `json:"allowed"`
+	BlockReason       string      `json:"block_reason,omitempty"`
+	PoliciesEvaluated int         `json:"policies_evaluated"`
 	PolicyInfo        *PolicyInfo `json:"policy_info,omitempty"`
 }
 
