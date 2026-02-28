@@ -1234,6 +1234,67 @@ func (c *AxonFlowClient) MCPExecute(ctx context.Context, req MCPExecuteRequest) 
 	return &result, nil
 }
 
+// MCPCheckInputRequest represents a request to validate input against MCP policies.
+type MCPCheckInputRequest struct {
+	ConnectorType string                 `json:"connector_type"`
+	Statement     string                 `json:"statement"`
+	Parameters    map[string]interface{} `json:"parameters,omitempty"`
+	Operation     string                 `json:"operation,omitempty"`
+}
+
+// MCPCheckInputResponse represents the result of input policy evaluation.
+type MCPCheckInputResponse struct {
+	Allowed           bool        `json:"allowed"`
+	BlockReason       string      `json:"block_reason,omitempty"`
+	PoliciesEvaluated int         `json:"policies_evaluated"`
+	PolicyInfo        *PolicyInfo `json:"policy_info,omitempty"`
+}
+
+// MCPCheckOutputRequest represents a request to validate output against MCP policies.
+type MCPCheckOutputRequest struct {
+	ConnectorType string                   `json:"connector_type"`
+	ResponseData  []map[string]interface{} `json:"response_data,omitempty"`
+	Message       string                   `json:"message,omitempty"`
+	Metadata      map[string]interface{}   `json:"metadata,omitempty"`
+	RowCount      int                      `json:"row_count,omitempty"`
+}
+
+// MCPCheckOutputResponse represents the result of output policy evaluation.
+type MCPCheckOutputResponse struct {
+	Allowed           bool                   `json:"allowed"`
+	BlockReason       string                 `json:"block_reason,omitempty"`
+	RedactedData      interface{}            `json:"redacted_data,omitempty"`
+	PoliciesEvaluated int                    `json:"policies_evaluated"`
+	ExfiltrationInfo  *ExfiltrationCheckInfo `json:"exfiltration_info,omitempty"`
+	PolicyInfo        *PolicyInfo            `json:"policy_info,omitempty"`
+}
+
+// MCPCheckInput validates an MCP request against configured policies without executing it.
+// Use this when an external orchestrator (e.g., LangGraph, CrewAI) manages MCP execution
+// but needs AxonFlow policy enforcement as a pre-execution gate.
+// Note: HTTP 403 is a valid policy-blocked response, not an error.
+func (c *AxonFlowClient) MCPCheckInput(ctx context.Context, req MCPCheckInputRequest) (*MCPCheckInputResponse, error) {
+	url := c.config.Endpoint + "/api/v1/mcp/check-input"
+	var result MCPCheckInputResponse
+	if err := c.makePolicyCheckRequest(ctx, url, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// MCPCheckOutput validates MCP response data against configured policies without executing a query.
+// Use this when an external orchestrator manages MCP execution but needs AxonFlow policy
+// enforcement as a post-execution gate (PII redaction, exfiltration limits).
+// Note: HTTP 403 is a valid policy-blocked response, not an error.
+func (c *AxonFlowClient) MCPCheckOutput(ctx context.Context, req MCPCheckOutputRequest) (*MCPCheckOutputResponse, error) {
+	url := c.config.Endpoint + "/api/v1/mcp/check-output"
+	var result MCPCheckOutputResponse
+	if err := c.makePolicyCheckRequest(ctx, url, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // GeneratePlan creates a multi-agent execution plan from a natural language query.
 // The userToken parameter is optional; if not provided, it defaults to the client ID.
 // Usage: GeneratePlan(query, domain) or GeneratePlan(query, domain, userToken)
@@ -2282,6 +2343,52 @@ func (c *AxonFlowClient) LogoutFromPortal() error {
 // IsLoggedIn returns true if the client has an active portal session.
 func (c *AxonFlowClient) IsLoggedIn() bool {
 	return c.sessionCookie != ""
+}
+
+// makePolicyCheckRequest performs a POST request where HTTP 403 is a valid policy-blocked
+// response (not an error). The response body is deserialized into result for both 2xx and 403.
+func (c *AxonFlowClient) makePolicyCheckRequest(ctx context.Context, fullURL string, body interface{}, result interface{}) error {
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	c.addAuthHeaders(req)
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Policy check request: POST %s", fullURL)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// 403 is a valid policy-blocked response — deserialize normally
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusForbidden {
+		return &httpError{
+			statusCode: resp.StatusCode,
+			message:    string(respBody),
+		}
+	}
+
+	if err := json.Unmarshal(respBody, result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return nil
 }
 
 // makeJSONRequest is a generic helper for making JSON HTTP requests
