@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SDK Version Constant**: `Version` constant in `version.go` for programmatic SDK version access
 - **User-Agent Header**: `axonflow-sdk-go/{version}` sent on all HTTP requests via `userAgentRoundTripper`
 - **Version Compatibility Warning**: Logged when SDK version is below the platform's `min_sdk_version`
+- `trace_id` field on `CreateWorkflowRequest`, `CreateWorkflowResponse`, `WorkflowStatusResponse`, and `ListWorkflowsOptions` for distributed tracing correlation
+- `ToolContext` type for per-tool governance within workflow steps
+- `tool_context` field on `StepGateRequest` for tool-level policy enforcement
 - New types: `PlatformCapability`, `SDKCompatibility`
 
 ---

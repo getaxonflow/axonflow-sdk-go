@@ -1009,6 +1009,9 @@ type SDKCompatibility struct {
 
 // HasCapability checks if the platform supports a named capability.
 func (h *HealthResponse) HasCapability(name string) bool {
+	if h == nil {
+		return false
+	}
 	for _, cap := range h.Capabilities {
 		if cap.Name == name {
 			return true
@@ -1041,12 +1044,12 @@ func (c *AxonFlowClient) HealthCheckDetailed() (*HealthResponse, error) {
 	}
 
 	if c.config.Debug {
-		log.Printf("[AxonFlow SDK] Platform version: %s, SDK version: %s", health.Version, Version)
+		log.Printf("[AxonFlow] Platform version: %s, SDK version: %s", health.Version, Version)
 	}
 
 	if health.SDKCompat != nil && health.SDKCompat.MinSDKVersion != "" {
 		if compareSemver(Version, health.SDKCompat.MinSDKVersion) < 0 {
-			log.Printf("[AxonFlow SDK] WARNING: SDK version %s is below minimum supported version %s. Please upgrade.", Version, health.SDKCompat.MinSDKVersion)
+			log.Printf("[AxonFlow] WARNING: SDK version %s is below minimum supported version %s. Please upgrade.", Version, health.SDKCompat.MinSDKVersion)
 		}
 	}
 
@@ -1056,6 +1059,8 @@ func (c *AxonFlowClient) HealthCheckDetailed() (*HealthResponse, error) {
 // compareSemver compares two semantic version strings (e.g., "3.8.0" vs "3.10.0").
 // Returns -1 if a < b, 0 if a == b, 1 if a > b.
 // Each segment is parsed as an integer; unparseable segments default to 0.
+// Only supports MAJOR.MINOR.PATCH numeric versions. Pre-release suffixes
+// (e.g., "3.8.0-beta.1") are stripped before comparison.
 func compareSemver(a, b string) int {
 	aParts := strings.Split(a, ".")
 	bParts := strings.Split(b, ".")
@@ -1063,10 +1068,12 @@ func compareSemver(a, b string) int {
 		aVal := 0
 		bVal := 0
 		if i < len(aParts) {
-			aVal, _ = strconv.Atoi(aParts[i])
+			seg := strings.SplitN(aParts[i], "-", 2)[0]
+			aVal, _ = strconv.Atoi(seg)
 		}
 		if i < len(bParts) {
-			bVal, _ = strconv.Atoi(bParts[i])
+			seg := strings.SplitN(bParts[i], "-", 2)[0]
+			bVal, _ = strconv.Atoi(seg)
 		}
 		if aVal < bVal {
 			return -1
