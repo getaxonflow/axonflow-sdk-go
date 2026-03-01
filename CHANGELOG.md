@@ -5,6 +5,19 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] - TBD
+
+### Added
+
+- **Version Discovery**: `HealthCheckDetailed()` method returning `HealthResponse` with platform version, capabilities list, and SDK compatibility info
+- **Capability Check**: `HasCapability(name)` method on `HealthResponse` to check if the platform supports a specific feature
+- **SDK Version Constant**: `Version` constant in `version.go` for programmatic SDK version access
+- **User-Agent Header**: `axonflow-sdk-go/{version}` sent on all HTTP requests via `userAgentRoundTripper`
+- **Version Compatibility Warning**: Logged when SDK version is below the platform's `min_sdk_version`
+- New types: `PlatformCapability`, `SDKCompatibility`
+
+---
+
 ## [3.7.0] - 2026-02-28
 
 ### Added
