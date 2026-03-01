@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1044,12 +1045,37 @@ func (c *AxonFlowClient) HealthCheckDetailed() (*HealthResponse, error) {
 	}
 
 	if health.SDKCompat != nil && health.SDKCompat.MinSDKVersion != "" {
-		if Version < health.SDKCompat.MinSDKVersion {
+		if compareSemver(Version, health.SDKCompat.MinSDKVersion) < 0 {
 			log.Printf("[AxonFlow SDK] WARNING: SDK version %s is below minimum supported version %s. Please upgrade.", Version, health.SDKCompat.MinSDKVersion)
 		}
 	}
 
 	return &health, nil
+}
+
+// compareSemver compares two semantic version strings (e.g., "3.8.0" vs "3.10.0").
+// Returns -1 if a < b, 0 if a == b, 1 if a > b.
+// Each segment is parsed as an integer; unparseable segments default to 0.
+func compareSemver(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	for i := 0; i < 3; i++ {
+		aVal := 0
+		bVal := 0
+		if i < len(aParts) {
+			aVal, _ = strconv.Atoi(aParts[i])
+		}
+		if i < len(bParts) {
+			bVal, _ = strconv.Atoi(bParts[i])
+		}
+		if aVal < bVal {
+			return -1
+		}
+		if aVal > bVal {
+			return 1
+		}
+	}
+	return 0
 }
 
 // getMetadataKeys returns the keys from a metadata map for debugging
