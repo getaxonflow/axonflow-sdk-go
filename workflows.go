@@ -90,6 +90,13 @@ const (
 	StepTypeHumanTask     StepType = "human_task"
 )
 
+// ToolContext provides tool-level context for per-tool governance within tool_call steps.
+type ToolContext struct {
+	ToolName  string                 `json:"tool_name"`
+	ToolType  string                 `json:"tool_type,omitempty"`
+	ToolInput map[string]interface{} `json:"tool_input,omitempty"`
+}
+
 // CreateWorkflowRequest is the request to create a new workflow.
 type CreateWorkflowRequest struct {
 	// WorkflowName is the human-readable name for the workflow (required)
@@ -103,6 +110,9 @@ type CreateWorkflowRequest struct {
 
 	// Metadata contains additional key-value metadata for the workflow (optional)
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+
+	// TraceID is an optional trace ID for correlating workflows with external tracing systems
+	TraceID string `json:"trace_id,omitempty"`
 }
 
 // CreateWorkflowResponse is the response from creating a workflow.
@@ -121,6 +131,9 @@ type CreateWorkflowResponse struct {
 
 	// CreatedAt is when the workflow was created
 	CreatedAt time.Time `json:"created_at"`
+
+	// TraceID is the trace ID for correlating with external tracing systems
+	TraceID string `json:"trace_id,omitempty"`
 }
 
 // StepGateRequest is the request to check if a step is allowed to proceed.
@@ -139,6 +152,9 @@ type StepGateRequest struct {
 
 	// Provider is the LLM provider, if applicable (optional)
 	Provider string `json:"provider,omitempty"`
+
+	// ToolContext provides tool-level context for per-tool governance within tool_call steps (optional)
+	ToolContext *ToolContext `json:"tool_context,omitempty"`
 }
 
 // StepGateResponse is the response from a step gate check.
@@ -239,6 +255,9 @@ type WorkflowStatusResponse struct {
 	// CompletedAt is when the workflow completed (if completed)
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 
+	// TraceID is the trace ID for correlating with external tracing systems
+	TraceID string `json:"trace_id,omitempty"`
+
 	// Steps contains the list of steps in the workflow
 	Steps []WorkflowStepInfo `json:"steps,omitempty"`
 }
@@ -261,6 +280,9 @@ type ListWorkflowsOptions struct {
 
 	// Offset is the offset for pagination
 	Offset int
+
+	// TraceID filters by trace ID
+	TraceID string
 }
 
 // ListWorkflowsResponse is the response from listing workflows.
@@ -558,6 +580,9 @@ func (c *AxonFlowClient) ListWorkflows(opts *ListWorkflowsOptions) (*ListWorkflo
 		}
 		if opts.Offset > 0 {
 			params.Set("offset", strconv.Itoa(opts.Offset))
+		}
+		if opts.TraceID != "" {
+			params.Set("trace_id", opts.TraceID)
 		}
 	}
 
