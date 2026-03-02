@@ -22,14 +22,14 @@ import (
 
 // AxonFlowConfig represents configuration for the AxonFlow client
 type AxonFlowConfig struct {
-	Endpoint     string        // Required: AxonFlow endpoint URL (Agent proxies all routes since ADR-026)
-	ClientID     string        // Required for enterprise features: OAuth2 client ID
-	ClientSecret string        // Required for enterprise features: OAuth2 client secret
-	Mode         string        // "production" | "sandbox" (default: "production")
-	Debug        bool          // Enable debug logging (default: false)
-	Timeout      time.Duration // Request timeout (default: 60s)
-	MapTimeout   time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
-	Retry        RetryConfig   // Retry configuration
+	Endpoint         string        // Required: AxonFlow endpoint URL (Agent proxies all routes since ADR-026)
+	ClientID         string        // Required for enterprise features: OAuth2 client ID
+	ClientSecret     string        // Required for enterprise features: OAuth2 client secret
+	Mode             string        // "production" | "sandbox" (default: "production")
+	Debug            bool          // Enable debug logging (default: false)
+	Timeout          time.Duration // Request timeout (default: 60s)
+	MapTimeout       time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
+	Retry            RetryConfig   // Retry configuration
 	Cache            CacheConfig   // Cache configuration
 	TelemetryEnabled *bool         // Override telemetry default: nil=auto, true=on, false=off
 }
