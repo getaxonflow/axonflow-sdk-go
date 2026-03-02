@@ -30,7 +30,8 @@ type AxonFlowConfig struct {
 	Timeout      time.Duration // Request timeout (default: 60s)
 	MapTimeout   time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
 	Retry        RetryConfig   // Retry configuration
-	Cache        CacheConfig   // Cache configuration
+	Cache            CacheConfig   // Cache configuration
+	TelemetryEnabled *bool         // Override telemetry default: nil=auto, true=on, false=off
 }
 
 // RetryConfig configures retry behavior
@@ -593,6 +594,9 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	if config.Debug {
 		log.Printf("[AxonFlow] Client initialized - Mode: %s, Endpoint: %s, MapTimeout: %v", config.Mode, config.Endpoint, config.MapTimeout)
 	}
+
+	// Send telemetry ping (fire-and-forget).
+	go client.sendTelemetryPing()
 
 	return client
 }

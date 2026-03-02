@@ -1,0 +1,146 @@
+package axonflow
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"runtime"
+	"strings"
+	"time"
+)
+
+const (
+	defaultCheckpointURL = "https://checkpoint.getaxonflow.com/v1/ping"
+	telemetryTimeout     = 3 * time.Second
+)
+
+// telemetryPayload is the JSON body sent to the checkpoint endpoint.
+type telemetryPayload struct {
+	SDK             string   `json:"sdk"`
+	SDKVersion      string   `json:"sdk_version"`
+	PlatformVersion string   `json:"platform_version"`
+	OS              string   `json:"os"`
+	Arch            string   `json:"arch"`
+	RuntimeVersion  string   `json:"runtime_version"`
+	DeploymentMode  string   `json:"deployment_mode"`
+	Features        []string `json:"features"`
+	InstanceID      string   `json:"instance_id"`
+}
+
+// telemetryResponse is the JSON response from the checkpoint endpoint.
+type telemetryResponse struct {
+	LatestVersion string `json:"latest_version"`
+}
+
+// generateInstanceID creates a random UUID v4 string without external dependencies.
+func generateInstanceID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	// Set version 4
+	b[6] = (b[6] & 0x0f) | 0x40
+	// Set variant bits
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// isTelemetryEnabled determines whether telemetry should be sent for this client.
+//
+// Priority order:
+//  1. Config override (TelemetryEnabled *bool) — if non-nil, use its value.
+//  2. Environment variables — DO_NOT_TRACK=1 or AXONFLOW_TELEMETRY=off disables.
+//  3. Default — OFF for sandbox/community mode (no credentials), ON for production/enterprise mode.
+func (c *AxonFlowClient) isTelemetryEnabled() bool {
+	// 1. Explicit config override takes highest priority.
+	if c.config.TelemetryEnabled != nil {
+		return *c.config.TelemetryEnabled
+	}
+
+	// 2. Respect standard opt-out env vars.
+	if os.Getenv("DO_NOT_TRACK") == "1" {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("AXONFLOW_TELEMETRY"), "off") {
+		return false
+	}
+
+	// 3. Default based on mode: ON for production (has credentials), OFF for sandbox.
+	if c.config.Mode == "sandbox" {
+		return false
+	}
+	if c.config.ClientID == "" && c.config.ClientSecret == "" {
+		return false
+	}
+	return true
+}
+
+// sendTelemetryPing sends a fire-and-forget telemetry ping to the checkpoint
+// service. It never returns an error — all failures are silently ignored.
+// In debug mode, a version-outdated warning may be logged.
+func (c *AxonFlowClient) sendTelemetryPing() {
+	if !c.isTelemetryEnabled() {
+		return
+	}
+
+	// Determine the checkpoint URL.
+	checkpointURL := os.Getenv("AXONFLOW_CHECKPOINT_URL")
+	if checkpointURL == "" {
+		checkpointURL = defaultCheckpointURL
+	}
+
+	// Determine deployment mode.
+	deploymentMode := c.config.Mode
+	if deploymentMode == "" {
+		deploymentMode = "production"
+	}
+
+	payload := telemetryPayload{
+		SDK:             "go",
+		SDKVersion:      Version,
+		PlatformVersion: "",
+		OS:              runtime.GOOS,
+		Arch:            runtime.GOARCH,
+		RuntimeVersion:  runtime.Version(),
+		DeploymentMode:  deploymentMode,
+		Features:        []string{},
+		InstanceID:      generateInstanceID(),
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, checkpointURL, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: telemetryTimeout,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	// Parse response for version check (debug mode only).
+	if c.config.Debug {
+		var telResp telemetryResponse
+		if err := json.NewDecoder(resp.Body).Decode(&telResp); err == nil {
+			if telResp.LatestVersion != "" && telResp.LatestVersion != Version {
+				log.Printf("[AxonFlow] A newer SDK version is available: %s (current: %s)", telResp.LatestVersion, Version)
+			}
+		}
+	}
+}
