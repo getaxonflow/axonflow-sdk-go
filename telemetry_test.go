@@ -29,30 +29,30 @@ func TestIsTelemetryEnabled_Default(t *testing.T) {
 		}
 	})
 
-	t.Run("off when no credentials", func(t *testing.T) {
+	t.Run("on for production without credentials", func(t *testing.T) {
 		client := &AxonFlowClient{
 			config: AxonFlowConfig{Mode: "production"},
 		}
-		if client.isTelemetryEnabled() {
-			t.Error("expected telemetry disabled when no credentials are set")
+		if !client.isTelemetryEnabled() {
+			t.Error("expected telemetry enabled for production mode even without credentials")
 		}
 	})
 
-	t.Run("off when only client ID set", func(t *testing.T) {
+	t.Run("on for production with only client ID", func(t *testing.T) {
 		client := &AxonFlowClient{
 			config: AxonFlowConfig{Mode: "production", ClientID: "id"},
 		}
-		if client.isTelemetryEnabled() {
-			t.Error("expected telemetry disabled when only ClientID is set")
+		if !client.isTelemetryEnabled() {
+			t.Error("expected telemetry enabled for production mode even with only ClientID set")
 		}
 	})
 
-	t.Run("off when only client secret set", func(t *testing.T) {
+	t.Run("on for production with only client secret", func(t *testing.T) {
 		client := &AxonFlowClient{
 			config: AxonFlowConfig{Mode: "production", ClientSecret: "sec"},
 		}
-		if client.isTelemetryEnabled() {
-			t.Error("expected telemetry disabled when only ClientSecret is set")
+		if !client.isTelemetryEnabled() {
+			t.Error("expected telemetry enabled for production mode even with only ClientSecret set")
 		}
 	})
 
@@ -607,7 +607,7 @@ func TestSendTelemetryPing_ProductionNoCreds(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called.Add(1)
-		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
 	}))
 	defer srv.Close()
 
@@ -616,13 +616,13 @@ func TestSendTelemetryPing_ProductionNoCreds(t *testing.T) {
 	client := &AxonFlowClient{
 		config: AxonFlowConfig{
 			Mode: "production",
-			// No ClientID or ClientSecret
+			// No ClientID or ClientSecret — telemetry still ON (credentials no longer affect default)
 		},
 	}
 
 	client.sendTelemetryPing()
 
-	if called.Load() != 0 {
-		t.Error("expected no HTTP request for production mode without credentials")
+	if called.Load() != 1 {
+		t.Errorf("expected exactly 1 HTTP request for production mode without credentials, got %d", called.Load())
 	}
 }

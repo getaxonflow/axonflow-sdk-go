@@ -53,7 +53,7 @@ func generateInstanceID() string {
 // Priority order:
 //  1. Environment variables — DO_NOT_TRACK=1 or AXONFLOW_TELEMETRY=off disables (always wins).
 //  2. Config override (TelemetryEnabled *bool) — if non-nil, use its value.
-//  3. Default — OFF for sandbox/community mode (no credentials), ON for production/enterprise mode.
+//  3. Default — ON for all modes except sandbox.
 func (c *AxonFlowClient) isTelemetryEnabled() bool {
 	// 1. Environment-level opt-out always wins (cannot be overridden by config).
 	if os.Getenv("DO_NOT_TRACK") == "1" {
@@ -68,14 +68,8 @@ func (c *AxonFlowClient) isTelemetryEnabled() bool {
 		return *c.config.TelemetryEnabled
 	}
 
-	// 3. Default based on mode: ON for production (has credentials), OFF for sandbox.
-	if c.config.Mode == "sandbox" {
-		return false
-	}
-	if c.config.ClientID == "" || c.config.ClientSecret == "" {
-		return false
-	}
-	return true
+	// 3. Default: ON everywhere except sandbox mode.
+	return c.config.Mode != "sandbox"
 }
 
 // sendTelemetryPing sends a fire-and-forget telemetry ping to the checkpoint
