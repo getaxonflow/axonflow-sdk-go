@@ -5,6 +5,25 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] - 2026-03-03
+
+### Added
+
+- **Version Discovery**: `HealthCheckDetailed()` method returning `HealthResponse` with platform version, capabilities list, and SDK compatibility info
+- **Capability Check**: `HasCapability(name)` method on `HealthResponse` to check if the platform supports a specific feature
+- **SDK Version Constant**: `Version` constant in `version.go` for programmatic SDK version access
+- **User-Agent Header**: `axonflow-sdk-go/{version}` sent on all HTTP requests via `userAgentRoundTripper`
+- **Version Compatibility Warning**: Logged when SDK version is below the platform's `min_sdk_version`
+- `trace_id` field on `CreateWorkflowRequest`, `CreateWorkflowResponse`, `WorkflowStatusResponse`, and `ListWorkflowsOptions` for distributed tracing correlation
+- `ToolContext` type for per-tool governance within workflow steps
+- `tool_context` field on `StepGateRequest` for tool-level policy enforcement
+- New types: `PlatformCapability`, `SDKCompatibility`
+- Anonymous runtime telemetry for version adoption tracking and feature usage signals
+- `TelemetryEnabled` / `telemetry` configuration option to explicitly control telemetry
+- `AXONFLOW_TELEMETRY=off` and `DO_NOT_TRACK=1` environment variable opt-out support
+
+---
+
 ## [3.7.0] - 2026-02-28
 
 ### Added

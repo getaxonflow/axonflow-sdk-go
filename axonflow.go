@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,15 +22,16 @@ import (
 
 // AxonFlowConfig represents configuration for the AxonFlow client
 type AxonFlowConfig struct {
-	Endpoint     string        // Required: AxonFlow endpoint URL (Agent proxies all routes since ADR-026)
-	ClientID     string        // Required for enterprise features: OAuth2 client ID
-	ClientSecret string        // Required for enterprise features: OAuth2 client secret
-	Mode         string        // "production" | "sandbox" (default: "production")
-	Debug        bool          // Enable debug logging (default: false)
-	Timeout      time.Duration // Request timeout (default: 60s)
-	MapTimeout   time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
-	Retry        RetryConfig   // Retry configuration
-	Cache        CacheConfig   // Cache configuration
+	Endpoint         string        // Required: AxonFlow endpoint URL (Agent proxies all routes since ADR-026)
+	ClientID         string        // Required for enterprise features: OAuth2 client ID
+	ClientSecret     string        // Required for enterprise features: OAuth2 client secret
+	Mode             string        // "production" | "sandbox" (default: "production")
+	Debug            bool          // Enable debug logging (default: false)
+	Timeout          time.Duration // Request timeout (default: 60s)
+	MapTimeout       time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
+	Retry            RetryConfig   // Retry configuration
+	Cache            CacheConfig   // Cache configuration
+	TelemetryEnabled *bool         // Override telemetry default: nil=auto, true=on, false=off
 }
 
 // RetryConfig configures retry behavior
@@ -568,15 +570,20 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 		TLSClientConfig: tlsConfig,
 	}
 
+	uaTransport := &userAgentRoundTripper{
+		inner:     transport,
+		userAgent: "axonflow-sdk-go/" + Version,
+	}
+
 	client := &AxonFlowClient{
 		config: config,
 		httpClient: &http.Client{
 			Timeout:   config.Timeout,
-			Transport: transport,
+			Transport: uaTransport,
 		},
 		mapHttpClient: &http.Client{
 			Timeout:   config.MapTimeout,
-			Transport: transport,
+			Transport: uaTransport,
 		},
 	}
 
@@ -587,6 +594,9 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	if config.Debug {
 		log.Printf("[AxonFlow] Client initialized - Mode: %s, Endpoint: %s, MapTimeout: %v", config.Mode, config.Endpoint, config.MapTimeout)
 	}
+
+	// Send telemetry ping (fire-and-forget).
+	go client.sendTelemetryPing()
 
 	return client
 }
@@ -976,6 +986,107 @@ func (c *AxonFlowClient) HealthCheck() error {
 func (c *AxonFlowClient) OrchestratorHealthCheck() error {
 	// Since ADR-026, Agent proxies to Orchestrator, so we just call Agent health
 	return c.HealthCheck()
+}
+
+// HealthResponse contains detailed health information from the platform.
+type HealthResponse struct {
+	Status       string               `json:"status"`
+	Service      string               `json:"service"`
+	Version      string               `json:"version"`
+	Timestamp    string               `json:"timestamp"`
+	Capabilities []PlatformCapability `json:"capabilities,omitempty"`
+	SDKCompat    *SDKCompatibility    `json:"sdk_compatibility,omitempty"`
+}
+
+// PlatformCapability describes a feature supported by the platform.
+type PlatformCapability struct {
+	Name        string `json:"name"`
+	Since       string `json:"since"`
+	Description string `json:"description"`
+}
+
+// SDKCompatibility describes SDK version compatibility.
+type SDKCompatibility struct {
+	MinSDKVersion         string `json:"min_sdk_version"`
+	RecommendedSDKVersion string `json:"recommended_sdk_version"`
+}
+
+// HasCapability checks if the platform supports a named capability.
+func (h *HealthResponse) HasCapability(name string) bool {
+	if h == nil {
+		return false
+	}
+	for _, cap := range h.Capabilities {
+		if cap.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// HealthCheckDetailed returns detailed health info including capabilities.
+func (c *AxonFlowClient) HealthCheckDetailed() (*HealthResponse, error) {
+	url := fmt.Sprintf("%s/health", c.config.Endpoint)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating health request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("health check request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("health check returned status %d", resp.StatusCode)
+	}
+
+	var health HealthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+		return nil, fmt.Errorf("decoding health response: %w", err)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Platform version: %s, SDK version: %s", health.Version, Version)
+	}
+
+	if health.SDKCompat != nil && health.SDKCompat.MinSDKVersion != "" {
+		if compareSemver(Version, health.SDKCompat.MinSDKVersion) < 0 {
+			log.Printf("[AxonFlow] WARNING: SDK version %s is below minimum supported version %s. Please upgrade.", Version, health.SDKCompat.MinSDKVersion)
+		}
+	}
+
+	return &health, nil
+}
+
+// compareSemver compares two semantic version strings (e.g., "3.8.0" vs "3.10.0").
+// Returns -1 if a < b, 0 if a == b, 1 if a > b.
+// Each segment is parsed as an integer; unparseable segments default to 0.
+// Only supports MAJOR.MINOR.PATCH numeric versions. Pre-release suffixes
+// (e.g., "3.8.0-beta.1") are stripped before comparison.
+func compareSemver(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	for i := 0; i < 3; i++ {
+		aVal := 0
+		bVal := 0
+		if i < len(aParts) {
+			seg := strings.SplitN(aParts[i], "-", 2)[0]
+			aVal, _ = strconv.Atoi(seg)
+		}
+		if i < len(bParts) {
+			seg := strings.SplitN(bParts[i], "-", 2)[0]
+			bVal, _ = strconv.Atoi(seg)
+		}
+		if aVal < bVal {
+			return -1
+		}
+		if aVal > bVal {
+			return 1
+		}
+	}
+	return 0
 }
 
 // getMetadataKeys returns the keys from a metadata map for debugging
