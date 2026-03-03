@@ -38,6 +38,24 @@ func TestIsTelemetryEnabled_Default(t *testing.T) {
 		}
 	})
 
+	t.Run("off when only client ID set", func(t *testing.T) {
+		client := &AxonFlowClient{
+			config: AxonFlowConfig{Mode: "production", ClientID: "id"},
+		}
+		if client.isTelemetryEnabled() {
+			t.Error("expected telemetry disabled when only ClientID is set")
+		}
+	})
+
+	t.Run("off when only client secret set", func(t *testing.T) {
+		client := &AxonFlowClient{
+			config: AxonFlowConfig{Mode: "production", ClientSecret: "sec"},
+		}
+		if client.isTelemetryEnabled() {
+			t.Error("expected telemetry disabled when only ClientSecret is set")
+		}
+	})
+
 	t.Run("on for production with credentials", func(t *testing.T) {
 		client := &AxonFlowClient{
 			config: AxonFlowConfig{

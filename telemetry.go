@@ -72,7 +72,7 @@ func (c *AxonFlowClient) isTelemetryEnabled() bool {
 	if c.config.Mode == "sandbox" {
 		return false
 	}
-	if c.config.ClientID == "" && c.config.ClientSecret == "" {
+	if c.config.ClientID == "" || c.config.ClientSecret == "" {
 		return false
 	}
 	return true
