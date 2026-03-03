@@ -51,21 +51,21 @@ func generateInstanceID() string {
 // isTelemetryEnabled determines whether telemetry should be sent for this client.
 //
 // Priority order:
-//  1. Config override (TelemetryEnabled *bool) — if non-nil, use its value.
-//  2. Environment variables — DO_NOT_TRACK=1 or AXONFLOW_TELEMETRY=off disables.
+//  1. Environment variables — DO_NOT_TRACK=1 or AXONFLOW_TELEMETRY=off disables (always wins).
+//  2. Config override (TelemetryEnabled *bool) — if non-nil, use its value.
 //  3. Default — OFF for sandbox/community mode (no credentials), ON for production/enterprise mode.
 func (c *AxonFlowClient) isTelemetryEnabled() bool {
-	// 1. Explicit config override takes highest priority.
-	if c.config.TelemetryEnabled != nil {
-		return *c.config.TelemetryEnabled
-	}
-
-	// 2. Respect standard opt-out env vars.
+	// 1. Environment-level opt-out always wins (cannot be overridden by config).
 	if os.Getenv("DO_NOT_TRACK") == "1" {
 		return false
 	}
 	if strings.EqualFold(os.Getenv("AXONFLOW_TELEMETRY"), "off") {
 		return false
+	}
+
+	// 2. Explicit config override.
+	if c.config.TelemetryEnabled != nil {
+		return *c.config.TelemetryEnabled
 	}
 
 	// 3. Default based on mode: ON for production (has credentials), OFF for sandbox.

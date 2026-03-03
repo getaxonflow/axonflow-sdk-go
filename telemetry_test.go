@@ -112,7 +112,7 @@ func TestIsTelemetryEnabled_ConfigOverride(t *testing.T) {
 		}
 	})
 
-	t.Run("config true overrides DO_NOT_TRACK env", func(t *testing.T) {
+	t.Run("DO_NOT_TRACK beats config true", func(t *testing.T) {
 		t.Setenv("DO_NOT_TRACK", "1")
 		client := &AxonFlowClient{
 			config: AxonFlowConfig{
@@ -122,8 +122,8 @@ func TestIsTelemetryEnabled_ConfigOverride(t *testing.T) {
 				TelemetryEnabled: boolPtr(true),
 			},
 		}
-		if !client.isTelemetryEnabled() {
-			t.Error("expected config override to take priority over DO_NOT_TRACK")
+		if client.isTelemetryEnabled() {
+			t.Error("expected DO_NOT_TRACK=1 to disable telemetry even with config override")
 		}
 	})
 }
