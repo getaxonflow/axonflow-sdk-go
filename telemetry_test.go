@@ -1,7 +1,9 @@
 package axonflow
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -124,6 +126,21 @@ func TestIsTelemetryEnabled_ConfigOverride(t *testing.T) {
 		}
 		if client.isTelemetryEnabled() {
 			t.Error("expected DO_NOT_TRACK=1 to disable telemetry even with config override")
+		}
+	})
+
+	t.Run("AXONFLOW_TELEMETRY=off beats config true", func(t *testing.T) {
+		t.Setenv("AXONFLOW_TELEMETRY", "off")
+		client := &AxonFlowClient{
+			config: AxonFlowConfig{
+				Mode:             "production",
+				ClientID:         "id",
+				ClientSecret:     "sec",
+				TelemetryEnabled: boolPtr(true),
+			},
+		}
+		if client.isTelemetryEnabled() {
+			t.Error("expected AXONFLOW_TELEMETRY=off to disable telemetry even with config override")
 		}
 	})
 }
@@ -345,4 +362,249 @@ func TestSendTelemetryPing_InvalidURL(t *testing.T) {
 
 	// Should not panic
 	client.sendTelemetryPing()
+}
+
+// ---------------------------------------------------------------------------
+// buildPayload tests (test #12: mode propagated)
+// ---------------------------------------------------------------------------
+
+func TestBuildPayload(t *testing.T) {
+	t.Run("mode propagated to deployment_mode", func(t *testing.T) {
+		modes := []string{"production", "sandbox", "staging", "development"}
+		for _, mode := range modes {
+			t.Run(mode, func(t *testing.T) {
+				var received telemetryPayload
+
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					json.NewDecoder(r.Body).Decode(&received)
+					json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+				}))
+				defer srv.Close()
+
+				t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+				boolPtr := func(v bool) *bool { return &v }
+				client := &AxonFlowClient{
+					config: AxonFlowConfig{
+						Mode:             mode,
+						ClientID:         "id",
+						ClientSecret:     "sec",
+						TelemetryEnabled: boolPtr(true), // force enable for non-prod modes
+					},
+				}
+
+				client.sendTelemetryPing()
+
+				if received.DeploymentMode != mode {
+					t.Errorf("expected deployment_mode=%q, got %q", mode, received.DeploymentMode)
+				}
+			})
+		}
+	})
+
+	t.Run("empty mode defaults to production", func(t *testing.T) {
+		var received telemetryPayload
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&received)
+			json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+		}))
+		defer srv.Close()
+
+		t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+		boolPtr := func(v bool) *bool { return &v }
+		client := &AxonFlowClient{
+			config: AxonFlowConfig{
+				ClientID:         "id",
+				ClientSecret:     "sec",
+				TelemetryEnabled: boolPtr(true),
+			},
+		}
+
+		client.sendTelemetryPing()
+
+		if received.DeploymentMode != "production" {
+			t.Errorf("expected deployment_mode=production when mode is empty, got %q", received.DeploymentMode)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Additional sendTelemetryPing tests for parity with Python SDK (24-test matrix)
+// ---------------------------------------------------------------------------
+
+func TestSendTelemetryPing_SandboxDefaultOff(t *testing.T) {
+	var called atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode:         "sandbox",
+			ClientID:     "id",
+			ClientSecret: "sec",
+		},
+	}
+
+	client.sendTelemetryPing()
+
+	if called.Load() != 0 {
+		t.Error("expected no HTTP request for sandbox mode (telemetry default off)")
+	}
+}
+
+func TestSendTelemetryPing_SandboxExplicitEnable(t *testing.T) {
+	var called atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called.Add(1)
+		json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+	}))
+	defer srv.Close()
+
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+	boolPtr := func(v bool) *bool { return &v }
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode:             "sandbox",
+			ClientID:         "id",
+			ClientSecret:     "sec",
+			TelemetryEnabled: boolPtr(true),
+		},
+	}
+
+	client.sendTelemetryPing()
+
+	if called.Load() != 1 {
+		t.Errorf("expected exactly 1 request when sandbox + config true, got %d", called.Load())
+	}
+}
+
+func TestSendTelemetryPing_ConfigDisableInProduction(t *testing.T) {
+	var called atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+	boolPtr := func(v bool) *bool { return &v }
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode:             "production",
+			ClientID:         "id",
+			ClientSecret:     "sec",
+			TelemetryEnabled: boolPtr(false),
+		},
+	}
+
+	client.sendTelemetryPing()
+
+	if called.Load() != 0 {
+		t.Error("expected no HTTP request when production + config false")
+	}
+}
+
+func TestSendTelemetryPing_ConnectionRefused(t *testing.T) {
+	// Port 1 is reserved and should refuse connections on all platforms.
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", "http://127.0.0.1:1")
+
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode:         "production",
+			ClientID:     "id",
+			ClientSecret: "sec",
+		},
+	}
+
+	// Must not panic or hang — silent failure on connection error.
+	done := make(chan struct{})
+	go func() {
+		client.sendTelemetryPing()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Completed without crashing - good
+	case <-time.After(10 * time.Second):
+		t.Fatal("sendTelemetryPing did not complete within 10 seconds on connection refused")
+	}
+}
+
+func TestSendTelemetryPing_OutdatedVersion(t *testing.T) {
+	// Server returns a newer version to trigger the debug warning.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: "99.99.99"})
+	}))
+	defer srv.Close()
+
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode:         "production",
+			ClientID:     "id",
+			ClientSecret: "sec",
+			Debug:        true,
+		},
+	}
+
+	// Capture log output to verify the version warning is emitted.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(nil) // restore default
+
+	client.sendTelemetryPing()
+
+	logOutput := buf.String()
+	if logOutput == "" {
+		t.Error("expected version warning log output in debug mode, got nothing")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("newer SDK version")) {
+		t.Errorf("expected log to contain 'newer SDK version', got %q", logOutput)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("99.99.99")) {
+		t.Errorf("expected log to contain new version '99.99.99', got %q", logOutput)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte(Version)) {
+		t.Errorf("expected log to contain current version '%s', got %q", Version, logOutput)
+	}
+}
+
+func TestSendTelemetryPing_ProductionNoCreds(t *testing.T) {
+	var called atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode: "production",
+			// No ClientID or ClientSecret
+		},
+	}
+
+	client.sendTelemetryPing()
+
+	if called.Load() != 0 {
+		t.Error("expected no HTTP request for production mode without credentials")
+	}
 }
