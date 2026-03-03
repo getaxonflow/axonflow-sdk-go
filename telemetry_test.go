@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
 	"sync/atomic"
 	"testing"
@@ -583,7 +584,7 @@ func TestSendTelemetryPing_OutdatedVersion(t *testing.T) {
 	// Capture log output to verify the version warning is emitted.
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	defer log.SetOutput(nil) // restore default
+	defer log.SetOutput(os.Stderr) // restore default
 
 	client.sendTelemetryPing()
 
