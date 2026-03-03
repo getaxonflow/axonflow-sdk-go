@@ -56,10 +56,10 @@ func generateInstanceID() string {
 //  3. Default — ON for all modes except sandbox.
 func (c *AxonFlowClient) isTelemetryEnabled() bool {
 	// 1. Environment-level opt-out always wins (cannot be overridden by config).
-	if os.Getenv("DO_NOT_TRACK") == "1" {
+	if strings.TrimSpace(os.Getenv("DO_NOT_TRACK")) == "1" {
 		return false
 	}
-	if strings.EqualFold(os.Getenv("AXONFLOW_TELEMETRY"), "off") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("AXONFLOW_TELEMETRY")), "off") {
 		return false
 	}
 
