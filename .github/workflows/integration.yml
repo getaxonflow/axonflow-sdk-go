@@ -14,6 +14,9 @@ on:
 permissions:
   contents: read
 
+env:
+  DO_NOT_TRACK: '1'
+
 jobs:
   # Contract tests run on all PRs and pushes - they don't need the stack
   contract-tests:
