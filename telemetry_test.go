@@ -263,6 +263,7 @@ func TestSendTelemetryPing_Success(t *testing.T) {
 }
 
 func TestSendTelemetryPing_Timeout(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	// Server that delays longer than telemetry timeout. Use a channel to
 	// allow the handler goroutine to exit promptly once the test finishes.
 	handlerDone := make(chan struct{})
@@ -329,6 +330,7 @@ func TestSendTelemetryPing_OptOut(t *testing.T) {
 }
 
 func TestSendTelemetryPing_SilentFailure(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	// Server that returns 500
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -378,6 +380,7 @@ func TestSendTelemetryPing_CustomEndpoint(t *testing.T) {
 }
 
 func TestSendTelemetryPing_InvalidURL(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	t.Setenv("AXONFLOW_CHECKPOINT_URL", "://invalid-url")
 
 	client := &AxonFlowClient{
@@ -547,6 +550,7 @@ func TestSendTelemetryPing_ConfigDisableInProduction(t *testing.T) {
 }
 
 func TestSendTelemetryPing_ConnectionRefused(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	// Port 1 is reserved and should refuse connections on all platforms.
 	t.Setenv("AXONFLOW_CHECKPOINT_URL", "http://127.0.0.1:1")
 
