@@ -18,6 +18,11 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestIsTelemetryEnabled_Default(t *testing.T) {
+	// Clear DO_NOT_TRACK so tests can verify default behavior.
+	// CI sets DO_NOT_TRACK=1 to prevent telemetry pings.
+	t.Setenv("DO_NOT_TRACK", "")
+	t.Setenv("AXONFLOW_TELEMETRY", "")
+
 	t.Run("off for sandbox mode", func(t *testing.T) {
 		client := &AxonFlowClient{
 			config: AxonFlowConfig{
@@ -105,6 +110,8 @@ func TestIsTelemetryEnabled_EnvVarOverride(t *testing.T) {
 }
 
 func TestIsTelemetryEnabled_ConfigOverride(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
+	t.Setenv("AXONFLOW_TELEMETRY", "")
 	boolPtr := func(v bool) *bool { return &v }
 
 	t.Run("config true overrides sandbox default", func(t *testing.T) {
@@ -189,6 +196,7 @@ func TestGenerateInstanceID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSendTelemetryPing_Success(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	var received telemetryPayload
 	var called atomic.Int32
 
@@ -343,6 +351,7 @@ func TestSendTelemetryPing_SilentFailure(t *testing.T) {
 }
 
 func TestSendTelemetryPing_CustomEndpoint(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	var called atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -388,6 +397,7 @@ func TestSendTelemetryPing_InvalidURL(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPayload(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	t.Run("mode propagated to deployment_mode", func(t *testing.T) {
 		modes := []string{"production", "sandbox", "staging", "development"}
 		for _, mode := range modes {
@@ -480,6 +490,7 @@ func TestSendTelemetryPing_SandboxDefaultOff(t *testing.T) {
 }
 
 func TestSendTelemetryPing_SandboxExplicitEnable(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	var called atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -563,6 +574,7 @@ func TestSendTelemetryPing_ConnectionRefused(t *testing.T) {
 }
 
 func TestSendTelemetryPing_OutdatedVersion(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	// Server returns a newer version to trigger the debug warning.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -604,6 +616,7 @@ func TestSendTelemetryPing_OutdatedVersion(t *testing.T) {
 }
 
 func TestSendTelemetryPing_ProductionNoCreds(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "")
 	var called atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
