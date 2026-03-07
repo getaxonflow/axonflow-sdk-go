@@ -5,11 +5,21 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.9.0] - Unreleased
+## [4.0.0] - Unreleased
 
-### Changed
+### Breaking Changes
 
-- `MCPCheckInput()` now defaults `Operation` to `"execute"` when not specified, matching the default behavior across all SDKs. Previously, omitting `Operation` left it to the server-side default.
+- **Module path changed from `v3` to `v4`**: Update imports from
+  `github.com/getaxonflow/axonflow-sdk-go/v3` to `github.com/getaxonflow/axonflow-sdk-go/v4`.
+- **Removed `TotalSteps` from `CreateWorkflowRequest`**. Requires Platform v4.5.0+ (recommended v5.0.0+).
+  Total steps are auto-computed when the workflow reaches a terminal state.
+- **`MCPCheckInput()` default `Operation` changed from `"query"` to `"execute"`**. Callers relying on
+  the implicit `"query"` default must now pass `Operation: "query"` explicitly.
+
+### Note
+
+`MediaAnalysisResult.ExtractedText` was replaced by `HasExtractedText` + `ExtractedTextLength`
+in v3.5.0. This major version formally acknowledges that breaking change.
 
 ---
 

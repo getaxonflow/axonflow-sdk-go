@@ -1,4 +1,4 @@
-module github.com/getaxonflow/axonflow-sdk-go/v3
+module github.com/getaxonflow/axonflow-sdk-go/v4
 
 go 1.21
 

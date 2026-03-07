@@ -105,9 +105,6 @@ type CreateWorkflowRequest struct {
 	// Source is the orchestrator running the workflow (optional)
 	Source WorkflowSource `json:"source,omitempty"`
 
-	// TotalSteps is the total number of steps in the workflow, if known (optional)
-	TotalSteps int `json:"total_steps,omitempty"`
-
 	// Metadata contains additional key-value metadata for the workflow (optional)
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 
@@ -331,7 +328,6 @@ type MarkStepCompletedRequest struct {
 //	workflow, err := client.CreateWorkflow(CreateWorkflowRequest{
 //	    WorkflowName: "customer-support-agent",
 //	    Source:       WorkflowSourceLangGraph,
-//	    TotalSteps:   5,
 //	    Metadata:     map[string]interface{}{"customer_id": "cust-123"},
 //	})
 //	if err != nil {
