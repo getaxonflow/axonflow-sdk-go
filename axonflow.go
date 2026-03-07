@@ -1385,6 +1385,9 @@ type MCPCheckOutputResponse struct {
 // but needs AxonFlow policy enforcement as a pre-execution gate.
 // Note: HTTP 403 is a valid policy-blocked response, not an error.
 func (c *AxonFlowClient) MCPCheckInput(ctx context.Context, req MCPCheckInputRequest) (*MCPCheckInputResponse, error) {
+	if req.Operation == "" {
+		req.Operation = "execute"
+	}
 	url := c.config.Endpoint + "/api/v1/mcp/check-input"
 	var result MCPCheckInputResponse
 	if err := c.makePolicyCheckRequest(ctx, url, req, &result); err != nil {

@@ -1466,6 +1466,92 @@ func TestMCPExecute(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// MCP Check Input/Output Tests (Policy Enforcement)
+// ============================================================================
+
+func TestMCPCheckInput_DefaultOperation(t *testing.T) {
+	var receivedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/mcp/check-input" && r.Method == "POST" {
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"allowed":            true,
+				"policies_evaluated": 5,
+			})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+		Cache:    CacheConfig{Enabled: false},
+	})
+
+	ctx := context.Background()
+	resp, err := client.MCPCheckInput(ctx, MCPCheckInputRequest{
+		ConnectorType: "postgres",
+		Statement:     "SELECT * FROM users",
+	})
+	if err != nil {
+		t.Fatalf("MCPCheckInput failed: %v", err)
+	}
+	if !resp.Allowed {
+		t.Error("Expected allowed=true")
+	}
+	if resp.PoliciesEvaluated != 5 {
+		t.Errorf("Expected 5 policies evaluated, got %d", resp.PoliciesEvaluated)
+	}
+
+	// Verify default operation is "execute" on the wire
+	op, ok := receivedBody["operation"]
+	if !ok {
+		t.Fatal("Expected operation field in request body, but it was missing")
+	}
+	if op != "execute" {
+		t.Errorf("Expected default operation 'execute', got '%v'", op)
+	}
+}
+
+func TestMCPCheckInput_ExplicitOperation(t *testing.T) {
+	var receivedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/mcp/check-input" && r.Method == "POST" {
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"allowed":            true,
+				"policies_evaluated": 3,
+			})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+		Cache:    CacheConfig{Enabled: false},
+	})
+
+	ctx := context.Background()
+	_, err := client.MCPCheckInput(ctx, MCPCheckInputRequest{
+		ConnectorType: "postgres",
+		Statement:     "SELECT 1",
+		Operation:     "query",
+	})
+	if err != nil {
+		t.Fatalf("MCPCheckInput failed: %v", err)
+	}
+
+	// Verify explicit operation is preserved
+	op := receivedBody["operation"]
+	if op != "query" {
+		t.Errorf("Expected explicit operation 'query', got '%v'", op)
+	}
+}
+
 func TestConnectorResponse_WasRedacted(t *testing.T) {
 	tests := []struct {
 		name     string
