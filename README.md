@@ -755,6 +755,42 @@ fmt.Printf("Result: %v\n", resp.Data)
 
 ## Migration Guide
 
+### Migrating from v3 to v4
+
+**1. Update module path:**
+```bash
+# In go.mod, change:
+#   github.com/getaxonflow/axonflow-sdk-go/v3 → github.com/getaxonflow/axonflow-sdk-go/v4
+go get github.com/getaxonflow/axonflow-sdk-go/v4@v4.0.0
+```
+
+Update all imports in your `.go` files from `v3` to `v4`.
+
+**2. Remove `TotalSteps` from `CreateWorkflowRequest`:**
+```go
+// Before (v3):
+req := axonflow.CreateWorkflowRequest{
+    WorkflowName: "my-workflow",
+    TotalSteps:   5,  // Remove this
+}
+
+// After (v4):
+req := axonflow.CreateWorkflowRequest{
+    WorkflowName: "my-workflow",
+}
+// Total steps are auto-computed at terminal state (Platform v4.5.0+)
+```
+
+**3. Specify `Operation` for `MCPCheckInput` if you relied on the `"query"` default:**
+```go
+// Before (v3): defaulted to "query"
+resp, _ := client.MCPCheckInput(ctx, req)
+
+// After (v4): defaults to "execute" — pass explicitly if needed
+req.Operation = "query"
+resp, _ := client.MCPCheckInput(ctx, req)
+```
+
 ### Migrating to OAuth2 Client Credentials
 
 If you're using older authentication methods (`LicenseKey` or API keys), migrate to OAuth2 client credentials:
