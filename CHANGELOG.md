@@ -5,7 +5,7 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] - Unreleased
+## [4.0.0] - 2026-03-09
 
 ### Breaking Changes
 
@@ -13,8 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github.com/getaxonflow/axonflow-sdk-go/v3` to `github.com/getaxonflow/axonflow-sdk-go/v4`.
 - **Removed `TotalSteps` from `CreateWorkflowRequest`**. Requires Platform v4.5.0+ (recommended v5.0.0+).
   Total steps are auto-computed when the workflow reaches a terminal state.
-- **`MCPCheckInput()` default `Operation` changed from `"query"` to `"execute"`**. Callers relying on
-  the implicit `"query"` default must now pass `Operation: "query"` explicitly.
+- **`MCPCheckInput()` default `Operation` changed from `"query"` to `"execute"`**: Aligns Go SDK with
+  Python/Java behavior. Callers relying on the implicit `"query"` default must now pass
+  `Operation: "query"` explicitly.
+
+### Added
+
+- v3 to v4 migration guide in README with import path and `TotalSteps` removal examples
+
+### Changed
+
+- Removed Scarf tracking pixel from README (GitHub's camo proxy strips viewer identity, making the pixel unattributable)
+- `DO_NOT_TRACK=1` set in CI workflows (test, integration, release) to prevent telemetry pings during CI runs
+
+### Fixed
+
+- Telemetry tests now clear `DO_NOT_TRACK` so they exercise intended code paths when CI sets it at the workflow level (4 tests were previously no-ops under CI)
 
 ### Note
 
