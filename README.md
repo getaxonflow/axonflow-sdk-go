@@ -1,6 +1,6 @@
 # AxonFlow SDK for Go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v3.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v3)
+[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v4.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v4)
 [![Go Report Card](https://goreportcard.com/badge/github.com/getaxonflow/axonflow-sdk-go)](https://goreportcard.com/report/github.com/getaxonflow/axonflow-sdk-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -35,7 +35,7 @@ If you're new to AxonFlow, this short video shows how the control plane and SDKs
 ## Installation
 
 ```bash
-go get github.com/getaxonflow/axonflow-sdk-go/v3
+go get github.com/getaxonflow/axonflow-sdk-go/v4
 ```
 
 ## Evaluation Tier (Free License)
@@ -66,7 +66,7 @@ import (
     "log"
     "os"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v3"
+    "github.com/getaxonflow/axonflow-sdk-go/v4"
 )
 
 func main() {
@@ -104,7 +104,7 @@ func main() {
 import (
     "time"
     "os"
-    "github.com/getaxonflow/axonflow-sdk-go/v3"
+    "github.com/getaxonflow/axonflow-sdk-go/v4"
 )
 
 // Full configuration with all features
@@ -142,7 +142,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v3"
+    "github.com/getaxonflow/axonflow-sdk-go/v4"
 )
 
 func main() {
@@ -276,8 +276,8 @@ Wrap your LLM clients with automatic AxonFlow governance using the interceptors 
 import (
     "context"
     "github.com/sashabaranov/go-openai"
-    "github.com/getaxonflow/axonflow-sdk-go/v3"
-    "github.com/getaxonflow/axonflow-sdk-go/v3/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v4"
+    "github.com/getaxonflow/axonflow-sdk-go/v4/interceptors"
 )
 
 // Initialize AxonFlow client
@@ -329,8 +329,8 @@ if err != nil {
 ```go
 import (
     "context"
-    "github.com/getaxonflow/axonflow-sdk-go/v3"
-    "github.com/getaxonflow/axonflow-sdk-go/v3/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v4"
+    "github.com/getaxonflow/axonflow-sdk-go/v4/interceptors"
 )
 
 // Create Anthropic interceptor
@@ -754,6 +754,42 @@ fmt.Printf("Result: %v\n", resp.Data)
 **Note:** For self-hosted (localhost) deployments, `ClientID` and `ClientSecret` are optional.
 
 ## Migration Guide
+
+### Migrating from v3 to v4
+
+**1. Update module path:**
+```bash
+# In go.mod, change:
+#   github.com/getaxonflow/axonflow-sdk-go/v3 → github.com/getaxonflow/axonflow-sdk-go/v4
+go get github.com/getaxonflow/axonflow-sdk-go/v4@v4.0.0
+```
+
+Update all imports in your `.go` files from `v3` to `v4`.
+
+**2. Remove `TotalSteps` from `CreateWorkflowRequest`:**
+```go
+// Before (v3):
+req := axonflow.CreateWorkflowRequest{
+    WorkflowName: "my-workflow",
+    TotalSteps:   5,  // Remove this
+}
+
+// After (v4):
+req := axonflow.CreateWorkflowRequest{
+    WorkflowName: "my-workflow",
+}
+// Total steps are auto-computed at terminal state (Platform v4.5.0+)
+```
+
+**3. Specify `Operation` for `MCPCheckInput` if you relied on the `"query"` default:**
+```go
+// Before (v3): defaulted to "query"
+resp, _ := client.MCPCheckInput(ctx, req)
+
+// After (v4): defaults to "execute" — pass explicitly if needed
+req.Operation = "query"
+resp, _ := client.MCPCheckInput(ctx, req)
+```
 
 ### Migrating to OAuth2 Client Credentials
 

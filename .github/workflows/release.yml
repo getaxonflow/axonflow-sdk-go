@@ -55,12 +55,12 @@ jobs:
           ## Installation
 
           ```bash
-          go get github.com/getaxonflow/axonflow-sdk-go/v3@${{ steps.extract_notes.outputs.version }}
+          go get github.com/getaxonflow/axonflow-sdk-go/v4@${{ steps.extract_notes.outputs.version }}
           ```
 
           ## Documentation
 
-          - [Go Package Documentation](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v3@${{ steps.extract_notes.outputs.version }})
+          - [Go Package Documentation](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v4@${{ steps.extract_notes.outputs.version }})
           - [README](https://github.com/getaxonflow/axonflow-sdk-go#readme)
           - [Examples](https://github.com/getaxonflow/axonflow-sdk-go/tree/main/examples)
 
@@ -76,4 +76,4 @@ jobs:
     - name: Trigger pkg.go.dev update
       run: |
         VERSION=${GITHUB_REF#refs/tags/}
-        curl https://proxy.golang.org/github.com/getaxonflow/axonflow-sdk-go/v3/@v/$VERSION.info
+        curl https://proxy.golang.org/github.com/getaxonflow/axonflow-sdk-go/v4/@v/$VERSION.info

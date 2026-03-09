@@ -203,7 +203,6 @@ func TestCreateWorkflow(t *testing.T) {
 	workflow, err := client.CreateWorkflow(CreateWorkflowRequest{
 		WorkflowName: "test-workflow",
 		Source:       WorkflowSourceLangGraph,
-		TotalSteps:   5,
 		Metadata:     map[string]interface{}{"key": "value"},
 	})
 
