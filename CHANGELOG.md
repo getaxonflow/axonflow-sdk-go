@@ -21,15 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - v3 to v4 migration guide in README with import path and `TotalSteps` removal examples
 
-### Changed
-
-- Removed Scarf tracking pixel from README (GitHub's camo proxy strips viewer identity, making the pixel unattributable)
-- `DO_NOT_TRACK=1` set in CI workflows (test, integration, release) to prevent telemetry pings during CI runs
-
-### Fixed
-
-- Telemetry tests now clear `DO_NOT_TRACK` so they exercise intended code paths when CI sets it at the workflow level (4 tests were previously no-ops under CI)
-
 ### Note
 
 `MediaAnalysisResult.ExtractedText` was replaced by `HasExtractedText` + `ExtractedTextLength`
