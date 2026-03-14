@@ -37,6 +37,44 @@ type telemetryResponse struct {
 	LatestVersion string `json:"latest_version"`
 }
 
+// healthVersionResponse is a minimal struct for extracting the version from /health.
+type healthVersionResponse struct {
+	Version string `json:"version"`
+}
+
+// detectPlatformVersion calls the agent's /health endpoint to get the platform version.
+// Returns empty string on any failure.
+func detectPlatformVersion(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/health", nil)
+	if err != nil {
+		return ""
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	var health healthVersionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+		return ""
+	}
+	return health.Version
+}
+
 // generateInstanceID creates a random UUID v4 string without external dependencies.
 func generateInstanceID() string {
 	b := make([]byte, 16)
@@ -94,10 +132,13 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		deploymentMode = "production"
 	}
 
+	// Detect platform version from health endpoint
+	platformVersion := detectPlatformVersion(c.config.Endpoint)
+
 	payload := telemetryPayload{
 		SDK:             "go",
 		SDKVersion:      Version,
-		PlatformVersion: "",
+		PlatformVersion: platformVersion,
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
 		RuntimeVersion:  runtime.Version(),
