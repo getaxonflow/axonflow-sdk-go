@@ -10,6 +10,246 @@ import (
 	"time"
 )
 
+// TestAuditToolCall tests the AuditToolCall method
+func TestAuditToolCall(t *testing.T) {
+	t.Run("success with all fields", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/audit/tool-call" {
+				t.Errorf("expected path /api/v1/audit/tool-call, got %s", r.URL.Path)
+			}
+			if r.Method != "POST" {
+				t.Errorf("expected method POST, got %s", r.Method)
+			}
+			if r.Header.Get("Content-Type") != "application/json" {
+				t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+			}
+
+			var reqBody map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+
+			if reqBody["tool_name"] != "getUserInfo" {
+				t.Errorf("expected tool_name getUserInfo, got %v", reqBody["tool_name"])
+			}
+			if reqBody["tool_type"] != "mcp" {
+				t.Errorf("expected tool_type mcp, got %v", reqBody["tool_type"])
+			}
+			if reqBody["workflow_id"] != "wf_abc123" {
+				t.Errorf("expected workflow_id wf_abc123, got %v", reqBody["workflow_id"])
+			}
+			if reqBody["step_id"] != "step-3" {
+				t.Errorf("expected step_id step-3, got %v", reqBody["step_id"])
+			}
+			if reqBody["user_id"] != "user@example.com" {
+				t.Errorf("expected user_id user@example.com, got %v", reqBody["user_id"])
+			}
+			if reqBody["duration_ms"].(float64) != 45 {
+				t.Errorf("expected duration_ms 45, got %v", reqBody["duration_ms"])
+			}
+			if reqBody["success"] != true {
+				t.Errorf("expected success true, got %v", reqBody["success"])
+			}
+			if reqBody["error_message"] != "something went wrong" {
+				t.Errorf("expected error_message, got %v", reqBody["error_message"])
+			}
+
+			// Verify input/output maps
+			input, ok := reqBody["input"].(map[string]interface{})
+			if !ok || input["user_id"] != "u123" {
+				t.Errorf("expected input.user_id u123, got %v", reqBody["input"])
+			}
+			output, ok := reqBody["output"].(map[string]interface{})
+			if !ok || output["name"] != "Alice" {
+				t.Errorf("expected output.name Alice, got %v", reqBody["output"])
+			}
+
+			// Verify policies_applied
+			policies, ok := reqBody["policies_applied"].([]interface{})
+			if !ok || len(policies) != 2 {
+				t.Errorf("expected 2 policies_applied, got %v", reqBody["policies_applied"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"audit_id":  "aud_abc123",
+				"status":    "recorded",
+				"timestamp": "2026-03-14T10:30:00Z",
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient(AxonFlowConfig{
+			Endpoint:     server.URL,
+			ClientID:     "test-client",
+			ClientSecret: "test-secret",
+		})
+
+		success := true
+		resp, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName:        "getUserInfo",
+			ToolType:        "mcp",
+			Input:           map[string]interface{}{"user_id": "u123"},
+			Output:          map[string]interface{}{"name": "Alice"},
+			WorkflowID:      "wf_abc123",
+			StepID:          "step-3",
+			UserID:          "user@example.com",
+			DurationMs:      45,
+			PoliciesApplied: []string{"pii", "rbac"},
+			Success:         &success,
+			ErrorMessage:    "something went wrong",
+		})
+		if err != nil {
+			t.Fatalf("AuditToolCall failed: %v", err)
+		}
+
+		if resp.AuditID != "aud_abc123" {
+			t.Errorf("expected audit_id aud_abc123, got %s", resp.AuditID)
+		}
+		if resp.Status != "recorded" {
+			t.Errorf("expected status recorded, got %s", resp.Status)
+		}
+		if resp.Timestamp != "2026-03-14T10:30:00Z" {
+			t.Errorf("expected timestamp 2026-03-14T10:30:00Z, got %s", resp.Timestamp)
+		}
+	})
+
+	t.Run("success with required fields only", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var reqBody map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&reqBody)
+
+			if reqBody["tool_name"] != "simpleFunc" {
+				t.Errorf("expected tool_name simpleFunc, got %v", reqBody["tool_name"])
+			}
+
+			// Optional fields should not be present
+			if _, exists := reqBody["tool_type"]; exists {
+				t.Errorf("expected tool_type to be omitted, got %v", reqBody["tool_type"])
+			}
+			if _, exists := reqBody["workflow_id"]; exists {
+				t.Errorf("expected workflow_id to be omitted, got %v", reqBody["workflow_id"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"audit_id":  "aud_minimal",
+				"status":    "recorded",
+				"timestamp": "2026-03-14T11:00:00Z",
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient(AxonFlowConfig{
+			Endpoint: server.URL,
+		})
+
+		resp, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName: "simpleFunc",
+		})
+		if err != nil {
+			t.Fatalf("AuditToolCall failed: %v", err)
+		}
+
+		if resp.AuditID != "aud_minimal" {
+			t.Errorf("expected audit_id aud_minimal, got %s", resp.AuditID)
+		}
+	})
+
+	t.Run("empty tool_name returns error", func(t *testing.T) {
+		client := NewClient(AxonFlowConfig{
+			Endpoint: "http://localhost:8080",
+		})
+
+		_, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{})
+		if err == nil {
+			t.Fatal("expected error for empty tool_name")
+		}
+		if err.Error() != "tool_name is required" {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("server error handling", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error": "internal server error"}`))
+		}))
+		defer server.Close()
+
+		client := NewClient(AxonFlowConfig{
+			Endpoint: server.URL,
+		})
+
+		_, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName: "failingTool",
+		})
+		if err == nil {
+			t.Fatal("expected error for 500 response")
+		}
+
+		httpErr, ok := err.(*httpError)
+		if !ok {
+			t.Fatalf("expected httpError, got %T", err)
+		}
+		if httpErr.statusCode != 500 {
+			t.Errorf("expected status 500, got %d", httpErr.statusCode)
+		}
+	})
+
+	t.Run("includes auth headers", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			expectedAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("my-client:my-secret"))
+			if authHeader != expectedAuth {
+				t.Errorf("expected Authorization header '%s', got '%s'", expectedAuth, authHeader)
+			}
+
+			tenantHeader := r.Header.Get("X-Tenant-ID")
+			if tenantHeader != "my-client" {
+				t.Errorf("expected X-Tenant-ID my-client, got %s", tenantHeader)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"audit_id":  "aud_auth",
+				"status":    "recorded",
+				"timestamp": "2026-03-14T12:00:00Z",
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient(AxonFlowConfig{
+			Endpoint:     server.URL,
+			ClientID:     "my-client",
+			ClientSecret: "my-secret",
+		})
+
+		_, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName: "authTest",
+		})
+		if err != nil {
+			t.Fatalf("AuditToolCall failed: %v", err)
+		}
+	})
+
+	t.Run("network error", func(t *testing.T) {
+		client := NewClient(AxonFlowConfig{
+			Endpoint: "http://localhost:99999",
+		})
+
+		_, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName: "networkFail",
+		})
+		if err == nil {
+			t.Fatal("expected network error")
+		}
+	})
+}
+
 // TestSearchAuditLogs tests the SearchAuditLogs method
 func TestSearchAuditLogs(t *testing.T) {
 	t.Run("successful search with all filters", func(t *testing.T) {
