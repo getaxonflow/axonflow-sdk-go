@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -250,6 +251,9 @@ func TestSendTelemetryPing_Success(t *testing.T) {
 	}
 	if received.RuntimeVersion == "" {
 		t.Error("expected runtime_version to be non-empty")
+	}
+	if strings.HasPrefix(received.RuntimeVersion, "go") {
+		t.Errorf("runtime_version should not have 'go' prefix, got %q", received.RuntimeVersion)
 	}
 	if received.DeploymentMode != "production" {
 		t.Errorf("expected deployment_mode=production, got %q", received.DeploymentMode)

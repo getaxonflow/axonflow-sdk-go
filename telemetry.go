@@ -49,7 +49,6 @@ func detectPlatformVersion(endpoint string) *string {
 		return nil
 	}
 
-	client := &http.Client{Timeout: 2 * time.Second}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -58,7 +57,7 @@ func detectPlatformVersion(endpoint string) *string {
 		return nil
 	}
 
-	resp, err := client.Do(req)
+	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
 		return nil
 	}
