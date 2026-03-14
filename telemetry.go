@@ -23,7 +23,7 @@ const (
 type telemetryPayload struct {
 	SDK             string   `json:"sdk"`
 	SDKVersion      string   `json:"sdk_version"`
-	PlatformVersion string   `json:"platform_version"`
+	PlatformVersion *string  `json:"platform_version"`
 	OS              string   `json:"os"`
 	Arch            string   `json:"arch"`
 	RuntimeVersion  string   `json:"runtime_version"`
@@ -43,10 +43,10 @@ type healthVersionResponse struct {
 }
 
 // detectPlatformVersion calls the agent's /health endpoint to get the platform version.
-// Returns empty string on any failure.
-func detectPlatformVersion(endpoint string) string {
+// Returns nil on any failure.
+func detectPlatformVersion(endpoint string) *string {
 	if endpoint == "" {
-		return ""
+		return nil
 	}
 
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -55,24 +55,27 @@ func detectPlatformVersion(endpoint string) string {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/health", nil)
 	if err != nil {
-		return ""
+		return nil
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return nil
 	}
 
 	var health healthVersionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
-		return ""
+		return nil
 	}
-	return health.Version
+	if health.Version == "" {
+		return nil
+	}
+	return &health.Version
 }
 
 // generateInstanceID creates a random UUID v4 string without external dependencies.
