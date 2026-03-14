@@ -144,7 +144,7 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		PlatformVersion: platformVersion,
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
-		RuntimeVersion:  runtime.Version(),
+		RuntimeVersion:  strings.TrimPrefix(runtime.Version(), "go"),
 		DeploymentMode:  deploymentMode,
 		Features:        []string{},
 		InstanceID:      generateInstanceID(),
