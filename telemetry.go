@@ -23,7 +23,7 @@ const (
 type telemetryPayload struct {
 	SDK             string   `json:"sdk"`
 	SDKVersion      string   `json:"sdk_version"`
-	PlatformVersion string   `json:"platform_version"`
+	PlatformVersion *string  `json:"platform_version"`
 	OS              string   `json:"os"`
 	Arch            string   `json:"arch"`
 	RuntimeVersion  string   `json:"runtime_version"`
@@ -35,6 +35,46 @@ type telemetryPayload struct {
 // telemetryResponse is the JSON response from the checkpoint endpoint.
 type telemetryResponse struct {
 	LatestVersion string `json:"latest_version"`
+}
+
+// healthVersionResponse is a minimal struct for extracting the version from /health.
+type healthVersionResponse struct {
+	Version string `json:"version"`
+}
+
+// detectPlatformVersion calls the agent's /health endpoint to get the platform version.
+// Returns nil on any failure.
+func detectPlatformVersion(endpoint string) *string {
+	if endpoint == "" {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/health", nil)
+	if err != nil {
+		return nil
+	}
+
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var health healthVersionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+		return nil
+	}
+	if health.Version == "" {
+		return nil
+	}
+	return &health.Version
 }
 
 // generateInstanceID creates a random UUID v4 string without external dependencies.
@@ -80,6 +120,14 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		return
 	}
 
+	// Suppress telemetry for localhost endpoints unless explicitly enabled.
+	if c.config.TelemetryEnabled == nil || !*c.config.TelemetryEnabled {
+		ep := strings.ToLower(c.config.Endpoint)
+		if strings.Contains(ep, "localhost") || strings.Contains(ep, "127.0.0.1") || strings.Contains(ep, "[::1]") {
+			return
+		}
+	}
+
 	log.Printf("[AxonFlow] Anonymous telemetry enabled. Opt out: AXONFLOW_TELEMETRY=off | https://docs.getaxonflow.com/telemetry")
 
 	// Determine the checkpoint URL.
@@ -94,13 +142,16 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		deploymentMode = "production"
 	}
 
+	// Detect platform version from health endpoint
+	platformVersion := detectPlatformVersion(c.config.Endpoint)
+
 	payload := telemetryPayload{
 		SDK:             "go",
 		SDKVersion:      Version,
-		PlatformVersion: "",
+		PlatformVersion: platformVersion,
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
-		RuntimeVersion:  runtime.Version(),
+		RuntimeVersion:  strings.TrimPrefix(runtime.Version(), "go"),
 		DeploymentMode:  deploymentMode,
 		Features:        []string{},
 		InstanceID:      generateInstanceID(),

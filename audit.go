@@ -95,6 +95,91 @@ type AuditSearchResponse struct {
 }
 
 // ============================================================================
+// Audit Tool Call Types
+// ============================================================================
+
+// AuditToolCallRequest represents a request to record a non-LLM tool call
+// in the audit trail. ToolName is required; all other fields are optional.
+type AuditToolCallRequest struct {
+	// ToolName is the name of the tool that was called (required)
+	ToolName string `json:"tool_name"`
+	// ToolType is the type of tool: "function", "mcp", or "api"
+	ToolType string `json:"tool_type,omitempty"`
+	// Input is the input data passed to the tool
+	Input map[string]interface{} `json:"input,omitempty"`
+	// Output is the output data returned by the tool
+	Output map[string]interface{} `json:"output,omitempty"`
+	// WorkflowID is the workflow this tool call belongs to
+	WorkflowID string `json:"workflow_id,omitempty"`
+	// StepID is the step within the workflow
+	StepID string `json:"step_id,omitempty"`
+	// UserID identifies the user who initiated the tool call
+	UserID string `json:"user_id,omitempty"`
+	// DurationMs is the tool call duration in milliseconds
+	DurationMs int64 `json:"duration_ms,omitempty"`
+	// PoliciesApplied lists policy IDs that were applied to this call
+	PoliciesApplied []string `json:"policies_applied,omitempty"`
+	// Success indicates whether the tool call succeeded
+	Success *bool `json:"success,omitempty"`
+	// ErrorMessage contains the error message if the tool call failed
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// AuditToolCallResponse represents the response from recording a tool call
+type AuditToolCallResponse struct {
+	// AuditID is the unique identifier for the audit entry
+	AuditID string `json:"audit_id"`
+	// Status is the recording status (e.g., "recorded")
+	Status string `json:"status"`
+	// Timestamp is when the audit entry was created
+	Timestamp string `json:"timestamp"`
+}
+
+// ============================================================================
+// Audit Tool Call Methods
+// ============================================================================
+
+// AuditToolCall records a non-LLM tool call in the audit trail.
+//
+// This method is used to audit tool invocations that are not LLM calls,
+// such as MCP tool calls, API calls, or custom function executions.
+// Only ToolName is required; all other fields are optional.
+//
+// Example:
+//
+//	success := true
+//	resp, err := client.AuditToolCall(ctx, axonflow.AuditToolCallRequest{
+//	    ToolName:   "getUserInfo",
+//	    ToolType:   "mcp",
+//	    WorkflowID: "wf_abc123",
+//	    StepID:     "step-3",
+//	    DurationMs: 45,
+//	    Success:    &success,
+//	})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Audit recorded: %s\n", resp.AuditID)
+func (c *AxonFlowClient) AuditToolCall(ctx context.Context, req AuditToolCallRequest) (*AuditToolCallResponse, error) {
+	if req.ToolName == "" {
+		return nil, fmt.Errorf("tool_name is required")
+	}
+
+	fullURL := c.config.Endpoint + "/api/v1/audit/tool-call"
+
+	var result AuditToolCallResponse
+	if err := c.makeJSONRequest(ctx, "POST", fullURL, req, &result); err != nil {
+		return nil, err
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Audit tool call recorded - AuditID: %s, Tool: %s", result.AuditID, req.ToolName)
+	}
+
+	return &result, nil
+}
+
+// ============================================================================
 // Audit Log Read Methods
 // ============================================================================
 
