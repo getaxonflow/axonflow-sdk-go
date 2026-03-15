@@ -128,7 +128,7 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		}
 	}
 
-	log.Printf("[AxonFlow] Anonymous telemetry enabled. Opt out: AXONFLOW_TELEMETRY=off | https://docs.getaxonflow.com/telemetry")
+	log.Printf("[AxonFlow] Anonymous telemetry enabled. Opt out: AXONFLOW_TELEMETRY=off | https://docs.getaxonflow.com/docs/telemetry")
 
 	// Determine the checkpoint URL.
 	checkpointURL := os.Getenv("AXONFLOW_CHECKPOINT_URL")

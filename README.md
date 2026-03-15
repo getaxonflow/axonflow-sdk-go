@@ -543,7 +543,7 @@ fmt.Printf("Message sent: %v\n", resp.Success)
 | Amadeus GDS | Travel | Flight/hotel booking |
 | Cassandra | NoSQL | Distributed database |
 
-For complete connector documentation, see [https://docs.getaxonflow.com/mcp](https://docs.getaxonflow.com/mcp)
+For complete connector documentation, see [https://docs.getaxonflow.com/docs/mcp/overview](https://docs.getaxonflow.com/docs/mcp/overview)
 
 ## MCP Policy Features (v3.2.0)
 
