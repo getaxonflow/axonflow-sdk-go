@@ -75,10 +75,10 @@ type MCPToolInterceptor func(req MCPToolRequest, handler MCPToolHandler) (interf
 
 // CheckGateOptions contains optional parameters for CheckGate.
 type CheckGateOptions struct {
-	StepID     string
-	StepInput  map[string]interface{}
-	Model      string
-	Provider   string
+	StepID      string
+	StepInput   map[string]interface{}
+	Model       string
+	Provider    string
 	ToolContext *ToolContext
 }
 
@@ -171,7 +171,13 @@ func (a *LangGraphAdapter) GetWorkflowID() string {
 // Call this at the start of your LangGraph workflow execution.
 // Returns the assigned workflow ID.
 func (a *LangGraphAdapter) StartWorkflow(ctx context.Context, metadata map[string]interface{}, traceID string) (string, error) {
-	_ = ctx // underlying client methods use context.Background() internally
+	// Note: underlying client methods do not yet accept context.Context;
+	// we honor cancellation by checking ctx.Done() before each call.
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
 
 	req := CreateWorkflowRequest{
 		WorkflowName: a.workflowName,
@@ -207,7 +213,11 @@ func safeName(name string) string {
 //   - WorkflowApprovalRequiredError if the step requires human approval.
 //   - An error if the workflow has not been started.
 func (a *LangGraphAdapter) CheckGate(ctx context.Context, stepName string, stepType StepType, opts *CheckGateOptions) (bool, error) {
-	_ = ctx
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+	}
 
 	if a.workflowID == "" {
 		return false, fmt.Errorf("workflow not started, call StartWorkflow() first")
@@ -232,11 +242,11 @@ func (a *LangGraphAdapter) CheckGate(ctx context.Context, stepName string, stepT
 	}
 
 	req := StepGateRequest{
-		StepName:   stepName,
-		StepType:   stepType,
-		StepInput:  stepInput,
-		Model:      model,
-		Provider:   provider,
+		StepName:    stepName,
+		StepType:    stepType,
+		StepInput:   stepInput,
+		Model:       model,
+		Provider:    provider,
 		ToolContext: toolCtx,
 	}
 
@@ -271,7 +281,11 @@ func (a *LangGraphAdapter) CheckGate(ctx context.Context, stepName string, stepT
 //
 // Call this after successfully executing a LangGraph node.
 func (a *LangGraphAdapter) StepCompleted(ctx context.Context, stepName string, opts *StepCompletedOptions) error {
-	_ = ctx
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	if a.workflowID == "" {
 		return fmt.Errorf("workflow not started, call StartWorkflow() first")
@@ -322,9 +336,9 @@ func (a *LangGraphAdapter) CheckToolGate(ctx context.Context, toolName string, t
 	}
 
 	return a.CheckGate(ctx, stepName, StepTypeToolCall, &CheckGateOptions{
-		StepID:     stepID,
-		Model:      model,
-		Provider:   provider,
+		StepID:      stepID,
+		Model:       model,
+		Provider:    provider,
 		ToolContext: tc,
 	})
 }
@@ -361,7 +375,11 @@ func (a *LangGraphAdapter) ToolCompleted(ctx context.Context, toolName string, o
 
 // CompleteWorkflow marks the workflow as completed successfully.
 func (a *LangGraphAdapter) CompleteWorkflow(ctx context.Context) error {
-	_ = ctx
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	if a.workflowID == "" {
 		return fmt.Errorf("workflow not started, call StartWorkflow() first")
@@ -372,7 +390,11 @@ func (a *LangGraphAdapter) CompleteWorkflow(ctx context.Context) error {
 
 // AbortWorkflow aborts the workflow with an optional reason.
 func (a *LangGraphAdapter) AbortWorkflow(ctx context.Context, reason string) error {
-	_ = ctx
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	if a.workflowID == "" {
 		return fmt.Errorf("workflow not started, call StartWorkflow() first")
@@ -383,7 +405,11 @@ func (a *LangGraphAdapter) AbortWorkflow(ctx context.Context, reason string) err
 
 // FailWorkflow fails the workflow with a reason.
 func (a *LangGraphAdapter) FailWorkflow(ctx context.Context, reason string) error {
-	_ = ctx
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	if a.workflowID == "" {
 		return fmt.Errorf("workflow not started, call StartWorkflow() first")
