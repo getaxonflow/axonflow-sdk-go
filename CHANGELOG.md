@@ -5,6 +5,23 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-03-17
+
+### Added
+
+- `LangGraphAdapter` — wraps LangGraph workflows with AxonFlow governance gates and per-tool policy enforcement. Includes:
+  - `CheckGate()` / `StepCompleted()` — step-level governance at LangGraph node boundaries
+  - `CheckToolGate()` / `ToolCompleted()` — per-tool governance within tool_call nodes (each tool gets its own gate check)
+  - `NewMCPToolInterceptor()` — creates an interceptor enforcing `MCPCheckInput → handler → MCPCheckOutput` around every MCP tool call
+  - `WaitForApproval()` — poll until a step is approved or rejected, with context cancellation support
+  - `StartWorkflow()` / `CompleteWorkflow()` / `AbortWorkflow()` / `FailWorkflow()` — workflow lifecycle management
+- `WorkflowBlockedError` and `WorkflowApprovalRequiredError` error types
+- `NewLangGraphAdapter()` constructor with functional options (`WithSource()`, `WithAutoBlock()`)
+- Option structs: `CheckGateOptions`, `StepCompletedOptions`, `CheckToolGateOptions`, `ToolCompletedOptions`
+- MCP interceptor types: `MCPInterceptorOptions`, `MCPToolRequest`, `MCPToolHandler`, `MCPToolInterceptor`
+
+---
+
 ## [4.1.0] - 2026-03-14
 
 ### Added

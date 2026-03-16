@@ -1,4 +1,4 @@
 package axonflow
 
 // Version is the SDK version.
-const Version = "4.1.0"
+const Version = "4.2.0"
