@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `NewLangGraphAdapter()` constructor with functional options (`WithSource()`, `WithAutoBlock()`)
 - Option structs: `CheckGateOptions`, `StepCompletedOptions`, `CheckToolGateOptions`, `ToolCompletedOptions`
 - MCP interceptor types: `MCPInterceptorOptions`, `MCPToolRequest`, `MCPToolHandler`, `MCPToolInterceptor`
+- `GetCircuitBreakerStatus()` — query active circuit breaker circuits and emergency stop state
+- `GetCircuitBreakerHistory(limit)` — retrieve circuit breaker trip/reset audit trail
+- `GetCircuitBreakerConfig(tenantID)` — get effective circuit breaker config (global or tenant-specific)
+- `UpdateCircuitBreakerConfig(config)` — update per-tenant circuit breaker thresholds
 
 ---
 
