@@ -115,6 +115,8 @@ type ToolCompletedOptions struct {
 // It provides a simple interface for integrating AxonFlow's Workflow Control
 // Plane with LangGraph workflows. It handles workflow registration, step gate
 // checks, and workflow lifecycle management.
+// LangGraphAdapter is not safe for concurrent use. Each workflow execution
+// should use its own adapter instance from a single goroutine.
 type LangGraphAdapter struct {
 	client       *AxonFlowClient
 	workflowName string
@@ -224,13 +226,15 @@ func (a *LangGraphAdapter) CheckGate(ctx context.Context, stepName string, stepT
 	}
 
 	var stepID string
-	var stepInput map[string]interface{}
+	stepInput := map[string]interface{}{}
 	var model, provider string
 	var toolCtx *ToolContext
 
 	if opts != nil {
 		stepID = opts.StepID
-		stepInput = opts.StepInput
+		if opts.StepInput != nil {
+			stepInput = opts.StepInput
+		}
 		model = opts.Model
 		provider = opts.Provider
 		toolCtx = opts.ToolContext
@@ -292,11 +296,15 @@ func (a *LangGraphAdapter) StepCompleted(ctx context.Context, stepName string, o
 	}
 
 	var stepID string
-	var req MarkStepCompletedRequest
+	req := MarkStepCompletedRequest{
+		Output: map[string]interface{}{},
+	}
 
 	if opts != nil {
 		stepID = opts.StepID
-		req.Output = opts.Output
+		if opts.Output != nil {
+			req.Output = opts.Output
+		}
 		req.TokensIn = opts.TokensIn
 		req.TokensOut = opts.TokensOut
 		req.CostUSD = opts.CostUSD
@@ -348,7 +356,6 @@ func (a *LangGraphAdapter) CheckToolGate(ctx context.Context, toolName string, t
 // This is a convenience wrapper around StepCompleted for tool-level tracking.
 func (a *LangGraphAdapter) ToolCompleted(ctx context.Context, toolName string, opts *ToolCompletedOptions) error {
 	stepName := "tools/" + toolName
-	var stepID string
 	var sopts *StepCompletedOptions
 
 	if opts != nil {
@@ -362,13 +369,7 @@ func (a *LangGraphAdapter) ToolCompleted(ctx context.Context, toolName string, o
 			TokensOut: opts.TokensOut,
 			CostUSD:   opts.CostUSD,
 		}
-		stepID = opts.StepID
 	}
-
-	if sopts == nil {
-		sopts = &StepCompletedOptions{}
-	}
-	sopts.StepID = stepID
 
 	return a.StepCompleted(ctx, stepName, sopts)
 }
@@ -427,7 +428,8 @@ func (a *LangGraphAdapter) WaitForApproval(ctx context.Context, stepID string, p
 		return false, fmt.Errorf("workflow not started, call StartWorkflow() first")
 	}
 
-	deadline := time.After(timeout)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -452,7 +454,7 @@ func (a *LangGraphAdapter) WaitForApproval(ctx context.Context, stepID string, p
 		select {
 		case <-ctx.Done():
 			return false, ctx.Err()
-		case <-deadline:
+		case <-timer.C:
 			return false, fmt.Errorf("approval timeout after %s for step %s", timeout, stepID)
 		case <-ticker.C:
 			// continue polling
