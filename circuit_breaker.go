@@ -84,6 +84,12 @@ type CircuitBreakerConfigUpdate struct {
 	EnableAutoRecovery    *bool  `json:"enable_auto_recovery,omitempty"`
 }
 
+// CircuitBreakerConfigUpdateResponse is the response from PUT /api/v1/circuit-breaker/config.
+type CircuitBreakerConfigUpdateResponse struct {
+	TenantID string `json:"tenant_id"`
+	Message  string `json:"message"`
+}
+
 // circuitBreakerDataWrapper wraps the API response which nests data under "data" key.
 type circuitBreakerDataWrapper[T any] struct {
 	Success bool `json:"success"`
@@ -213,14 +219,14 @@ func (c *AxonFlowClient) GetCircuitBreakerConfig(ctx context.Context, tenantID s
 //	    log.Fatal(err)
 //	}
 //	fmt.Printf("Updated config (source: %s)\n", updated.Source)
-func (c *AxonFlowClient) UpdateCircuitBreakerConfig(ctx context.Context, config CircuitBreakerConfigUpdate) (*CircuitBreakerConfig, error) {
+func (c *AxonFlowClient) UpdateCircuitBreakerConfig(ctx context.Context, config CircuitBreakerConfigUpdate) (*CircuitBreakerConfigUpdateResponse, error) {
 	if config.TenantID == "" {
 		return nil, fmt.Errorf("tenant_id is required")
 	}
 
 	fullURL := c.config.Endpoint + "/api/v1/circuit-breaker/config"
 
-	var wrapper circuitBreakerDataWrapper[CircuitBreakerConfig]
+	var wrapper circuitBreakerDataWrapper[CircuitBreakerConfigUpdateResponse]
 	if err := c.makeJSONRequest(ctx, "PUT", fullURL, config, &wrapper); err != nil {
 		return nil, err
 	}

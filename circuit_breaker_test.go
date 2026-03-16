@@ -554,14 +554,8 @@ func TestUpdateCircuitBreakerConfig(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": true,
 				"data": map[string]interface{}{
-					"source":                  "tenant",
-					"error_threshold":         20,
-					"violation_threshold":     10,
-					"window_seconds":          120,
-					"default_timeout_seconds": 300,
-					"max_timeout_seconds":     3600,
-					"enable_auto_recovery":    true,
-					"tenant_id":              "tenant-abc",
+					"tenant_id": "tenant-abc",
+					"message":   "Circuit breaker config updated for tenant",
 				},
 			})
 		}))
@@ -577,7 +571,7 @@ func TestUpdateCircuitBreakerConfig(t *testing.T) {
 		violThreshold := 10
 		window := 120
 		autoRecovery := true
-		config, err := client.UpdateCircuitBreakerConfig(context.Background(), CircuitBreakerConfigUpdate{
+		result, err := client.UpdateCircuitBreakerConfig(context.Background(), CircuitBreakerConfigUpdate{
 			TenantID:           "tenant-abc",
 			ErrorThreshold:     &errThreshold,
 			ViolationThreshold: &violThreshold,
@@ -588,14 +582,11 @@ func TestUpdateCircuitBreakerConfig(t *testing.T) {
 			t.Fatalf("UpdateCircuitBreakerConfig failed: %v", err)
 		}
 
-		if config.Source != "tenant" {
-			t.Errorf("expected source tenant, got %s", config.Source)
+		if result.TenantID != "tenant-abc" {
+			t.Errorf("expected tenant_id tenant-abc, got %s", result.TenantID)
 		}
-		if config.ErrorThreshold != 20 {
-			t.Errorf("expected error_threshold 20, got %d", config.ErrorThreshold)
-		}
-		if config.TenantID != "tenant-abc" {
-			t.Errorf("expected tenant_id tenant-abc, got %s", config.TenantID)
+		if result.Message == "" {
+			t.Error("expected non-empty message")
 		}
 	})
 
@@ -623,14 +614,8 @@ func TestUpdateCircuitBreakerConfig(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": true,
 				"data": map[string]interface{}{
-					"source":                  "tenant",
-					"error_threshold":         5,
-					"violation_threshold":     5,
-					"window_seconds":          60,
-					"default_timeout_seconds": 300,
-					"max_timeout_seconds":     3600,
-					"enable_auto_recovery":    true,
-					"tenant_id":              "tenant-xyz",
+					"tenant_id": "tenant-xyz",
+					"message":   "Circuit breaker config updated for tenant",
 				},
 			})
 		}))
