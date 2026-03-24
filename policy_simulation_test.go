@@ -43,15 +43,15 @@ func TestSimulatePolicies(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"allowed":           false,
-				"applied_policies":  []string{"sys_pii_ssn", "sql_injection_block"},
-				"risk_score":        0.92,
-				"required_actions":  []string{"redact_pii", "block_query"},
+				"allowed":            false,
+				"applied_policies":   []string{"sys_pii_ssn", "sql_injection_block"},
+				"risk_score":         0.92,
+				"required_actions":   []string{"redact_pii", "block_query"},
 				"processing_time_ms": 45,
-				"total_policies":    12,
-				"dry_run":           true,
-				"simulated_at":      "2026-03-24T10:00:00Z",
-				"tier":              "evaluation",
+				"total_policies":     12,
+				"dry_run":            true,
+				"simulated_at":       "2026-03-24T10:00:00Z",
+				"tier":               "evaluation",
 				"daily_usage": map[string]interface{}{
 					"used":  3,
 					"limit": 100,
@@ -120,15 +120,15 @@ func TestSimulatePolicies(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"allowed":           true,
-				"applied_policies":  []string{},
-				"risk_score":        0.05,
-				"required_actions":  []string{},
+				"allowed":            true,
+				"applied_policies":   []string{},
+				"risk_score":         0.05,
+				"required_actions":   []string{},
 				"processing_time_ms": 12,
-				"total_policies":    12,
-				"dry_run":           true,
-				"simulated_at":      "2026-03-24T10:01:00Z",
-				"tier":              "evaluation",
+				"total_policies":     12,
+				"dry_run":            true,
+				"simulated_at":       "2026-03-24T10:01:00Z",
+				"tier":               "evaluation",
 			})
 		}))
 		defer server.Close()
@@ -173,15 +173,15 @@ func TestSimulatePolicies(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"allowed":           true,
-				"applied_policies":  []string{},
-				"risk_score":        0.0,
-				"required_actions":  []string{},
+				"allowed":            true,
+				"applied_policies":   []string{},
+				"risk_score":         0.0,
+				"required_actions":   []string{},
 				"processing_time_ms": 5,
-				"total_policies":    8,
-				"dry_run":           true,
-				"simulated_at":      "2026-03-24T10:02:00Z",
-				"tier":              "enterprise",
+				"total_policies":     8,
+				"dry_run":            true,
+				"simulated_at":       "2026-03-24T10:02:00Z",
+				"tier":               "enterprise",
 			})
 		}))
 		defer server.Close()
@@ -263,15 +263,15 @@ func TestSimulatePolicies(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"allowed":           true,
-				"applied_policies":  []string{},
-				"risk_score":        0.1,
-				"required_actions":  []string{},
+				"allowed":            true,
+				"applied_policies":   []string{},
+				"risk_score":         0.1,
+				"required_actions":   []string{},
 				"processing_time_ms": 10,
-				"total_policies":    5,
-				"dry_run":           true,
-				"simulated_at":      "2026-03-24T10:03:00Z",
-				"tier":              "evaluation",
+				"total_policies":     5,
+				"dry_run":            true,
+				"simulated_at":       "2026-03-24T10:03:00Z",
+				"tier":               "evaluation",
 			})
 		}))
 		defer server.Close()
@@ -319,8 +319,8 @@ func TestGetPolicyImpactReport(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"policy_id":   "policy-pii-block",
-				"policy_name": "PII Detection - Block",
+				"policy_id":    "policy-pii-block",
+				"policy_name":  "PII Detection - Block",
 				"total_inputs": 3,
 				"matched":      2,
 				"blocked":      1,
@@ -440,7 +440,7 @@ func TestGetPolicyImpactReport(t *testing.T) {
 				"blocked":            0,
 				"match_rate":         0.0,
 				"block_rate":         0.0,
-				"results":           []map[string]interface{}{{"input_index": 0, "matched": false, "blocked": false}},
+				"results":            []map[string]interface{}{{"input_index": 0, "matched": false, "blocked": false}},
 				"processing_time_ms": 5,
 				"generated_at":       "2026-03-24T10:06:00Z",
 				"tier":               "evaluation",
@@ -493,7 +493,7 @@ func TestGetPolicyImpactReport(t *testing.T) {
 				"blocked":            0,
 				"match_rate":         0.0,
 				"block_rate":         0.0,
-				"results":           []map[string]interface{}{{"input_index": 0, "matched": false, "blocked": false}},
+				"results":            []map[string]interface{}{{"input_index": 0, "matched": false, "blocked": false}},
 				"processing_time_ms": 3,
 				"generated_at":       "2026-03-24T10:07:00Z",
 				"tier":               "evaluation",
@@ -567,7 +567,7 @@ func TestGetPolicyImpactReport(t *testing.T) {
 				"blocked":            0,
 				"match_rate":         1.0,
 				"block_rate":         0.0,
-				"results":           []map[string]interface{}{{"input_index": 0, "matched": true, "blocked": false}},
+				"results":            []map[string]interface{}{{"input_index": 0, "matched": true, "blocked": false}},
 				"processing_time_ms": 10,
 				"generated_at":       "2026-03-24T10:08:00Z",
 				"tier":               "evaluation",
@@ -623,9 +623,9 @@ func TestDetectPolicyConflicts(t *testing.T) {
 							"name": "Block PII",
 							"type": "block",
 						},
-						"conflict_type":    "contradiction",
-						"description":      "policy-allow-all allows queries that policy-block-pii blocks",
-						"severity":         "high",
+						"conflict_type":     "contradiction",
+						"description":       "policy-allow-all allows queries that policy-block-pii blocks",
+						"severity":          "high",
 						"overlapping_field": "query",
 					},
 					{
@@ -639,9 +639,9 @@ func TestDetectPolicyConflicts(t *testing.T) {
 							"name": "Rate Limit 100/min",
 							"type": "rate_limit",
 						},
-						"conflict_type":    "overlap",
-						"description":      "Both policies apply rate limiting to the same scope",
-						"severity":         "medium",
+						"conflict_type":     "overlap",
+						"description":       "Both policies apply rate limiting to the same scope",
+						"severity":          "medium",
 						"overlapping_field": "rate_limit",
 					},
 				},
@@ -731,9 +731,9 @@ func TestDetectPolicyConflicts(t *testing.T) {
 							"name": "Allow All Queries",
 							"type": "allow",
 						},
-						"conflict_type":    "contradiction",
-						"description":      "These policies contradict each other",
-						"severity":         "high",
+						"conflict_type":     "contradiction",
+						"description":       "These policies contradict each other",
+						"severity":          "high",
 						"overlapping_field": "query",
 					},
 				},
