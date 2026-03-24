@@ -5,6 +5,14 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] - Unreleased
+
+### Security
+
+- `InsecureSkipTLSVerify` config field added as explicit opt-in for disabling TLS certificate verification. Previously only controllable via `NODE_TLS_REJECT_UNAUTHORIZED=0` environment variable. Warning log emitted when TLS verification is disabled. Resolves CodeQL `go/disabled-certificate-check` alert.
+
+---
+
 ## [4.2.0] - 2026-03-17
 
 ### Added
