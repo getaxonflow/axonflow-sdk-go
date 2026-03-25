@@ -22,16 +22,17 @@ import (
 
 // AxonFlowConfig represents configuration for the AxonFlow client
 type AxonFlowConfig struct {
-	Endpoint         string        // Required: AxonFlow endpoint URL (Agent proxies all routes since ADR-026)
-	ClientID         string        // Required for enterprise features: OAuth2 client ID
-	ClientSecret     string        // Required for enterprise features: OAuth2 client secret
-	Mode             string        // "production" | "sandbox" (default: "production")
-	Debug            bool          // Enable debug logging (default: false)
-	Timeout          time.Duration // Request timeout (default: 60s)
-	MapTimeout       time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
-	Retry            RetryConfig   // Retry configuration
-	Cache            CacheConfig   // Cache configuration
-	TelemetryEnabled *bool         // Override telemetry default: nil=auto, true=on, false=off
+	Endpoint              string        // Required: AxonFlow endpoint URL (Agent proxies all routes since ADR-026)
+	ClientID              string        // Required for enterprise features: OAuth2 client ID
+	ClientSecret          string        // Required for enterprise features: OAuth2 client secret
+	Mode                  string        // "production" | "sandbox" (default: "production")
+	Debug                 bool          // Enable debug logging (default: false)
+	Timeout               time.Duration // Request timeout (default: 60s)
+	MapTimeout            time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
+	Retry                 RetryConfig   // Retry configuration
+	Cache                 CacheConfig   // Cache configuration
+	TelemetryEnabled      *bool         // Override telemetry default: nil=auto, true=on, false=off
+	InsecureSkipTLSVerify bool          // Disable TLS cert verification (dev/testing only). Also settable via NODE_TLS_REJECT_UNAUTHORIZED=0.
 }
 
 // RetryConfig configures retry behavior
@@ -559,11 +560,14 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	}
 	// If TTL is explicitly set, respect the Enabled flag as-is
 
-	// Configure TLS
-	tlsConfig := &tls.Config{}
-	if os.Getenv("NODE_TLS_REJECT_UNAUTHORIZED") == "0" {
-		log.Printf("[AxonFlow] WARNING: TLS certificate verification disabled via NODE_TLS_REJECT_UNAUTHORIZED=0. This should only be used in development.")
-		tlsConfig.InsecureSkipVerify = true // #nosec G402 -- opt-in via environment variable for development use only
+	// Configure TLS — opt-in insecure mode for development/testing only.
+	// Can be enabled via AxonFlowConfig.InsecureSkipTLSVerify or NODE_TLS_REJECT_UNAUTHORIZED=0.
+	skipTLS := config.InsecureSkipTLSVerify || os.Getenv("NODE_TLS_REJECT_UNAUTHORIZED") == "0"
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: skipTLS, // #nosec G402 -- user opt-in via config flag or env var for development/testing only; codeql[go/disabled-certificate-check]
+	}
+	if skipTLS {
+		log.Printf("[AxonFlow] WARNING: TLS certificate verification is disabled. This should ONLY be used in development/testing environments. Do not use in production.")
 	}
 
 	transport := &http.Transport{
