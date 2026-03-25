@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.3.0] - 2026-03-24
 
+### Added
+
+- `SimulatePolicies()` — dry-run all active policies against an input query. Returns allowed/blocked status, applied policies, risk score, and daily usage. Requires Evaluation tier or above.
+- `GetPolicyImpactReport()` — test a single policy against multiple inputs and get aggregate match/block statistics.
+- `DetectPolicyConflicts()` — analyze active policies for contradictions, shadows, and redundancies. Optionally filter to conflicts involving a specific policy.
+- Types: `SimulatePoliciesRequest`, `SimulatePoliciesResponse`, `SimulationDailyUsage`, `ImpactReportInput`, `ImpactReportRequest`, `ImpactReportResult`, `ImpactReportResponse`, `PolicyConflictRef`, `PolicyConflict`, `PolicyConflictResponse`
+
 ### Security
 
 - `InsecureSkipTLSVerify` config field added as explicit opt-in for disabling TLS certificate verification. Previously only controllable via `NODE_TLS_REJECT_UNAUTHORIZED=0` environment variable. Warning log emitted when TLS verification is disabled. Resolves CodeQL `go/disabled-certificate-check` alert.
