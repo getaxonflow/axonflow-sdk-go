@@ -207,11 +207,6 @@ func TestAuditToolCall(t *testing.T) {
 				t.Errorf("expected Authorization header '%s', got '%s'", expectedAuth, authHeader)
 			}
 
-			tenantHeader := r.Header.Get("X-Tenant-ID")
-			if tenantHeader != "my-client" {
-				t.Errorf("expected X-Tenant-ID my-client, got %s", tenantHeader)
-			}
-
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]string{

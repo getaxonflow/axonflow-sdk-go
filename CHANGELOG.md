@@ -5,6 +5,23 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-04-04
+
+### BREAKING CHANGES
+
+- **`X-Tenant-ID` header removed.** The SDK no longer sends `X-Tenant-ID`. The server derives tenant from OAuth2 Client Credentials (Basic auth). Requires platform v6.0.0+.
+- **`MaterialityClassification` field renamed.** MAS FEAT `AISystemRegistry.Materiality` renamed to `AISystemRegistry.MaterialityClassification` to match server JSON field `materiality_classification`.
+
+### Added
+
+- **`Status` field on `PlanResponse`.** The server returns plan status (pending, executing, completed, failed, cancelled) which was previously not parsed by the SDK.
+
+### Fixed
+
+- **MCP examples missing `client_id` and `user_token`** in request body for enterprise MCP handler authentication.
+
+---
+
 ## [4.3.0] - 2026-03-25
 
 ### Added
@@ -124,6 +141,7 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
+- **StepComplete Metrics**: `MarkStepCompletedRequest` now accepts post-execution metrics (`tokens_in`, `tokens_out`, `cost_usd`) for per-step LLM usage tracking
 - **Media Governance Types**: `MediaContent`, `MediaAnalysisResult`, `MediaAnalysisResponse` for multimodal image governance
 - **`ProxyLLMCallWithMedia()`**: Send images (base64 or URL) alongside queries for governance analysis before LLM routing
 

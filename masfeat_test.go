@@ -32,16 +32,16 @@ func TestMASFEATRegisterSystem(t *testing.T) {
 			}
 
 			response := AISystemRegistry{
-				ID:              "uuid-123",
-				SystemID:        "test-system",
-				SystemName:      "Test System",
-				Materiality:     MaterialityHigh,
-				Status:          SystemStatusDraft,
-				CustomerImpact:  4,
-				ModelComplexity: 3,
-				HumanReliance:   5,
-				CreatedAt:       time.Now(),
-				UpdatedAt:       time.Now(),
+				ID:                        "uuid-123",
+				SystemID:                  "test-system",
+				SystemName:                "Test System",
+				MaterialityClassification: MaterialityHigh,
+				Status:                    SystemStatusDraft,
+				CustomerImpact:            4,
+				ModelComplexity:           3,
+				HumanReliance:             5,
+				CreatedAt:                 time.Now(),
+				UpdatedAt:                 time.Now(),
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -71,8 +71,8 @@ func TestMASFEATRegisterSystem(t *testing.T) {
 		if system.ID != "uuid-123" {
 			t.Errorf("expected ID uuid-123, got %s", system.ID)
 		}
-		if system.Materiality != MaterialityHigh {
-			t.Errorf("expected materiality high, got %s", system.Materiality)
+		if system.MaterialityClassification != MaterialityHigh {
+			t.Errorf("expected materiality high, got %s", system.MaterialityClassification)
 		}
 	})
 
@@ -525,13 +525,13 @@ func TestMASFEATGetSystem(t *testing.T) {
 			}
 
 			response := AISystemRegistry{
-				ID:          "uuid-123",
-				SystemID:    "test-system",
-				SystemName:  "Test System",
-				Status:      SystemStatusActive,
-				Materiality: MaterialityHigh,
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
+				ID:                        "uuid-123",
+				SystemID:                  "test-system",
+				SystemName:                "Test System",
+				Status:                    SystemStatusActive,
+				MaterialityClassification: MaterialityHigh,
+				CreatedAt:                 time.Now(),
+				UpdatedAt:                 time.Now(),
 			}
 
 			w.Header().Set("Content-Type", "application/json")

@@ -24,15 +24,13 @@ import (
 // AUTH HEADERS TESTS - Community Mode (no credentials)
 // ============================================================
 
-// TestAuthHeaders_NotSentWithoutCredentials verifies auth headers
-// are NOT sent when credentials are not configured (community/self-hosted mode)
-func TestAuthHeaders_NotSentWithoutCredentials(t *testing.T) {
+// TestAuthHeaders_DefaultsToCommunityCreds verifies that Basic auth with
+// "community:" is sent when no credentials are configured (community mode).
+func TestAuthHeaders_DefaultsToCommunityCreds(t *testing.T) {
 	receivedAuthHeader := ""
-	receivedLicenseHeader := ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedAuthHeader = r.Header.Get("Authorization")
-		receivedLicenseHeader = r.Header.Get("X-License-Key")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
@@ -41,24 +39,21 @@ func TestAuthHeaders_NotSentWithoutCredentials(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create client WITHOUT credentials
+	// Create client WITHOUT credentials — should default to "community"
 	client := NewClient(AxonFlowConfig{
 		Endpoint: server.URL,
-		// No ClientID/ClientSecret/LicenseKey
-		Cache: CacheConfig{Enabled: false},
+		Cache:    CacheConfig{Enabled: false},
 	})
 
 	_, _ = client.ProxyLLMCall("user", "query", "chat", nil)
 
-	// Auth headers should NOT be set when no credentials are provided
-	if receivedAuthHeader != "" {
-		t.Errorf("Expected no Authorization header without credentials, got '%s'", receivedAuthHeader)
-	}
-	if receivedLicenseHeader != "" {
-		t.Errorf("Expected no X-License-Key header without credentials, got '%s'", receivedLicenseHeader)
+	// Basic auth with community: should always be sent
+	expectedAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("community:"))
+	if receivedAuthHeader != expectedAuth {
+		t.Errorf("Expected Basic auth with community default, got '%s'", receivedAuthHeader)
 	}
 
-	t.Log("✅ Auth headers correctly NOT sent in community mode (no credentials)")
+	t.Log("✅ Basic auth correctly sent with community default")
 }
 
 // ============================================================
@@ -105,8 +100,8 @@ func TestAuthHeaders_OAuth2Basic(t *testing.T) {
 	t.Log("✅ OAuth2 Basic auth header correctly sent")
 }
 
-// TestAuthHeaders_ClientIDWithoutSecret verifies that ClientID alone
-// doesn't trigger OAuth2 (needs both ClientID + ClientSecret)
+// TestAuthHeaders_ClientIDWithoutSecret verifies Basic auth with empty
+// secret is sent when only ClientID is configured (community mode with custom tenant).
 func TestAuthHeaders_ClientIDWithoutSecret(t *testing.T) {
 	receivedAuthHeader := ""
 
@@ -124,16 +119,16 @@ func TestAuthHeaders_ClientIDWithoutSecret(t *testing.T) {
 	client := NewClient(AxonFlowConfig{
 		Endpoint: server.URL,
 		ClientID: "my-client",
-		// No ClientSecret
-		Cache: CacheConfig{Enabled: false},
+		Cache:    CacheConfig{Enabled: false},
 	})
 
 	_, _ = client.ProxyLLMCall("user", "query", "chat", nil)
 
-	// Should NOT send Authorization header since ClientSecret is missing
-	if receivedAuthHeader != "" {
-		t.Errorf("Expected no Authorization without ClientSecret, got '%s'", receivedAuthHeader)
+	// Should send Basic auth with empty secret — server uses clientId as tenant
+	expectedAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("my-client:"))
+	if receivedAuthHeader != expectedAuth {
+		t.Errorf("Expected Basic auth with clientId and empty secret, got '%s'", receivedAuthHeader)
 	}
 
-	t.Log("✅ Correctly omits Authorization when ClientSecret is missing")
+	t.Log("✅ Basic auth correctly sent with clientId and empty secret")
 }

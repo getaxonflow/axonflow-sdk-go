@@ -418,19 +418,18 @@ func (c *AxonFlowClient) GetAuditLogsByTenant(ctx context.Context, tenantID stri
 	return result, nil
 }
 
-// addAuthHeaders adds OAuth2-style authentication headers to the request.
-// Sets X-Tenant-ID for all policy APIs (uses ClientID).
-// Sets Authorization: Basic base64(clientId:clientSecret) when credentials are complete.
+// addAuthHeaders adds OAuth2-style Basic auth header to the request.
+// The server derives tenant context from the authenticated clientId.
 func (c *AxonFlowClient) addAuthHeaders(req *http.Request) {
-	// ClientID is required for policy APIs - it sets the tenant context
-	if c.config.ClientID != "" {
-		req.Header.Set("X-Tenant-ID", c.config.ClientID)
-		// ClientSecret is optional for community mode but required for enterprise
-		if c.config.ClientSecret != "" {
-			credentials := base64.StdEncoding.EncodeToString(
-				[]byte(c.config.ClientID + ":" + c.config.ClientSecret),
-			)
-			req.Header.Set("Authorization", "Basic "+credentials)
-		}
+	effectiveClientID := c.config.ClientID
+	if effectiveClientID == "" {
+		effectiveClientID = "community"
+	}
+	// Always send Basic auth — server derives tenant from clientId
+	credentials := base64.StdEncoding.EncodeToString(
+		[]byte(effectiveClientID + ":" + c.config.ClientSecret),
+	)
+	req.Header.Set("Authorization", "Basic "+credentials)
+	if effectiveClientID != "" {
 	}
 }

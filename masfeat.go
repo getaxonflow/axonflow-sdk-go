@@ -143,24 +143,24 @@ type UpdateSystemRequest struct {
 
 // AISystemRegistry represents an AI system in the registry
 type AISystemRegistry struct {
-	ID              string                    `json:"id"`
-	OrgID           string                    `json:"org_id"`
-	SystemID        string                    `json:"system_id"`
-	SystemName      string                    `json:"system_name"`
-	Description     string                    `json:"description,omitempty"`
-	UseCase         AISystemUseCase           `json:"use_case"`
-	OwnerTeam       string                    `json:"owner_team"`
-	TechnicalOwner  string                    `json:"technical_owner,omitempty"`
-	BusinessOwner   string                    `json:"owner_email,omitempty"`
-	CustomerImpact  int                       `json:"risk_rating_impact"`
-	ModelComplexity int                       `json:"risk_rating_complexity"`
-	HumanReliance   int                       `json:"risk_rating_reliance"`
-	Materiality     MaterialityClassification `json:"materiality"`
-	Status          SystemStatus              `json:"status"`
-	Metadata        map[string]interface{}    `json:"metadata,omitempty"`
-	CreatedAt       time.Time                 `json:"created_at"`
-	UpdatedAt       time.Time                 `json:"updated_at"`
-	CreatedBy       string                    `json:"created_by,omitempty"`
+	ID                        string                    `json:"id"`
+	OrgID                     string                    `json:"org_id"`
+	SystemID                  string                    `json:"system_id"`
+	SystemName                string                    `json:"system_name"`
+	Description               string                    `json:"description,omitempty"`
+	UseCase                   AISystemUseCase           `json:"use_case"`
+	OwnerTeam                 string                    `json:"owner_team"`
+	TechnicalOwner            string                    `json:"technical_owner,omitempty"`
+	BusinessOwner             string                    `json:"owner_email,omitempty"`
+	CustomerImpact            int                       `json:"risk_rating_impact"`
+	ModelComplexity           int                       `json:"risk_rating_complexity"`
+	HumanReliance             int                       `json:"risk_rating_reliance"`
+	MaterialityClassification MaterialityClassification `json:"materiality_classification"`
+	Status                    SystemStatus              `json:"status"`
+	Metadata                  map[string]interface{}    `json:"metadata,omitempty"`
+	CreatedAt                 time.Time                 `json:"created_at"`
+	UpdatedAt                 time.Time                 `json:"updated_at"`
+	CreatedBy                 string                    `json:"created_by,omitempty"`
 }
 
 // RegistrySummary represents summary statistics for the registry
@@ -176,11 +176,11 @@ type RegistrySummary struct {
 
 // ListSystemsOptions represents options for listing AI systems
 type ListSystemsOptions struct {
-	Status      *SystemStatus
-	UseCase     *AISystemUseCase
-	Materiality *MaterialityClassification
-	Limit       int
-	Offset      int
+	Status                    *SystemStatus
+	UseCase                   *AISystemUseCase
+	MaterialityClassification *MaterialityClassification
+	Limit                     int
+	Offset                    int
 }
 
 // ===========================================================================
@@ -404,7 +404,7 @@ func (c *AxonFlowClient) MASFEATRegisterSystem(req *RegisterSystemRequest) (*AIS
 	}
 
 	if c.config.Debug {
-		log.Printf("[AxonFlow MASFEAT] System registered: %s materiality=%s", result.SystemID, result.Materiality)
+		log.Printf("[AxonFlow MASFEAT] System registered: %s materiality=%s", result.SystemID, result.MaterialityClassification)
 	}
 
 	return &result, nil
@@ -494,8 +494,8 @@ func (c *AxonFlowClient) MASFEATListSystems(opts *ListSystemsOptions) ([]AISyste
 		if opts.UseCase != nil {
 			params += fmt.Sprintf("use_case=%s&", *opts.UseCase)
 		}
-		if opts.Materiality != nil {
-			params += fmt.Sprintf("materiality=%s&", *opts.Materiality)
+		if opts.MaterialityClassification != nil {
+			params += fmt.Sprintf("materiality=%s&", *opts.MaterialityClassification)
 		}
 		if opts.Limit > 0 {
 			params += fmt.Sprintf("limit=%d&", opts.Limit)

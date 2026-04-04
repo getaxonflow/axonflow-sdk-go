@@ -291,6 +291,7 @@ type PolicyMatch struct {
 // PlanResponse represents a multi-agent plan generation response
 type PlanResponse struct {
 	PlanID            string                 `json:"plan_id"`
+	Status            string                 `json:"status"` // Plan status (pending, executing, completed, failed, cancelled)
 	Steps             []PlanStep             `json:"steps"`
 	Domain            string                 `json:"domain"`
 	Complexity        int                    `json:"complexity"`         // Complexity score (1-10)
