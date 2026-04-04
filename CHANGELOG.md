@@ -124,6 +124,7 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
+- **StepComplete Metrics**: `MarkStepCompletedRequest` now accepts post-execution metrics (`tokens_in`, `tokens_out`, `cost_usd`) for per-step LLM usage tracking
 - **Media Governance Types**: `MediaContent`, `MediaAnalysisResult`, `MediaAnalysisResponse` for multimodal image governance
 - **`ProxyLLMCallWithMedia()`**: Send images (base64 or URL) alongside queries for governance analysis before LLM routing
 
