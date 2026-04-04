@@ -535,6 +535,15 @@ func (c *cache) cleanup() {
 
 // NewClient creates a new AxonFlow client with the given configuration
 func NewClient(config AxonFlowConfig) *AxonFlowClient {
+	// Try mode: override endpoint to try.getaxonflow.com for evaluation.
+	// ClientID is mandatory — the server needs it for tenant isolation.
+	if os.Getenv("AXONFLOW_TRY") == "1" {
+		config.Endpoint = "https://try.getaxonflow.com"
+		if config.ClientID == "" {
+			panic("ClientID is required in try mode (AXONFLOW_TRY=1). Register at https://try.getaxonflow.com/api/v1/register")
+		}
+	}
+
 	// Reject ClientSecret without ClientID — licensed mode must specify tenant.
 	// Log loudly but don't crash the process — the server will reject requests
 	// and the error will surface at first API call.
