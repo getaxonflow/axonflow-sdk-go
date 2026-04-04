@@ -155,7 +155,7 @@ type AISystemRegistry struct {
 	CustomerImpact  int                       `json:"risk_rating_impact"`
 	ModelComplexity int                       `json:"risk_rating_complexity"`
 	HumanReliance   int                       `json:"risk_rating_reliance"`
-	Materiality     MaterialityClassification `json:"materiality"`
+	Materiality     MaterialityClassification `json:"materiality_classification"`
 	Status          SystemStatus              `json:"status"`
 	Metadata        map[string]interface{}    `json:"metadata,omitempty"`
 	CreatedAt       time.Time                 `json:"created_at"`
