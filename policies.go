@@ -359,13 +359,8 @@ func (c *AxonFlowClient) orchestratorPolicyRequest(method, path string, body int
 	// Add OAuth2 Basic auth headers
 	c.addAuthHeaders(req)
 
-	// Always set tenant ID for policy APIs (uses ClientID as tenant)
-	if c.config.ClientID != "" {
-		req.Header.Set("X-Tenant-ID", c.config.ClientID)
-	}
-
 	if c.config.Debug {
-		log.Printf("[AxonFlow] Orchestrator policy request: %s %s", method, path)
+		log.Printf("[AxonFlow] Policy request: %s %s", method, path)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -423,11 +418,6 @@ func (c *AxonFlowClient) policyRequest(method, path string, body interface{}, re
 	// Add OAuth2 Basic auth headers
 	c.addAuthHeaders(req)
 
-	// Always set tenant ID for policy APIs (uses ClientID as tenant)
-	if c.config.ClientID != "" {
-		req.Header.Set("X-Tenant-ID", c.config.ClientID)
-	}
-
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Policy request: %s %s", method, path)
 	}
@@ -475,11 +465,6 @@ func (c *AxonFlowClient) policyRequestRaw(method, path string) ([]byte, error) {
 
 	// Add OAuth2 Basic auth headers
 	c.addAuthHeaders(req)
-
-	// Always set tenant ID for policy APIs (uses ClientID as tenant)
-	if c.config.ClientID != "" {
-		req.Header.Set("X-Tenant-ID", c.config.ClientID)
-	}
 
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Raw policy request: %s %s", method, path)

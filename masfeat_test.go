@@ -35,7 +35,7 @@ func TestMASFEATRegisterSystem(t *testing.T) {
 				ID:              "uuid-123",
 				SystemID:        "test-system",
 				SystemName:      "Test System",
-				Materiality:     MaterialityHigh,
+				MaterialityClassification:     MaterialityHigh,
 				Status:          SystemStatusDraft,
 				CustomerImpact:  4,
 				ModelComplexity: 3,
@@ -71,8 +71,8 @@ func TestMASFEATRegisterSystem(t *testing.T) {
 		if system.ID != "uuid-123" {
 			t.Errorf("expected ID uuid-123, got %s", system.ID)
 		}
-		if system.Materiality != MaterialityHigh {
-			t.Errorf("expected materiality high, got %s", system.Materiality)
+		if system.MaterialityClassification != MaterialityHigh {
+			t.Errorf("expected materiality high, got %s", system.MaterialityClassification)
 		}
 	})
 
@@ -529,7 +529,7 @@ func TestMASFEATGetSystem(t *testing.T) {
 				SystemID:    "test-system",
 				SystemName:  "Test System",
 				Status:      SystemStatusActive,
-				Materiality: MaterialityHigh,
+				MaterialityClassification: MaterialityHigh,
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
 			}

@@ -128,10 +128,6 @@ func TestGetCircuitBreakerStatus(t *testing.T) {
 			if authHeader != expectedAuth {
 				t.Errorf("expected Authorization header '%s', got '%s'", expectedAuth, authHeader)
 			}
-			tenantHeader := r.Header.Get("X-Tenant-ID")
-			if tenantHeader != "my-client" {
-				t.Errorf("expected X-Tenant-ID my-client, got %s", tenantHeader)
-			}
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -656,10 +652,6 @@ func TestUpdateCircuitBreakerConfig(t *testing.T) {
 			expectedAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("my-client:my-secret"))
 			if authHeader != expectedAuth {
 				t.Errorf("expected Authorization header '%s', got '%s'", expectedAuth, authHeader)
-			}
-			tenantHeader := r.Header.Get("X-Tenant-ID")
-			if tenantHeader != "my-client" {
-				t.Errorf("expected X-Tenant-ID my-client, got %s", tenantHeader)
 			}
 
 			w.Header().Set("Content-Type", "application/json")
