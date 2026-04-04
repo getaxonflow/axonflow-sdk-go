@@ -143,24 +143,24 @@ type UpdateSystemRequest struct {
 
 // AISystemRegistry represents an AI system in the registry
 type AISystemRegistry struct {
-	ID              string                    `json:"id"`
-	OrgID           string                    `json:"org_id"`
-	SystemID        string                    `json:"system_id"`
-	SystemName      string                    `json:"system_name"`
-	Description     string                    `json:"description,omitempty"`
-	UseCase         AISystemUseCase           `json:"use_case"`
-	OwnerTeam       string                    `json:"owner_team"`
-	TechnicalOwner  string                    `json:"technical_owner,omitempty"`
-	BusinessOwner   string                    `json:"owner_email,omitempty"`
-	CustomerImpact  int                       `json:"risk_rating_impact"`
-	ModelComplexity int                       `json:"risk_rating_complexity"`
-	HumanReliance   int                       `json:"risk_rating_reliance"`
+	ID                        string                    `json:"id"`
+	OrgID                     string                    `json:"org_id"`
+	SystemID                  string                    `json:"system_id"`
+	SystemName                string                    `json:"system_name"`
+	Description               string                    `json:"description,omitempty"`
+	UseCase                   AISystemUseCase           `json:"use_case"`
+	OwnerTeam                 string                    `json:"owner_team"`
+	TechnicalOwner            string                    `json:"technical_owner,omitempty"`
+	BusinessOwner             string                    `json:"owner_email,omitempty"`
+	CustomerImpact            int                       `json:"risk_rating_impact"`
+	ModelComplexity           int                       `json:"risk_rating_complexity"`
+	HumanReliance             int                       `json:"risk_rating_reliance"`
 	MaterialityClassification MaterialityClassification `json:"materiality_classification"`
-	Status          SystemStatus              `json:"status"`
-	Metadata        map[string]interface{}    `json:"metadata,omitempty"`
-	CreatedAt       time.Time                 `json:"created_at"`
-	UpdatedAt       time.Time                 `json:"updated_at"`
-	CreatedBy       string                    `json:"created_by,omitempty"`
+	Status                    SystemStatus              `json:"status"`
+	Metadata                  map[string]interface{}    `json:"metadata,omitempty"`
+	CreatedAt                 time.Time                 `json:"created_at"`
+	UpdatedAt                 time.Time                 `json:"updated_at"`
+	CreatedBy                 string                    `json:"created_by,omitempty"`
 }
 
 // RegistrySummary represents summary statistics for the registry
@@ -176,11 +176,11 @@ type RegistrySummary struct {
 
 // ListSystemsOptions represents options for listing AI systems
 type ListSystemsOptions struct {
-	Status      *SystemStatus
-	UseCase     *AISystemUseCase
+	Status                    *SystemStatus
+	UseCase                   *AISystemUseCase
 	MaterialityClassification *MaterialityClassification
-	Limit       int
-	Offset      int
+	Limit                     int
+	Offset                    int
 }
 
 // ===========================================================================

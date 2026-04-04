@@ -32,16 +32,16 @@ func TestMASFEATRegisterSystem(t *testing.T) {
 			}
 
 			response := AISystemRegistry{
-				ID:              "uuid-123",
-				SystemID:        "test-system",
-				SystemName:      "Test System",
-				MaterialityClassification:     MaterialityHigh,
-				Status:          SystemStatusDraft,
-				CustomerImpact:  4,
-				ModelComplexity: 3,
-				HumanReliance:   5,
-				CreatedAt:       time.Now(),
-				UpdatedAt:       time.Now(),
+				ID:                        "uuid-123",
+				SystemID:                  "test-system",
+				SystemName:                "Test System",
+				MaterialityClassification: MaterialityHigh,
+				Status:                    SystemStatusDraft,
+				CustomerImpact:            4,
+				ModelComplexity:           3,
+				HumanReliance:             5,
+				CreatedAt:                 time.Now(),
+				UpdatedAt:                 time.Now(),
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -525,13 +525,13 @@ func TestMASFEATGetSystem(t *testing.T) {
 			}
 
 			response := AISystemRegistry{
-				ID:          "uuid-123",
-				SystemID:    "test-system",
-				SystemName:  "Test System",
-				Status:      SystemStatusActive,
+				ID:                        "uuid-123",
+				SystemID:                  "test-system",
+				SystemName:                "Test System",
+				Status:                    SystemStatusActive,
 				MaterialityClassification: MaterialityHigh,
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
+				CreatedAt:                 time.Now(),
+				UpdatedAt:                 time.Now(),
 			}
 
 			w.Header().Set("Content-Type", "application/json")
