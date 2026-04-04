@@ -535,6 +535,12 @@ func (c *cache) cleanup() {
 
 // NewClient creates a new AxonFlow client with the given configuration
 func NewClient(config AxonFlowConfig) *AxonFlowClient {
+	// Reject ClientSecret without ClientID — licensed mode must specify tenant
+	if config.ClientSecret != "" && config.ClientID == "" {
+		panic("axonflow: ClientID is required when ClientSecret is set. " +
+			"Set ClientID to your tenant identity to avoid data being stored under the wrong tenant.")
+	}
+
 	// Set defaults
 	if config.Mode == "" {
 		config.Mode = "production"
