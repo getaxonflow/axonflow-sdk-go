@@ -5,6 +5,20 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-04-06
+
+### Added
+
+- **`GovernedTool` adapter** — framework-agnostic tool governance wrapper. Wraps any `Tool` interface with input/output policy enforcement (`MCPCheckInput` before execution, `MCPCheckOutput` after). Helpers: `GovernTool(tool, client, opts)`, `GovernTools(tools, client, opts)`.
+- **`CheckToolInput()` / `CheckToolOutput()`** — generic aliases for tool governance. Existing `MCPCheckInput()` / `MCPCheckOutput()` remain supported.
+- **`PolicyViolationError`** in the main `axonflow` package, with `IsPolicyViolationError()` helper.
+
+### Changed
+
+- Anonymous telemetry is now enabled by default for all endpoints, including localhost/self-hosted evaluation. Opt out with `DO_NOT_TRACK=1` or `AXONFLOW_TELEMETRY=off`.
+
+---
+
 ## [5.0.0] - 2026-04-05
 
 ### BREAKING CHANGES
