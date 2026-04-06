@@ -35,7 +35,7 @@ type mockTool struct {
 }
 
 func (m *mockTool) Name() string        { return m.name }
-func (m *mockTool) Description() string  { return m.description }
+func (m *mockTool) Description() string { return m.description }
 func (m *mockTool) Invoke(ctx context.Context, input any) (any, error) {
 	m.invoked.Store(true)
 	if m.invokeFn != nil {
@@ -329,8 +329,8 @@ func TestGovernedTool_ObjectInputJSONMarshal(t *testing.T) {
 	governed := GovernTool(tool, client, nil)
 
 	input := map[string]interface{}{
-		"query":  "test",
-		"limit":  10,
+		"query": "test",
+		"limit": 10,
 	}
 	_, _ = governed.Invoke(context.Background(), input)
 
