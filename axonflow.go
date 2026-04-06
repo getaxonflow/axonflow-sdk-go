@@ -1423,6 +1423,16 @@ func (c *AxonFlowClient) MCPCheckOutput(ctx context.Context, req MCPCheckOutputR
 	return &result, nil
 }
 
+// CheckToolInput is an alias for MCPCheckInput. It validates tool input against configured policies.
+func (c *AxonFlowClient) CheckToolInput(ctx context.Context, req MCPCheckInputRequest) (*MCPCheckInputResponse, error) {
+	return c.MCPCheckInput(ctx, req)
+}
+
+// CheckToolOutput is an alias for MCPCheckOutput. It validates tool output against configured policies.
+func (c *AxonFlowClient) CheckToolOutput(ctx context.Context, req MCPCheckOutputRequest) (*MCPCheckOutputResponse, error) {
+	return c.MCPCheckOutput(ctx, req)
+}
+
 // GeneratePlan creates a multi-agent execution plan from a natural language query.
 // The userToken parameter is optional; if not provided, it defaults to the client ID.
 // Usage: GeneratePlan(query, domain) or GeneratePlan(query, domain, userToken)

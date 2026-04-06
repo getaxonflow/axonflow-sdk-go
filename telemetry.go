@@ -120,14 +120,6 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		return
 	}
 
-	// Suppress telemetry for localhost endpoints unless explicitly enabled.
-	if c.config.TelemetryEnabled == nil || !*c.config.TelemetryEnabled {
-		ep := strings.ToLower(c.config.Endpoint)
-		if strings.Contains(ep, "localhost") || strings.Contains(ep, "127.0.0.1") || strings.Contains(ep, "[::1]") {
-			return
-		}
-	}
-
 	log.Printf("[AxonFlow] Anonymous telemetry enabled. Opt out: AXONFLOW_TELEMETRY=off | https://docs.getaxonflow.com/docs/telemetry")
 
 	// Determine the checkpoint URL.
