@@ -162,7 +162,7 @@ By contributing to AxonFlow Go SDK, you agree that your contributions will be li
 If you have questions about contributing, feel free to:
 
 - Open a discussion on GitHub
-- Email us at dev@getaxonflow.com
+- Email us at hello@getaxonflow.com
 - Check our documentation at https://docs.getaxonflow.com
 
 Thank you for contributing to AxonFlow!
