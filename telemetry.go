@@ -23,13 +23,13 @@ const (
 
 // telemetryPayload is the JSON body sent to the checkpoint endpoint.
 type telemetryPayload struct {
-	SDK             string   `json:"sdk"`
-	SDKVersion      string   `json:"sdk_version"`
-	PlatformVersion *string  `json:"platform_version"`
-	OS              string   `json:"os"`
-	Arch            string   `json:"arch"`
-	RuntimeVersion  string   `json:"runtime_version"`
-	DeploymentMode  string   `json:"deployment_mode"`
+	SDK             string  `json:"sdk"`
+	SDKVersion      string  `json:"sdk_version"`
+	PlatformVersion *string `json:"platform_version"`
+	OS              string  `json:"os"`
+	Arch            string  `json:"arch"`
+	RuntimeVersion  string  `json:"runtime_version"`
+	DeploymentMode  string  `json:"deployment_mode"`
 	// EndpointType: SDK-derived classification of the configured endpoint.
 	// One of: "localhost", "private_network", "remote", "unknown". See
 	// ClassifyEndpoint. The raw URL is never sent. Issue #1525.

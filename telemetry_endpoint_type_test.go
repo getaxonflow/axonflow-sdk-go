@@ -93,4 +93,3 @@ func TestPayloadContainsNoURL(t *testing.T) {
 		}
 	}
 }
-
