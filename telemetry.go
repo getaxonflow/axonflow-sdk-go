@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -21,15 +23,70 @@ const (
 
 // telemetryPayload is the JSON body sent to the checkpoint endpoint.
 type telemetryPayload struct {
-	SDK             string   `json:"sdk"`
-	SDKVersion      string   `json:"sdk_version"`
-	PlatformVersion *string  `json:"platform_version"`
-	OS              string   `json:"os"`
-	Arch            string   `json:"arch"`
-	RuntimeVersion  string   `json:"runtime_version"`
-	DeploymentMode  string   `json:"deployment_mode"`
-	Features        []string `json:"features"`
-	InstanceID      string   `json:"instance_id"`
+	SDK             string  `json:"sdk"`
+	SDKVersion      string  `json:"sdk_version"`
+	PlatformVersion *string `json:"platform_version"`
+	OS              string  `json:"os"`
+	Arch            string  `json:"arch"`
+	RuntimeVersion  string  `json:"runtime_version"`
+	DeploymentMode  string  `json:"deployment_mode"`
+	// EndpointType: SDK-derived classification of the configured endpoint.
+	// One of: "localhost", "private_network", "remote", "unknown". See
+	// ClassifyEndpoint. The raw URL is never sent. Issue #1525.
+	EndpointType string   `json:"endpoint_type"`
+	Features     []string `json:"features"`
+	InstanceID   string   `json:"instance_id"`
+}
+
+// EndpointType classifications for telemetry.
+const (
+	EndpointTypeLocalhost      = "localhost"
+	EndpointTypePrivateNetwork = "private_network"
+	EndpointTypeRemote         = "remote"
+	EndpointTypeUnknown        = "unknown"
+)
+
+// ClassifyEndpoint classifies the configured AxonFlow endpoint URL into one
+// of localhost | private_network | remote | unknown.
+//
+// The raw URL is never sent to the checkpoint service — only the classification.
+// See issue #1525.
+//
+//   - "localhost": localhost, 127/8, ::1, 0.0.0.0, *.localhost
+//   - "private_network": RFC1918 v4, link-local (169.254/16), ULA (fc00::/7),
+//     and the suffixes .local, .internal, .lan, .intranet
+//   - "remote": everything else
+//   - "unknown": on parse failure
+func ClassifyEndpoint(endpoint string) string {
+	if endpoint == "" {
+		return EndpointTypeUnknown
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Hostname() == "" {
+		return EndpointTypeUnknown
+	}
+	host := strings.ToLower(u.Hostname())
+
+	if host == "localhost" || host == "0.0.0.0" || strings.HasSuffix(host, ".localhost") {
+		return EndpointTypeLocalhost
+	}
+	for _, suffix := range []string{".local", ".internal", ".lan", ".intranet"} {
+		if strings.HasSuffix(host, suffix) {
+			return EndpointTypePrivateNetwork
+		}
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return EndpointTypeRemote
+	}
+	if ip.IsLoopback() {
+		return EndpointTypeLocalhost
+	}
+	if ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return EndpointTypePrivateNetwork
+	}
+	return EndpointTypeRemote
 }
 
 // telemetryResponse is the JSON response from the checkpoint endpoint.
@@ -145,6 +202,7 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		Arch:            runtime.GOARCH,
 		RuntimeVersion:  strings.TrimPrefix(runtime.Version(), "go"),
 		DeploymentMode:  deploymentMode,
+		EndpointType:    ClassifyEndpoint(c.config.Endpoint),
 		Features:        []string{},
 		InstanceID:      generateInstanceID(),
 	}
