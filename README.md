@@ -813,7 +813,7 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ```
 
 **How to get credentials:**
-1. Contact AxonFlow support at [dev@getaxonflow.com](mailto:dev@getaxonflow.com)
+1. Contact AxonFlow support at [hello@getaxonflow.com](mailto:hello@getaxonflow.com)
 2. Credentials are provided as part of your AxonFlow subscription
 3. Store credentials securely in environment variables or secrets management systems
 
@@ -889,7 +889,7 @@ For enterprise features, contact [sales@getaxonflow.com](mailto:sales@getaxonflo
 
 - **Documentation**: https://docs.getaxonflow.com
 - **Issues**: https://github.com/getaxonflow/axonflow-sdk-go/issues
-- **Email**: dev@getaxonflow.com
+- **Email**: hello@getaxonflow.com
 
 If you are evaluating AxonFlow in a company setting and cannot open a public issue, you can share feedback or blockers confidentially here:
 [Anonymous evaluation feedback form](https://getaxonflow.com/feedback)
