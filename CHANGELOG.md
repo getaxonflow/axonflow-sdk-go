@@ -5,15 +5,13 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [5.3.0] - Release Pending (2026-04-09)
-
-### Fixed
-
-- **`Version` constant corrected to `5.3.0`.** The v5.2.0 release shipped with `version.go` still declaring `const Version = "5.1.0"` — the constant was never bumped in the v5.2.0 PR. Any caller of `axonflow.Version` on v5.2.0 receives the string `"5.1.0"`, not `"5.2.0"`. This bug was discovered during the v5.2.0 post-release review. The constant is now corrected to `"5.3.0"` for the upcoming release. Go module proxy immutability means the v5.2.0 tag cannot be patched in place; downstream consumers on v5.2.0 who rely on the `Version` constant should upgrade to v5.3.0.
+## [5.3.0] - 2026-04-09
 
 ### Added
 
-- No runtime classifier changes — Go's `net.IP.IsPrivate()` already handles IPv6 ULA (`fc00::/7`) correctly, so the IPv6 review finding from the TS/Java classifiers does not apply here.
+- `AXONFLOW_TRY=1` environment variable to connect to `try.getaxonflow.com` shared evaluation server
+- `RegisterTry()` and `RegisterTryWithEndpoint()` helpers for self-registering a tenant
+- Checkpoint telemetry reports `endpoint_type: "community-saas"` when try mode is active
 
 ---
 

@@ -58,6 +58,9 @@ const (
 //   - "remote": everything else
 //   - "unknown": on parse failure
 func ClassifyEndpoint(endpoint string) string {
+	if os.Getenv("AXONFLOW_TRY") == "1" {
+		return "community-saas"
+	}
 	if endpoint == "" {
 		return EndpointTypeUnknown
 	}
