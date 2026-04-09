@@ -6,9 +6,7 @@ package axonflow
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -544,9 +542,6 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 		if config.ClientID == "" {
 			panic("ClientID is required in try mode (AXONFLOW_TRY=1). Register at https://try.getaxonflow.com/api/v1/register")
 		}
-		b := make([]byte, 3)
-		_, _ = rand.Read(b)
-		config.ClientID = fmt.Sprintf("%s-%s", config.ClientID, hex.EncodeToString(b))
 	}
 
 	// Reject ClientSecret without ClientID — licensed mode must specify tenant.
