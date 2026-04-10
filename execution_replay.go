@@ -155,7 +155,12 @@ func (c *AxonFlowClient) ListExecutions(options *ListExecutionsOptions) (*ListEx
 		reqURL += "?" + params.Encode()
 	}
 
-	resp, err := c.httpClient.Get(reqURL)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list executions: %w", err)
 	}
@@ -198,7 +203,12 @@ func (c *AxonFlowClient) GetExecution(executionID string) (*ExecutionDetail, err
 	baseURL := c.config.Endpoint
 	reqURL := fmt.Sprintf("%s/api/v1/executions/%s", baseURL, executionID)
 
-	resp, err := c.httpClient.Get(reqURL)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution: %w", err)
 	}
@@ -245,7 +255,12 @@ func (c *AxonFlowClient) GetExecutionSteps(executionID string) ([]ExecutionSnaps
 	baseURL := c.config.Endpoint
 	reqURL := fmt.Sprintf("%s/api/v1/executions/%s/steps", baseURL, executionID)
 
-	resp, err := c.httpClient.Get(reqURL)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution steps: %w", err)
 	}
@@ -295,7 +310,12 @@ func (c *AxonFlowClient) GetExecutionTimeline(executionID string) ([]TimelineEnt
 	baseURL := c.config.Endpoint
 	reqURL := fmt.Sprintf("%s/api/v1/executions/%s/timeline", baseURL, executionID)
 
-	resp, err := c.httpClient.Get(reqURL)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution timeline: %w", err)
 	}
@@ -365,7 +385,12 @@ func (c *AxonFlowClient) ExportExecution(executionID string, options *ExecutionE
 		reqURL += "?" + params.Encode()
 	}
 
-	resp, err := c.httpClient.Get(reqURL)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export execution: %w", err)
 	}
