@@ -440,6 +440,7 @@ func (c *AxonFlowClient) DeleteExecution(executionID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create delete request: %w", err)
 	}
+	c.addAuthHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
