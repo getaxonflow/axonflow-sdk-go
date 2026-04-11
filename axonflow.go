@@ -1126,7 +1126,12 @@ func getMetadataKeys(metadata map[string]interface{}) []string {
 
 // ListConnectors returns all available MCP connectors from the marketplace
 func (c *AxonFlowClient) ListConnectors() ([]ConnectorMetadata, error) {
-	resp, err := c.httpClient.Get(c.config.Endpoint + "/api/v1/connectors")
+	req, err := http.NewRequest("GET", c.config.Endpoint+"/api/v1/connectors", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list connectors: %w", err)
 	}
@@ -1155,8 +1160,13 @@ func (c *AxonFlowClient) ListConnectors() ([]ConnectorMetadata, error) {
 
 // GetConnector returns details for a specific connector by ID
 func (c *AxonFlowClient) GetConnector(connectorID string) (*ConnectorMetadata, error) {
-	url := fmt.Sprintf("%s/api/v1/connectors/%s", c.config.Endpoint, connectorID)
-	resp, err := c.httpClient.Get(url)
+	reqURL := fmt.Sprintf("%s/api/v1/connectors/%s", c.config.Endpoint, connectorID)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connector: %w", err)
 	}
@@ -1185,8 +1195,13 @@ func (c *AxonFlowClient) GetConnector(connectorID string) (*ConnectorMetadata, e
 
 // GetConnectorHealth returns the health status of an installed connector
 func (c *AxonFlowClient) GetConnectorHealth(connectorID string) (*ConnectorHealthStatus, error) {
-	url := fmt.Sprintf("%s/api/v1/connectors/%s/health", c.config.Endpoint, connectorID)
-	resp, err := c.httpClient.Get(url)
+	reqURL := fmt.Sprintf("%s/api/v1/connectors/%s/health", c.config.Endpoint, connectorID)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connector health: %w", err)
 	}
@@ -1688,7 +1703,12 @@ func (c *AxonFlowClient) ExecutePlan(planID string, userToken ...string) (*PlanE
 
 // GetPlanStatus retrieves the status of a running or completed plan
 func (c *AxonFlowClient) GetPlanStatus(planID string) (*PlanExecutionResponse, error) {
-	resp, err := c.httpClient.Get(c.config.Endpoint + "/api/v1/plan/" + planID)
+	req, err := http.NewRequest("GET", c.config.Endpoint+"/api/v1/plan/"+planID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.addAuthHeaders(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan status: %w", err)
 	}
