@@ -133,6 +133,20 @@ type CreateWorkflowResponse struct {
 	TraceID string `json:"trace_id,omitempty"`
 }
 
+// RetryPolicy controls how step gate decisions behave on repeated calls for the
+// same (workflow_id, step_id) pair.
+type RetryPolicy string
+
+const (
+	// RetryPolicyIdempotent returns the cached decision if the step was already evaluated.
+	// This is the default behavior when RetryPolicy is empty.
+	RetryPolicyIdempotent RetryPolicy = "idempotent"
+
+	// RetryPolicyReevaluate forces a fresh policy evaluation even if the step was
+	// previously evaluated. Use when external state has changed.
+	RetryPolicyReevaluate RetryPolicy = "reevaluate"
+)
+
 // StepGateRequest is the request to check if a step is allowed to proceed.
 type StepGateRequest struct {
 	// StepName is the human-readable name for the step (optional)
@@ -152,6 +166,10 @@ type StepGateRequest struct {
 
 	// ToolContext provides tool-level context for per-tool governance within tool_call steps (optional)
 	ToolContext *ToolContext `json:"tool_context,omitempty"`
+
+	// RetryPolicy controls behavior on repeated calls for the same (workflow_id, step_id).
+	// Default (empty or "idempotent"): return cached decision. "reevaluate": force fresh evaluation.
+	RetryPolicy RetryPolicy `json:"retry_policy,omitempty"`
 }
 
 // StepGateResponse is the response from a step gate check.
@@ -176,6 +194,13 @@ type StepGateResponse struct {
 
 	// PoliciesMatched contains policies that matched and influenced the decision (Issue #1021)
 	PoliciesMatched []PolicyMatch `json:"policies_matched,omitempty"`
+
+	// Cached indicates whether this response was served from a prior decision
+	// rather than a fresh policy evaluation.
+	Cached bool `json:"cached"`
+
+	// DecisionSource indicates how the decision was produced: "fresh" or "cached".
+	DecisionSource string `json:"decision_source"`
 }
 
 // IsAllowed returns true if the step is allowed to proceed.
