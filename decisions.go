@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -75,7 +76,10 @@ func (c *AxonFlowClient) ExplainDecision(ctx context.Context, decisionID string)
 		return nil, fmt.Errorf("decisionID is required")
 	}
 
-	fullURL := c.config.Endpoint + "/api/v1/decisions/" + decisionID + "/explain"
+	// Path-escape the decision ID — platform-generated IDs are usually
+	// filesystem-safe, but nothing in ADR-043 guarantees it, and IDs that
+	// contain "/" or "?" would break the URL otherwise.
+	fullURL := c.config.Endpoint + "/api/v1/decisions/" + url.PathEscape(decisionID) + "/explain"
 
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 	if err != nil {

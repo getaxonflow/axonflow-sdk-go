@@ -85,6 +85,29 @@ func TestExplainDecision_HappyPath(t *testing.T) {
 	}
 }
 
+func TestExplainDecision_URLEncodesDecisionID(t *testing.T) {
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(DecisionExplanation{DecisionID: "a/b", Decision: "allow"})
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{
+		config:     AxonFlowConfig{Endpoint: srv.URL},
+		httpClient: srv.Client(),
+	}
+	_, err := c.ExplainDecision(context.Background(), "a/b?c")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Path should be URL-escaped: "a/b?c" → "a%2Fb%3Fc"
+	if !strings.Contains(capturedPath, "a%2Fb%3Fc") {
+		t.Errorf("Path = %q, expected URL-encoded decision ID", capturedPath)
+	}
+}
+
 func TestExplainDecision_404(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
