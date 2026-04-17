@@ -563,6 +563,28 @@ func (c *AxonFlowClient) GetCheckpoints(workflowID string) (*CheckpointListRespo
 	return &resp, nil
 }
 
+// ResumeFromLastCheckpoint resumes a workflow from its last resumable checkpoint
+// with fresh policy evaluation. Evaluation+ tier.
+//
+// Example:
+//
+//	resp, err := client.ResumeFromLastCheckpoint("wf_123")
+//	fmt.Printf("Resumed from %s, new decision: %s\n", resp.ResumedFromCheckpoint, resp.NewDecision)
+func (c *AxonFlowClient) ResumeFromLastCheckpoint(workflowID string) (*ResumeFromCheckpointResponse, error) {
+	if workflowID == "" {
+		return nil, fmt.Errorf("workflow ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/checkpoints/resume", c.config.Endpoint, workflowID)
+
+	var resp ResumeFromCheckpointResponse
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, struct{}{}, &resp); err != nil {
+		return nil, fmt.Errorf("failed to resume from last checkpoint: %w", err)
+	}
+
+	return &resp, nil
+}
+
 // ResumeFromCheckpoint resumes a workflow from a specific checkpoint with fresh
 // policy evaluation. Enterprise only.
 //
