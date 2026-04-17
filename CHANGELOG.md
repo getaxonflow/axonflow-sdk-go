@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Companion to platform v7.1.0. Works against older platforms that ignore the
 new filter fields — they just pass through without narrowing results. Works
-against new plugins (OpenClaw v1.3.0+, Claude Code v0.5.0+, Cursor v0.5.0+,
+against plugin releases (OpenClaw v1.3.0+, Claude Code v0.5.0+, Cursor v0.5.0+,
 Codex v0.4.0+) that surface the `DecisionExplanation` shape.
 
 ---
