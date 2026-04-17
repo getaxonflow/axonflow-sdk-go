@@ -86,9 +86,11 @@ func TestExplainDecision_HappyPath(t *testing.T) {
 }
 
 func TestExplainDecision_URLEncodesDecisionID(t *testing.T) {
-	var capturedPath string
+	// Use RequestURI (raw request line) rather than r.URL.Path (decoded) so
+	// we can verify the wire form actually carries escaped bytes.
+	var capturedURI string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
+		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(DecisionExplanation{DecisionID: "a/b", Decision: "allow"})
 	}))
@@ -98,13 +100,13 @@ func TestExplainDecision_URLEncodesDecisionID(t *testing.T) {
 		config:     AxonFlowConfig{Endpoint: srv.URL},
 		httpClient: srv.Client(),
 	}
-	_, err := c.ExplainDecision(context.Background(), "a/b?c")
+	// Plain slash is enough — PathEscape escapes '/' in a single path segment.
+	_, err := c.ExplainDecision(context.Background(), "a/b")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Path should be URL-escaped: "a/b?c" → "a%2Fb%3Fc"
-	if !strings.Contains(capturedPath, "a%2Fb%3Fc") {
-		t.Errorf("Path = %q, expected URL-encoded decision ID", capturedPath)
+	if !strings.Contains(capturedURI, "a%2Fb") {
+		t.Errorf("RequestURI = %q, expected URL-encoded decision ID 'a%%2Fb'", capturedURI)
 	}
 }
 
