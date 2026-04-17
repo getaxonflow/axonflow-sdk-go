@@ -57,3 +57,5 @@ CLAUDE.md.backup-*
 
 
 .codex/
+.worktrees/
+coverage.txt
