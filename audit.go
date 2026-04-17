@@ -30,6 +30,15 @@ type AuditSearchRequest struct {
 	EndTime *time.Time `json:"end_time,omitempty"`
 	// RequestType filters by request type (e.g., "llm_chat", "policy_check")
 	RequestType string `json:"request_type,omitempty"`
+	// DecisionID filters logs by the explainability decision ID (ADR-043).
+	// Useful for reconstructing everything tied to a single decision.
+	DecisionID string `json:"decision_id,omitempty"`
+	// PolicyName filters logs by the matched policy name (ADR-043).
+	PolicyName string `json:"policy_name,omitempty"`
+	// OverrideID filters logs by the session-override ID (ADR-042).
+	// Use this to reconstruct the full lifecycle of one override
+	// (override_created → override_used → override_expired | override_revoked).
+	OverrideID string `json:"override_id,omitempty"`
 	// Limit is the maximum number of results to return (default: 100, max: 1000)
 	Limit int `json:"limit,omitempty"`
 	// Offset is the pagination offset (default: 0)
@@ -242,6 +251,15 @@ func (c *AxonFlowClient) SearchAuditLogs(ctx context.Context, req *AuditSearchRe
 	}
 	if req.RequestType != "" {
 		reqBody["request_type"] = req.RequestType
+	}
+	if req.DecisionID != "" {
+		reqBody["decision_id"] = req.DecisionID
+	}
+	if req.PolicyName != "" {
+		reqBody["policy_name"] = req.PolicyName
+	}
+	if req.OverrideID != "" {
+		reqBody["override_id"] = req.OverrideID
 	}
 	reqBody["limit"] = req.Limit
 	if req.Offset > 0 {
