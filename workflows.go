@@ -133,6 +133,20 @@ type CreateWorkflowResponse struct {
 	TraceID string `json:"trace_id,omitempty"`
 }
 
+// RetryPolicy controls how step gate decisions behave on repeated calls for the
+// same (workflow_id, step_id) pair.
+type RetryPolicy string
+
+const (
+	// RetryPolicyIdempotent returns the cached decision if the step was already evaluated.
+	// This is the default behavior when RetryPolicy is empty.
+	RetryPolicyIdempotent RetryPolicy = "idempotent"
+
+	// RetryPolicyReevaluate forces a fresh policy evaluation even if the step was
+	// previously evaluated. Use when external state has changed.
+	RetryPolicyReevaluate RetryPolicy = "reevaluate"
+)
+
 // StepGateRequest is the request to check if a step is allowed to proceed.
 type StepGateRequest struct {
 	// StepName is the human-readable name for the step (optional)
@@ -152,6 +166,10 @@ type StepGateRequest struct {
 
 	// ToolContext provides tool-level context for per-tool governance within tool_call steps (optional)
 	ToolContext *ToolContext `json:"tool_context,omitempty"`
+
+	// RetryPolicy controls behavior on repeated calls for the same (workflow_id, step_id).
+	// Default (empty or "idempotent"): return cached decision. "reevaluate": force fresh evaluation.
+	RetryPolicy RetryPolicy `json:"retry_policy,omitempty"`
 }
 
 // StepGateResponse is the response from a step gate check.
@@ -176,6 +194,13 @@ type StepGateResponse struct {
 
 	// PoliciesMatched contains policies that matched and influenced the decision (Issue #1021)
 	PoliciesMatched []PolicyMatch `json:"policies_matched,omitempty"`
+
+	// Cached indicates whether this response was served from a prior decision
+	// rather than a fresh policy evaluation.
+	Cached bool `json:"cached"`
+
+	// DecisionSource indicates how the decision was produced: "fresh" or "cached".
+	DecisionSource string `json:"decision_source"`
 }
 
 // IsAllowed returns true if the step is allowed to proceed.
@@ -512,6 +537,79 @@ func (c *AxonFlowClient) ResumeWorkflow(workflowID string) error {
 	return nil
 }
 
+// GetCheckpoints returns all step-gate checkpoints for a workflow.
+//
+// Checkpoints are created automatically at each step gate evaluation and capture
+// the decision and policy context. Available in all tiers.
+//
+// Example:
+//
+//	resp, err := client.GetCheckpoints("wf_123")
+//	for _, cp := range resp.Checkpoints {
+//	    fmt.Printf("Step %s: %s (resumable=%v)\n", cp.StepID, cp.GateDecision, cp.IsResumable)
+//	}
+func (c *AxonFlowClient) GetCheckpoints(workflowID string) (*CheckpointListResponse, error) {
+	if workflowID == "" {
+		return nil, fmt.Errorf("workflow ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/checkpoints", c.config.Endpoint, workflowID)
+
+	var resp CheckpointListResponse
+	if err := c.makeJSONRequest(context.Background(), "GET", fullURL, nil, &resp); err != nil {
+		return nil, fmt.Errorf("failed to get checkpoints: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// ResumeFromLastCheckpoint resumes a workflow from its last resumable checkpoint
+// with fresh policy evaluation. Evaluation+ tier.
+//
+// Example:
+//
+//	resp, err := client.ResumeFromLastCheckpoint("wf_123")
+//	fmt.Printf("Resumed from %s, new decision: %s\n", resp.ResumedFromCheckpoint, resp.NewDecision)
+func (c *AxonFlowClient) ResumeFromLastCheckpoint(workflowID string) (*ResumeFromCheckpointResponse, error) {
+	if workflowID == "" {
+		return nil, fmt.Errorf("workflow ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/checkpoints/resume", c.config.Endpoint, workflowID)
+
+	var resp ResumeFromCheckpointResponse
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, struct{}{}, &resp); err != nil {
+		return nil, fmt.Errorf("failed to resume from last checkpoint: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// ResumeFromCheckpoint resumes a workflow from a specific checkpoint with fresh
+// policy evaluation. Enterprise only.
+//
+// The step gate at the checkpoint boundary is re-evaluated with current policies,
+// so any policy changes since the checkpoint was created are reflected.
+//
+// Example:
+//
+//	resp, err := client.ResumeFromCheckpoint("wf_123", 42)
+//	fmt.Printf("Resumed from %s, new decision: %s\n", resp.ResumedFromCheckpoint, resp.NewDecision)
+func (c *AxonFlowClient) ResumeFromCheckpoint(workflowID string, checkpointID int64) (*ResumeFromCheckpointResponse, error) {
+	if workflowID == "" {
+		return nil, fmt.Errorf("workflow ID is required")
+	}
+
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/checkpoints/%d/resume", c.config.Endpoint, workflowID, checkpointID)
+
+	var resp ResumeFromCheckpointResponse
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, struct{}{}, &resp); err != nil {
+		return nil, fmt.Errorf("failed to resume from checkpoint: %w", err)
+	}
+
+	return &resp, nil
+}
+
 // MarkStepCompleted marks a workflow step as completed.
 //
 // Call this after a step has been executed successfully.
@@ -599,6 +697,77 @@ func (c *AxonFlowClient) ListWorkflows(opts *ListWorkflowsOptions) (*ListWorkflo
 // ============================================================================
 // WCP Approval Types (Feature 5)
 // ============================================================================
+
+// --- Checkpoint Types ---
+
+// Checkpoint represents a governance-aware resume boundary at a step-gate evaluation.
+type Checkpoint struct {
+	// ID is the database identifier for this checkpoint
+	ID int64 `json:"id"`
+
+	// WorkflowID is the workflow this checkpoint belongs to
+	WorkflowID string `json:"workflow_id"`
+
+	// StepID is the step this checkpoint was created at
+	StepID string `json:"step_id"`
+
+	// StepIndex is the position of the step in the workflow
+	StepIndex int `json:"step_index"`
+
+	// StepType is the type of step (llm_call, tool_call, etc.)
+	StepType string `json:"step_type,omitempty"`
+
+	// CheckpointType classifies the checkpoint: "step_gate" or "approval_boundary"
+	CheckpointType string `json:"checkpoint_type"`
+
+	// GateDecision is the decision recorded at this checkpoint
+	GateDecision string `json:"gate_decision"`
+
+	// GateReason explains the decision
+	GateReason string `json:"gate_reason,omitempty"`
+
+	// IsResumable indicates whether the workflow can be resumed from this checkpoint
+	IsResumable bool `json:"is_resumable"`
+
+	// ResumeCount is how many times the workflow has been resumed from this checkpoint
+	ResumeCount int `json:"resume_count"`
+
+	// CreatedAt is when the checkpoint was created
+	CreatedAt string `json:"created_at"`
+}
+
+// CheckpointListResponse is the response from listing checkpoints.
+type CheckpointListResponse struct {
+	// Checkpoints is the ordered list of checkpoints for the workflow
+	Checkpoints []Checkpoint `json:"checkpoints"`
+
+	// WorkflowID is the workflow the checkpoints belong to
+	WorkflowID string `json:"workflow_id"`
+}
+
+// ResumeFromCheckpointResponse is the response after resuming from a checkpoint.
+type ResumeFromCheckpointResponse struct {
+	// WorkflowID is the workflow that was resumed
+	WorkflowID string `json:"workflow_id"`
+
+	// ResumedFromCheckpoint is the step_id of the checkpoint that was resumed from
+	ResumedFromCheckpoint string `json:"resumed_from_checkpoint"`
+
+	// ResumedFromIndex is the step_index of the checkpoint
+	ResumedFromIndex int `json:"resumed_from_index"`
+
+	// NewDecision is the fresh policy decision after re-evaluation
+	NewDecision string `json:"new_decision"`
+
+	// DecisionSource is always "fresh" since resume forces re-evaluation
+	DecisionSource string `json:"decision_source"`
+
+	// ResumeCount is the updated resume count for this checkpoint
+	ResumeCount int `json:"resume_count"`
+
+	// Message is a human-readable summary
+	Message string `json:"message"`
+}
 
 // ApproveStepRequest is the request to approve a workflow step.
 type ApproveStepRequest struct {

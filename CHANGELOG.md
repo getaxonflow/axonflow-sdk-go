@@ -5,6 +5,23 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.0] - 2026-04-18
+
+### Added
+
+- **Execution boundary semantics** — `RetryPolicy` type with `RetryPolicyIdempotent`
+  (default) and `RetryPolicyReevaluate` constants. Step gate requests now accept
+  `retry_policy` to control whether repeated calls for the same step return the
+  cached decision or force a fresh policy evaluation.
+- **Step gate response metadata** — `Cached` (bool) and `DecisionSource` (string)
+  fields on `StepGateResponse` indicate whether the response came from a cached
+  decision ("cached") or a fresh policy evaluation ("fresh").
+- **Workflow checkpoints** — `GetCheckpoints(workflowID)` lists step-gate
+  checkpoints for a workflow. `ResumeFromCheckpoint(workflowID, checkpointID)`
+  resumes from a specific checkpoint with fresh policy evaluation (Enterprise).
+- **Checkpoint types** — `Checkpoint`, `CheckpointListResponse`, and
+  `ResumeFromCheckpointResponse` types for checkpoint operations.
+
 ## [5.3.1] - 2026-04-11
 
 ### Fixed
