@@ -12,8 +12,53 @@ env:
   DO_NOT_TRACK: '1'
 
 jobs:
+  # Preflight: validate CHANGELOG has a section for the tag being released
+  # BEFORE the release job runs. A missing section fails the entire
+  # workflow cleanly rather than creating a GitHub release with a generic
+  # "see CHANGELOG.md" body pointing at no content.
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract CHANGELOG section
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          awk -v ver="$VERSION" '$0 ~ "^## \\["ver"\\]" {p=1; next} p && /^## \[/ {exit} p {print}' CHANGELOG.md > /tmp/release-body.md
+          if [ ! -s /tmp/release-body.md ]; then
+            echo "::error::No CHANGELOG.md section found for version $VERSION — refusing to publish."
+            echo "::error::Add a '## [$VERSION] - YYYY-MM-DD' section to CHANGELOG.md and re-tag."
+            exit 1
+          fi
+          {
+            echo "## AxonFlow Go SDK v${VERSION}"
+            echo ""
+            echo "### Installation"
+            echo ""
+            echo '```bash'
+            echo "go get github.com/getaxonflow/axonflow-sdk-go/v5@v${VERSION}"
+            echo '```'
+            echo ""
+            echo "### Documentation"
+            echo ""
+            echo "- [pkg.go.dev](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v5@v${VERSION})"
+            echo "- [README](https://github.com/getaxonflow/axonflow-sdk-go#readme)"
+            echo "- [Examples](https://github.com/getaxonflow/axonflow-sdk-go/tree/main/examples)"
+            echo ""
+            cat /tmp/release-body.md
+          } > /tmp/release-body-final.md
+          echo "Release body: $(wc -l < /tmp/release-body-final.md) lines"
+
+      - name: Upload release body artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-body
+          path: /tmp/release-body-final.md
+          retention-days: 1
+
   release:
     name: Create Release
+    needs: preflight
     runs-on: ubuntu-latest
 
     steps:
@@ -34,38 +79,22 @@ jobs:
         go build -v ./examples/connectors
         go build -v ./examples/planning
 
-    - name: Extract release notes
-      id: extract_notes
-      run: |
-        VERSION=${GITHUB_REF#refs/tags/}
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
+    - name: Download release body artifact
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: release-body
+        path: /tmp/release-body
 
     - name: Create Release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ steps.extract_notes.outputs.version }}
-        body: |
-          ## What's New in ${{ steps.extract_notes.outputs.version }}
-
-          See [CHANGELOG.md](https://github.com/getaxonflow/axonflow-sdk-go/blob/main/CHANGELOG.md) for details.
-
-          ## Installation
-
-          ```bash
-          go get github.com/getaxonflow/axonflow-sdk-go/v4@${{ steps.extract_notes.outputs.version }}
-          ```
-
-          ## Documentation
-
-          - [Go Package Documentation](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v4@${{ steps.extract_notes.outputs.version }})
-          - [README](https://github.com/getaxonflow/axonflow-sdk-go#readme)
-          - [Examples](https://github.com/getaxonflow/axonflow-sdk-go/tree/main/examples)
-
+        name: Release ${{ github.ref_name }}
+        body_path: /tmp/release-body/release-body-final.md
+        generate_release_notes: false
         draft: false
         prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
     name: Notify pkg.go.dev
@@ -76,4 +105,4 @@ jobs:
     - name: Trigger pkg.go.dev update
       run: |
         VERSION=${GITHUB_REF#refs/tags/}
-        curl https://proxy.golang.org/github.com/getaxonflow/axonflow-sdk-go/v4/@v/$VERSION.info
+        curl https://proxy.golang.org/github.com/getaxonflow/axonflow-sdk-go/v5/@v/$VERSION.info
