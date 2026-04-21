@@ -5,6 +5,46 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`retry_context` and `idempotency_key` support on the step gate** — `StepGateResponse`
+  now carries a non-nullable `RetryContext` object on every gate call with the true
+  `(workflow_id, step_id)` lifecycle: `GateCount`, `CompletionCount`,
+  `PriorCompletionStatus` (`"none"` / `"completed"` / `"gated_not_completed"`),
+  `PriorOutputAvailable`, `PriorOutput`, `PriorCompletionAt`, `FirstAttemptAt`,
+  `LastAttemptAt`, `LastDecision`, and `IdempotencyKey`. Prefer these to the legacy
+  `Cached` / `DecisionSource` fields.
+- **`StepGateWithOptions`** — new method taking `StepGateOptions{IncludePriorOutput: bool}`
+  (default `false`). When `true`, the SDK sends `?include_prior_output=true` and
+  `RetryContext.PriorOutput` is populated when a prior `/complete` has landed. Existing
+  `StepGate(workflowID, stepID, req)` is unchanged and calls `StepGateWithOptions` with
+  zero options, so existing callers keep working.
+- **`StepGateRequest.IdempotencyKey`** — caller-supplied opaque business-level key
+  (max 255 chars). Immutable once recorded on the first gate call for a
+  `(workflow_id, step_id)`; subsequent gate/complete calls must pass the same key.
+- **`MarkStepCompletedRequest.IdempotencyKey`** — must match the key set on the
+  corresponding gate call, if any. Mismatch (including missing-vs-set on either side)
+  surfaces as a typed `*IdempotencyKeyMismatchError`.
+- **`IdempotencyKeyMismatchError`** — typed error returned by `StepGate`,
+  `StepGateWithOptions`, and `MarkStepCompleted` when the platform returns HTTP 409
+  with `error.code == "IDEMPOTENCY_KEY_MISMATCH"`. Surfaces `WorkflowID`, `StepID`,
+  `ExpectedIdempotencyKey`, `ReceivedIdempotencyKey`, and `Message`. Use
+  `errors.As(err, &idemErr)` to unwrap.
+
+### Deprecated
+
+- **`StepGateResponse.Cached`** and **`StepGateResponse.DecisionSource`** — still populated
+  but deprecated in favor of `RetryContext.GateCount > 1` and
+  `RetryContext.PriorCompletionStatus`. Planned for removal in a future major version.
+
+### Compatibility
+
+Companion to the platform change that introduces `retry_context` on
+`POST /api/v1/workflows/{workflow_id}/steps/{step_id}/gate`. Additive only — existing
+callers that never set `IdempotencyKey` or `IncludePriorOutput` see no behavior change.
+
 ## [5.4.0] - 2026-04-18
 
 ### Added
