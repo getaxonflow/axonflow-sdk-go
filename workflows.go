@@ -170,6 +170,20 @@ type StepGateRequest struct {
 	// RetryPolicy controls behavior on repeated calls for the same (workflow_id, step_id).
 	// Default (empty or "idempotent"): return cached decision. "reevaluate": force fresh evaluation.
 	RetryPolicy RetryPolicy `json:"retry_policy,omitempty"`
+
+	// IdempotencyKey is a caller-supplied opaque business-level key (max 255 chars).
+	// Once set on the first gate call for a (workflow_id, step_id), it is immutable —
+	// subsequent gate/complete calls must pass the same key or receive IdempotencyKeyMismatchError.
+	// The key is echoed on RetryContext.IdempotencyKey in every subsequent gate response.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+}
+
+// StepGateOptions controls gate-call behavior that lives outside the request body.
+type StepGateOptions struct {
+	// IncludePriorOutput opts into populating RetryContext.PriorOutput on the
+	// response when a prior /complete exists. Default false because prior output
+	// may be large and/or contain sensitive data. Sent as ?include_prior_output=true.
+	IncludePriorOutput bool
 }
 
 // StepGateResponse is the response from a step gate check.
@@ -197,10 +211,19 @@ type StepGateResponse struct {
 
 	// Cached indicates whether this response was served from a prior decision
 	// rather than a fresh policy evaluation.
+	//
+	// Deprecated: use RetryContext.GateCount > 1 instead. Will be removed in a future major version.
 	Cached bool `json:"cached"`
 
 	// DecisionSource indicates how the decision was produced: "fresh" or "cached".
+	//
+	// Deprecated: use RetryContext.PriorCompletionStatus instead. Will be removed in a future major version.
 	DecisionSource string `json:"decision_source"`
+
+	// RetryContext is the first-class state signal for (workflow_id, step_id). Always
+	// present on every gate response, including the first call. See RetryContext for
+	// field semantics.
+	RetryContext RetryContext `json:"retry_context"`
 }
 
 // IsAllowed returns true if the step is allowed to proceed.
@@ -341,6 +364,10 @@ type MarkStepCompletedRequest struct {
 
 	// CostUSD is the estimated cost in USD for this step's LLM usage
 	CostUSD *float64 `json:"cost_usd,omitempty"`
+
+	// IdempotencyKey must match the key passed on the corresponding gate call, if any.
+	// Mismatch (including empty vs set on either side) yields IdempotencyKeyMismatchError.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // CreateWorkflow creates a new workflow for governance tracking.
@@ -421,6 +448,30 @@ func (c *AxonFlowClient) GetWorkflow(workflowID string) (*WorkflowStatusResponse
 //	}
 //	// Step is allowed, proceed with execution
 func (c *AxonFlowClient) StepGate(workflowID, stepID string, req StepGateRequest) (*StepGateResponse, error) {
+	return c.StepGateWithOptions(workflowID, stepID, req, StepGateOptions{})
+}
+
+// StepGateWithOptions is StepGate with explicit call-level options (e.g. IncludePriorOutput).
+//
+// Use this variant when you need RetryContext.PriorOutput populated for retry/replay flows.
+// The opts.IncludePriorOutput flag is sent as the ?include_prior_output=true query param.
+//
+// Example:
+//
+//	gate, err := client.StepGateWithOptions("wf_123", "step-1",
+//	    StepGateRequest{StepType: StepTypeLLMCall, IdempotencyKey: "payment:wire:acct4471:invoice-7721"},
+//	    StepGateOptions{IncludePriorOutput: true})
+//	if err != nil {
+//	    var idemErr *IdempotencyKeyMismatchError
+//	    if errors.As(err, &idemErr) {
+//	        // expected_idempotency_key / received_idempotency_key available on idemErr
+//	    }
+//	    return err
+//	}
+//	if gate.RetryContext.PriorCompletionStatus == PriorCompletionStatusCompleted {
+//	    // prior result is in gate.RetryContext.PriorOutput
+//	}
+func (c *AxonFlowClient) StepGateWithOptions(workflowID, stepID string, req StepGateRequest, opts StepGateOptions) (*StepGateResponse, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow ID is required")
 	}
@@ -429,9 +480,15 @@ func (c *AxonFlowClient) StepGate(workflowID, stepID string, req StepGateRequest
 	}
 
 	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/gate", c.config.Endpoint, workflowID, stepID)
+	if opts.IncludePriorOutput {
+		fullURL += "?include_prior_output=true"
+	}
 	var result StepGateResponse
 
 	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, &result); err != nil {
+		if idemErr := parseIdempotencyKeyMismatch(err); idemErr != nil {
+			return nil, idemErr
+		}
 		return nil, fmt.Errorf("failed to check step gate: %w", err)
 	}
 
@@ -632,15 +689,15 @@ func (c *AxonFlowClient) MarkStepCompleted(workflowID, stepID string, req *MarkS
 
 	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/complete", c.config.Endpoint, workflowID, stepID)
 
-	body := struct{}{}
+	var payload interface{} = struct{}{}
 	if req != nil {
-		if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, nil); err != nil {
-			return fmt.Errorf("failed to mark step completed: %w", err)
+		payload = req
+	}
+	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, payload, nil); err != nil {
+		if idemErr := parseIdempotencyKeyMismatch(err); idemErr != nil {
+			return idemErr
 		}
-	} else {
-		if err := c.makeJSONRequest(context.Background(), "POST", fullURL, body, nil); err != nil {
-			return fmt.Errorf("failed to mark step completed: %w", err)
-		}
+		return fmt.Errorf("failed to mark step completed: %w", err)
 	}
 
 	return nil
