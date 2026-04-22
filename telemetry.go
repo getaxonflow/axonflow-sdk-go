@@ -151,12 +151,22 @@ func generateInstanceID() string {
 // isTelemetryEnabled determines whether telemetry should be sent for this client.
 //
 // Priority order:
-//  1. Environment variables — DO_NOT_TRACK=1 or AXONFLOW_TELEMETRY=off disables (always wins).
+//  1. Environment variables — DO_NOT_TRACK=1 (deprecated) or AXONFLOW_TELEMETRY=off disables (always wins).
 //  2. Config override (TelemetryEnabled *bool) — if non-nil, use its value.
 //  3. Default — ON for all modes except sandbox.
+//
+// DO_NOT_TRACK is deprecated and will be removed after 2026-05-05 in the next
+// major release. Use AXONFLOW_TELEMETRY=off to opt out of AxonFlow telemetry.
+// When DO_NOT_TRACK=1 is the only thing disabling telemetry, a one-time
+// warning is logged so operators can migrate before the removal.
 func (c *AxonFlowClient) isTelemetryEnabled() bool {
 	// 1. Environment-level opt-out always wins (cannot be overridden by config).
 	if strings.TrimSpace(os.Getenv("DO_NOT_TRACK")) == "1" {
+		// Only warn when DO_NOT_TRACK is the active control. If the caller
+		// has also set AXONFLOW_TELEMETRY=off, they've already migrated.
+		if !strings.EqualFold(strings.TrimSpace(os.Getenv("AXONFLOW_TELEMETRY")), "off") {
+			log.Printf("[AxonFlow] DO_NOT_TRACK=1 is deprecated as an AxonFlow telemetry opt-out and will be removed after 2026-05-05 in the next major release. Set AXONFLOW_TELEMETRY=off to opt out going forward. See https://docs.getaxonflow.com/docs/telemetry for details.")
+		}
 		return false
 	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("AXONFLOW_TELEMETRY")), "off") {
