@@ -827,42 +827,143 @@ type ResumeFromCheckpointResponse struct {
 }
 
 // ApproveStepRequest is the request to approve a workflow step.
+//
+// The server requires `comment` with a minimum of 10 characters — it's the
+// audit-trail justification that every approval carries into the workflow
+// history. Callers SHOULD always supply a meaningful comment; the SDK will
+// pass it through unchanged.
 type ApproveStepRequest struct {
-	// ApprovedBy identifies who approved the step (optional)
+	// ApprovedBy identifies who approved the step (optional; defaults to
+	// the X-User-ID header on the server side if omitted).
 	ApprovedBy string `json:"approved_by,omitempty"`
+
+	// Comment is the audit justification for the approval. Required by the
+	// server (min 10 chars).
+	Comment string `json:"comment,omitempty"`
 }
 
 // ApproveStepResponse is the response from approving a workflow step.
+//
+// Starting with v5.6.0 the server returns the same rich shape as the step-gate
+// response — decision resolves to "allow" once approved, retry_context carries
+// the first-class state signal, approved_by / approved_at track the reviewer,
+// and policies_matched reconstructs the governance trail. The legacy
+// workflow_id / step_id / status fields remain for back-compat (status mirrors
+// approval_status so older code keeps working).
+//
+// See ADR-046 (HITL response parity) for why the same shape is returned by
+// both the WCP endpoint and the MAP plan-scoped equivalent, and ADR-045 for
+// the retry_context wire contract.
 type ApproveStepResponse struct {
 	// WorkflowID is the workflow containing the step
 	WorkflowID string `json:"workflow_id"`
 
+	// PlanID is the MAP plan id on MAP-plane responses. Empty on WCP-plane
+	// responses.
+	PlanID string `json:"plan_id,omitempty"`
+
 	// StepID is the step that was approved
 	StepID string `json:"step_id"`
 
-	// Status is the new status of the step after approval
-	Status string `json:"status"`
+	// Status is the new status of the step after approval (approved/rejected/pending).
+	// Mirrors ApprovalStatus — retained for v5.x back-compat.
+	Status string `json:"status,omitempty"`
+
+	// Decision resolves to "allow" on a successful approval — the agent that
+	// re-calls /gate will see the step cleared.
+	Decision string `json:"decision,omitempty"`
+
+	// Reason is the decision reason text. On the approve path, prefixed with
+	// "Approved: ".
+	Reason string `json:"reason,omitempty"`
+
+	// ApprovalStatus is the terminal approval status: pending / approved / rejected.
+	ApprovalStatus string `json:"approval_status,omitempty"`
+
+	// ApprovalID is the deterministic HITL queue entry UUID.
+	ApprovalID string `json:"approval_id,omitempty"`
+
+	// ApprovedBy is the identity that approved the step.
+	ApprovedBy string `json:"approved_by,omitempty"`
+
+	// ApprovedAt is when the approval was persisted (RFC3339).
+	ApprovedAt string `json:"approved_at,omitempty"`
+
+	// PoliciesMatched are the policies that triggered the original require_approval decision.
+	PoliciesMatched []PolicyMatch `json:"policies_matched,omitempty"`
+
+	// RetryContext mirrors the gate response retry_context block.
+	RetryContext RetryContext `json:"retry_context"`
+
+	// Message is a human-readable status summary.
+	Message string `json:"message,omitempty"`
 }
 
 // RejectStepRequest is the request to reject a workflow step.
+//
+// The server requires `reason` with a minimum of 10 characters — it's the
+// audit justification for the rejection. Callers SHOULD always supply a
+// meaningful reason.
 type RejectStepRequest struct {
-	// Reason explains why the step was rejected (optional)
+	// Reason explains why the step was rejected. Required by the server
+	// (min 10 chars).
 	Reason string `json:"reason,omitempty"`
+
+	// RejectedBy identifies who rejected the step (optional; defaults to
+	// X-User-ID header server-side if omitted).
+	RejectedBy string `json:"rejected_by,omitempty"`
 }
 
 // RejectStepResponse is the response from rejecting a workflow step.
+//
+// Starting with v5.6.0 the server returns the same rich shape as ApproveStepResponse
+// with rejected_by / rejected_at populated instead of approved_by / approved_at.
+// See ADR-046.
 type RejectStepResponse struct {
-	// WorkflowID is the workflow containing the step
 	WorkflowID string `json:"workflow_id"`
 
-	// StepID is the step that was rejected
+	// PlanID is the MAP plan id on MAP-plane responses. Empty on WCP-plane responses.
+	PlanID string `json:"plan_id,omitempty"`
+
 	StepID string `json:"step_id"`
 
-	// Status is the new status of the step after rejection
-	Status string `json:"status"`
+	// Status mirrors ApprovalStatus (legacy back-compat field).
+	Status string `json:"status,omitempty"`
+
+	// Decision resolves to "block" on a successful rejection; the workflow is aborted.
+	Decision string `json:"decision,omitempty"`
+
+	// Reason is the decision reason text, prefixed with "Rejected: " on the reject path.
+	Reason string `json:"reason,omitempty"`
+
+	// ApprovalStatus is the terminal approval status.
+	ApprovalStatus string `json:"approval_status,omitempty"`
+
+	// ApprovalID is the deterministic HITL queue entry UUID.
+	ApprovalID string `json:"approval_id,omitempty"`
+
+	// RejectedBy is the identity that rejected the step.
+	RejectedBy string `json:"rejected_by,omitempty"`
+
+	// RejectedAt is when the rejection was persisted (RFC3339).
+	RejectedAt string `json:"rejected_at,omitempty"`
+
+	// PoliciesMatched are the policies that triggered the require_approval decision.
+	PoliciesMatched []PolicyMatch `json:"policies_matched,omitempty"`
+
+	// RetryContext mirrors the gate response retry_context block.
+	RetryContext RetryContext `json:"retry_context"`
+
+	// Message is a human-readable status summary.
+	Message string `json:"message,omitempty"`
 }
 
 // PendingApproval represents a workflow step awaiting human approval.
+//
+// Populated by both `GetPendingApprovals` (WCP plane) and
+// `GetPendingPlanApprovals` (MAP plane). The `PlanID` field is the intentional
+// asymmetry between the two planes — populated on MAP-plane entries, empty on
+// WCP-plane entries. Mirrors the server-side ADR-046 parity rule.
 type PendingApproval struct {
 	// WorkflowID is the workflow containing the pending step
 	WorkflowID string `json:"workflow_id"`
@@ -870,50 +971,91 @@ type PendingApproval struct {
 	// WorkflowName is the human-readable name of the workflow
 	WorkflowName string `json:"workflow_name"`
 
+	// PlanID is populated on MAP-plane entries (from GetPendingPlanApprovals);
+	// empty on WCP-plane entries.
+	PlanID string `json:"plan_id,omitempty"`
+
 	// StepID is the step awaiting approval
 	StepID string `json:"step_id"`
 
+	// StepIndex is the zero-based step position within the workflow.
+	StepIndex int `json:"step_index"`
+
 	// StepName is the human-readable name of the step
-	StepName string `json:"step_name"`
+	StepName string `json:"step_name,omitempty"`
 
 	// StepType is the type of the step
-	StepType string `json:"step_type"`
+	StepType string `json:"step_type,omitempty"`
+
+	// Decision is the gate decision that paused the step — always
+	// "require_approval" for pending entries.
+	Decision string `json:"decision"`
+
+	// DecisionReason is the reason the policy engine paused the step.
+	DecisionReason string `json:"decision_reason,omitempty"`
+
+	// PoliciesMatched is the list of policies that triggered the approval.
+	PoliciesMatched []map[string]any `json:"policies_matched,omitempty"`
+
+	// StepInput is the step input payload (may be redacted).
+	StepInput map[string]any `json:"step_input,omitempty"`
+
+	// ApprovalStatus is the current approval state — "pending" for listed
+	// entries. Typed as *string so callers can distinguish absent from pending.
+	ApprovalStatus *string `json:"approval_status,omitempty"`
 
 	// CreatedAt is when the approval request was created
 	CreatedAt string `json:"created_at"`
 }
 
 // PendingApprovalsResponse is the response from listing pending approvals.
+// Shape matches the server wire contract: `pending_approvals` array + `count`.
 type PendingApprovalsResponse struct {
-	// Approvals is the list of pending approvals
-	Approvals []PendingApproval `json:"approvals"`
+	// PendingApprovals is the list of entries awaiting human approval.
+	PendingApprovals []PendingApproval `json:"pending_approvals"`
 
-	// Total is the total count of pending approvals
-	Total int `json:"total"`
+	// Count is the total number of pending approvals matching the request scope.
+	Count int `json:"count"`
 }
 
 // PendingApprovalsOptions contains options for listing pending approvals.
 type PendingApprovalsOptions struct {
 	// Limit is the maximum number of results to return
 	Limit int
+
+	// PlanID (MAP-plane only) scopes the listing to a single plan. Ignored by
+	// GetPendingApprovals; honored by GetPendingPlanApprovals.
+	PlanID string
 }
 
 // ============================================================================
 // WCP Approval Methods (Feature 5)
 // ============================================================================
 
-// ApproveStep approves a workflow step that requires human approval.
+// ApproveStep approves a workflow step that requires human approval, with
+// an audit comment. The comment is required by the server (min 10 chars)
+// — it carries the reviewer's justification into the audit log.
 //
 // Call this to approve a step that returned GateDecisionRequireApproval from StepGate.
 //
 // Example:
 //
-//	resp, err := client.ApproveStep("wf_123", "step_456")
+//	resp, err := client.ApproveStep("wf_123", "step_456", "Approved after full audit review")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //	fmt.Printf("Step %s approved, status: %s\n", resp.StepID, resp.Status)
-func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepResponse, error) {
+//
+// The signature took no comment argument before v5.6.0. Existing callers
+// can pass their justification string directly; pass ApproveStepWithRequest
+// for richer options (approver identity).
+func (c *AxonFlowClient) ApproveStep(workflowID, stepID, comment string) (*ApproveStepResponse, error) {
+	return c.ApproveStepWithRequest(workflowID, stepID, ApproveStepRequest{Comment: comment})
+}
+
+// ApproveStepWithRequest approves a workflow step with full control over
+// the request body (comment, approved_by).
+func (c *AxonFlowClient) ApproveStepWithRequest(workflowID, stepID string, req ApproveStepRequest) (*ApproveStepResponse, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow ID is required")
 	}
@@ -921,8 +1063,7 @@ func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepRes
 		return nil, fmt.Errorf("step ID is required")
 	}
 
-	fullURL := fmt.Sprintf("%s/api/v1/workflow-control/%s/steps/%s/approve", c.config.Endpoint, workflowID, stepID)
-	req := ApproveStepRequest{}
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/approve", c.config.Endpoint, workflowID, stepID)
 	var result ApproveStepResponse
 
 	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, &result); err != nil {
@@ -932,18 +1073,26 @@ func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepRes
 	return &result, nil
 }
 
-// RejectStep rejects a workflow step that requires human approval.
-//
-// Call this to reject a step that returned GateDecisionRequireApproval from StepGate.
+// RejectStep rejects a workflow step that requires human approval, with
+// an audit reason. The reason is required by the server (min 10 chars).
 //
 // Example:
 //
-//	resp, err := client.RejectStep("wf_123", "step_456")
+//	resp, err := client.RejectStep("wf_123", "step_456", "Output contained unredacted PII")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //	fmt.Printf("Step %s rejected, status: %s\n", resp.StepID, resp.Status)
-func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepResponse, error) {
+//
+// The signature took no reason argument before v5.6.0. Pass
+// RejectStepWithRequest for richer options.
+func (c *AxonFlowClient) RejectStep(workflowID, stepID, reason string) (*RejectStepResponse, error) {
+	return c.RejectStepWithRequest(workflowID, stepID, RejectStepRequest{Reason: reason})
+}
+
+// RejectStepWithRequest rejects a workflow step with full control over the
+// request body (reason, rejected_by).
+func (c *AxonFlowClient) RejectStepWithRequest(workflowID, stepID string, req RejectStepRequest) (*RejectStepResponse, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow ID is required")
 	}
@@ -951,8 +1100,7 @@ func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepRespo
 		return nil, fmt.Errorf("step ID is required")
 	}
 
-	fullURL := fmt.Sprintf("%s/api/v1/workflow-control/%s/steps/%s/reject", c.config.Endpoint, workflowID, stepID)
-	req := RejectStepRequest{}
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/reject", c.config.Endpoint, workflowID, stepID)
 	var result RejectStepResponse
 
 	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, &result); err != nil {
@@ -962,7 +1110,11 @@ func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepRespo
 	return &result, nil
 }
 
-// GetPendingApprovals lists all workflow steps awaiting human approval.
+// GetPendingApprovals lists all workflow steps awaiting human approval across
+// all planes for the caller's tenant — the WCP-plane listing.
+//
+// Use GetPendingPlanApprovals for the MAP-plane listing (scopes to MAP-backed
+// workflows and populates PendingApproval.PlanID on every entry).
 //
 // Example:
 //
@@ -970,8 +1122,8 @@ func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepRespo
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	fmt.Printf("Found %d pending approvals\n", pending.Total)
-//	for _, a := range pending.Approvals {
+//	fmt.Printf("Found %d pending approvals\n", pending.Count)
+//	for _, a := range pending.PendingApprovals {
 //	    fmt.Printf("  Workflow %s, Step %s (%s)\n", a.WorkflowID, a.StepID, a.StepName)
 //	}
 func (c *AxonFlowClient) GetPendingApprovals(opts *PendingApprovalsOptions) (*PendingApprovalsResponse, error) {
@@ -983,7 +1135,7 @@ func (c *AxonFlowClient) GetPendingApprovals(opts *PendingApprovalsOptions) (*Pe
 		}
 	}
 
-	fullURL := c.config.Endpoint + "/api/v1/workflow-control/pending-approvals"
+	fullURL := c.config.Endpoint + "/api/v1/workflows/approvals/pending"
 	if len(params) > 0 {
 		fullURL += "?" + params.Encode()
 	}
@@ -992,6 +1144,53 @@ func (c *AxonFlowClient) GetPendingApprovals(opts *PendingApprovalsOptions) (*Pe
 
 	if err := c.makeJSONRequest(context.Background(), "GET", fullURL, nil, &result); err != nil {
 		return nil, fmt.Errorf("failed to get pending approvals: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetPendingPlanApprovals lists pending approvals for MAP-backed workflows —
+// the MAP-plane counterpart of GetPendingApprovals. Every entry has PlanID
+// populated; WCP-only approvals are not returned.
+//
+// Pass opts.PlanID to scope the listing to a single plan.
+//
+// Requires an Evaluation or Enterprise license (same tier as the MAP
+// step approve/reject endpoints).
+//
+// Example:
+//
+//	pending, err := client.GetPendingPlanApprovals(&PendingApprovalsOptions{
+//	    PlanID: "plan-abc123",
+//	    Limit:  10,
+//	})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	for _, a := range pending.PendingApprovals {
+//	    fmt.Printf("  Plan %s step %s awaiting approval\n", a.PlanID, a.StepID)
+//	}
+func (c *AxonFlowClient) GetPendingPlanApprovals(opts *PendingApprovalsOptions) (*PendingApprovalsResponse, error) {
+	params := url.Values{}
+
+	if opts != nil {
+		if opts.Limit > 0 {
+			params.Set("limit", strconv.Itoa(opts.Limit))
+		}
+		if opts.PlanID != "" {
+			params.Set("plan_id", opts.PlanID)
+		}
+	}
+
+	fullURL := c.config.Endpoint + "/api/v1/plans/approvals/pending"
+	if len(params) > 0 {
+		fullURL += "?" + params.Encode()
+	}
+
+	var result PendingApprovalsResponse
+
+	if err := c.makeJSONRequest(context.Background(), "GET", fullURL, nil, &result); err != nil {
+		return nil, fmt.Errorf("failed to get pending plan approvals: %w", err)
 	}
 
 	return &result, nil
