@@ -833,15 +833,60 @@ type ApproveStepRequest struct {
 }
 
 // ApproveStepResponse is the response from approving a workflow step.
+//
+// Starting with v5.6.0 the server returns the same rich shape as the step-gate
+// response — decision resolves to "allow" once approved, retry_context carries
+// the first-class state signal, approved_by / approved_at track the reviewer,
+// and policies_matched reconstructs the governance trail. The legacy
+// workflow_id / step_id / status fields remain for back-compat (status mirrors
+// approval_status so older code keeps working).
+//
+// See ADR-046 (HITL response parity) for why the same shape is returned by
+// both the WCP endpoint and the MAP plan-scoped equivalent, and ADR-045 for
+// the retry_context wire contract.
 type ApproveStepResponse struct {
 	// WorkflowID is the workflow containing the step
 	WorkflowID string `json:"workflow_id"`
 
+	// PlanID is the MAP plan id on MAP-plane responses. Empty on WCP-plane
+	// responses.
+	PlanID string `json:"plan_id,omitempty"`
+
 	// StepID is the step that was approved
 	StepID string `json:"step_id"`
 
-	// Status is the new status of the step after approval
-	Status string `json:"status"`
+	// Status is the new status of the step after approval (approved/rejected/pending).
+	// Mirrors ApprovalStatus — retained for v5.x back-compat.
+	Status string `json:"status,omitempty"`
+
+	// Decision resolves to "allow" on a successful approval — the agent that
+	// re-calls /gate will see the step cleared.
+	Decision string `json:"decision,omitempty"`
+
+	// Reason is the decision reason text. On the approve path, prefixed with
+	// "Approved: ".
+	Reason string `json:"reason,omitempty"`
+
+	// ApprovalStatus is the terminal approval status: pending / approved / rejected.
+	ApprovalStatus string `json:"approval_status,omitempty"`
+
+	// ApprovalID is the deterministic HITL queue entry UUID.
+	ApprovalID string `json:"approval_id,omitempty"`
+
+	// ApprovedBy is the identity that approved the step.
+	ApprovedBy string `json:"approved_by,omitempty"`
+
+	// ApprovedAt is when the approval was persisted (RFC3339).
+	ApprovedAt string `json:"approved_at,omitempty"`
+
+	// PoliciesMatched are the policies that triggered the original require_approval decision.
+	PoliciesMatched []PolicyMatch `json:"policies_matched,omitempty"`
+
+	// RetryContext mirrors the gate response retry_context block.
+	RetryContext RetryContext `json:"retry_context"`
+
+	// Message is a human-readable status summary.
+	Message string `json:"message,omitempty"`
 }
 
 // RejectStepRequest is the request to reject a workflow step.
@@ -851,15 +896,47 @@ type RejectStepRequest struct {
 }
 
 // RejectStepResponse is the response from rejecting a workflow step.
+//
+// Starting with v5.6.0 the server returns the same rich shape as ApproveStepResponse
+// with rejected_by / rejected_at populated instead of approved_by / approved_at.
+// See ADR-046.
 type RejectStepResponse struct {
-	// WorkflowID is the workflow containing the step
 	WorkflowID string `json:"workflow_id"`
 
-	// StepID is the step that was rejected
+	// PlanID is the MAP plan id on MAP-plane responses. Empty on WCP-plane responses.
+	PlanID string `json:"plan_id,omitempty"`
+
 	StepID string `json:"step_id"`
 
-	// Status is the new status of the step after rejection
-	Status string `json:"status"`
+	// Status mirrors ApprovalStatus (legacy back-compat field).
+	Status string `json:"status,omitempty"`
+
+	// Decision resolves to "block" on a successful rejection; the workflow is aborted.
+	Decision string `json:"decision,omitempty"`
+
+	// Reason is the decision reason text, prefixed with "Rejected: " on the reject path.
+	Reason string `json:"reason,omitempty"`
+
+	// ApprovalStatus is the terminal approval status.
+	ApprovalStatus string `json:"approval_status,omitempty"`
+
+	// ApprovalID is the deterministic HITL queue entry UUID.
+	ApprovalID string `json:"approval_id,omitempty"`
+
+	// RejectedBy is the identity that rejected the step.
+	RejectedBy string `json:"rejected_by,omitempty"`
+
+	// RejectedAt is when the rejection was persisted (RFC3339).
+	RejectedAt string `json:"rejected_at,omitempty"`
+
+	// PoliciesMatched are the policies that triggered the require_approval decision.
+	PoliciesMatched []PolicyMatch `json:"policies_matched,omitempty"`
+
+	// RetryContext mirrors the gate response retry_context block.
+	RetryContext RetryContext `json:"retry_context"`
+
+	// Message is a human-readable status summary.
+	Message string `json:"message,omitempty"`
 }
 
 // PendingApproval represents a workflow step awaiting human approval.

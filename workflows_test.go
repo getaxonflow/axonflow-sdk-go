@@ -827,6 +827,122 @@ func TestApproveStep(t *testing.T) {
 	}
 }
 
+// TestApproveStep_RichResponse asserts the SDK deserializes the v7.4.0 rich
+// response shape — decision resolves to "allow", retry_context carries the
+// first-class state signal, approver metadata is surfaced. Covers the
+// Issue #1677 wire change.
+func TestApproveStep_RichResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"workflow_id": "wf-abc",
+			"step_id": "step-1",
+			"decision": "allow",
+			"reason": "Approved: High-value transfer requires oversight",
+			"approval_status": "approved",
+			"approval_id": "318a270f-7b42-5c56-a191-8dbd1bf2e1e4",
+			"approved_by": "compliance@example.com",
+			"approved_at": "2026-04-22T10:05:00Z",
+			"policies_matched": [
+				{"policy_id": "hv-oversight", "policy_name": "High-Value Wire Transfer Oversight", "action": "require_approval"}
+			],
+			"retry_context": {
+				"gate_count": 1,
+				"completion_count": 0,
+				"prior_completion_status": "none",
+				"prior_output_available": false,
+				"prior_output": null,
+				"idempotency_key": "payment-intent-123",
+				"last_decision": "require_approval",
+				"first_attempt_at": "2026-04-22T10:00:00Z",
+				"last_attempt_at": "2026-04-22T10:00:00Z"
+			},
+			"message": "Step approved"
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	resp, err := client.ApproveStep("wf-abc", "step-1")
+	if err != nil {
+		t.Fatalf("ApproveStep: %v", err)
+	}
+	if resp.Decision != "allow" {
+		t.Errorf("Decision = %q, want allow", resp.Decision)
+	}
+	if resp.ApprovalID != "318a270f-7b42-5c56-a191-8dbd1bf2e1e4" {
+		t.Errorf("ApprovalID = %q, want deterministic UUID", resp.ApprovalID)
+	}
+	if resp.ApprovedBy != "compliance@example.com" {
+		t.Errorf("ApprovedBy = %q, want compliance@example.com", resp.ApprovedBy)
+	}
+	if resp.RetryContext.IdempotencyKey != "payment-intent-123" {
+		t.Errorf("RetryContext.IdempotencyKey = %q, want payment-intent-123", resp.RetryContext.IdempotencyKey)
+	}
+	if resp.RetryContext.GateCount != 1 {
+		t.Errorf("RetryContext.GateCount = %d, want 1", resp.RetryContext.GateCount)
+	}
+	if len(resp.PoliciesMatched) != 1 || resp.PoliciesMatched[0].PolicyID != "hv-oversight" {
+		t.Errorf("PoliciesMatched = %+v, want one policy 'hv-oversight'", resp.PoliciesMatched)
+	}
+	if resp.Message != "Step approved" {
+		t.Errorf("Message = %q, want 'Step approved'", resp.Message)
+	}
+}
+
+// TestRejectStep_RichResponse mirrors the approve rich-response test for
+// the reject path — rejected_by / rejected_at populate, decision is "block".
+func TestRejectStep_RichResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"workflow_id": "wf-abc",
+			"step_id": "step-1",
+			"decision": "block",
+			"reason": "Rejected: PII in output sample",
+			"approval_status": "rejected",
+			"approval_id": "318a270f-7b42-5c56-a191-8dbd1bf2e1e4",
+			"rejected_by": "compliance@example.com",
+			"rejected_at": "2026-04-22T10:05:00Z",
+			"retry_context": {
+				"gate_count": 1, "completion_count": 0,
+				"prior_completion_status": "none", "prior_output_available": false,
+				"prior_output": null, "idempotency_key": "",
+				"last_decision": "require_approval",
+				"first_attempt_at": "2026-04-22T10:00:00Z",
+				"last_attempt_at": "2026-04-22T10:00:00Z"
+			},
+			"message": "Step rejected, workflow aborted"
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	resp, err := client.RejectStep("wf-abc", "step-1")
+	if err != nil {
+		t.Fatalf("RejectStep: %v", err)
+	}
+	if resp.Decision != "block" {
+		t.Errorf("Decision = %q, want block", resp.Decision)
+	}
+	if resp.RejectedBy != "compliance@example.com" {
+		t.Errorf("RejectedBy = %q, want compliance@example.com", resp.RejectedBy)
+	}
+	if resp.Message != "Step rejected, workflow aborted" {
+		t.Errorf("Message = %q", resp.Message)
+	}
+}
+
 // TestApproveStepEmptyIDs tests error when IDs are empty
 func TestApproveStepEmptyIDs(t *testing.T) {
 	client := NewClient(AxonFlowConfig{
