@@ -827,9 +827,19 @@ type ResumeFromCheckpointResponse struct {
 }
 
 // ApproveStepRequest is the request to approve a workflow step.
+//
+// The server requires `comment` with a minimum of 10 characters — it's the
+// audit-trail justification that every approval carries into the workflow
+// history. Callers SHOULD always supply a meaningful comment; the SDK will
+// pass it through unchanged.
 type ApproveStepRequest struct {
-	// ApprovedBy identifies who approved the step (optional)
+	// ApprovedBy identifies who approved the step (optional; defaults to
+	// the X-User-ID header on the server side if omitted).
 	ApprovedBy string `json:"approved_by,omitempty"`
+
+	// Comment is the audit justification for the approval. Required by the
+	// server (min 10 chars).
+	Comment string `json:"comment,omitempty"`
 }
 
 // ApproveStepResponse is the response from approving a workflow step.
@@ -890,9 +900,18 @@ type ApproveStepResponse struct {
 }
 
 // RejectStepRequest is the request to reject a workflow step.
+//
+// The server requires `reason` with a minimum of 10 characters — it's the
+// audit justification for the rejection. Callers SHOULD always supply a
+// meaningful reason.
 type RejectStepRequest struct {
-	// Reason explains why the step was rejected (optional)
+	// Reason explains why the step was rejected. Required by the server
+	// (min 10 chars).
 	Reason string `json:"reason,omitempty"`
+
+	// RejectedBy identifies who rejected the step (optional; defaults to
+	// X-User-ID header server-side if omitted).
+	RejectedBy string `json:"rejected_by,omitempty"`
 }
 
 // RejectStepResponse is the response from rejecting a workflow step.
@@ -1013,18 +1032,30 @@ type PendingApprovalsOptions struct {
 // WCP Approval Methods (Feature 5)
 // ============================================================================
 
-// ApproveStep approves a workflow step that requires human approval.
+// ApproveStep approves a workflow step that requires human approval, with
+// an audit comment. The comment is required by the server (min 10 chars)
+// — it carries the reviewer's justification into the audit log.
 //
 // Call this to approve a step that returned GateDecisionRequireApproval from StepGate.
 //
 // Example:
 //
-//	resp, err := client.ApproveStep("wf_123", "step_456")
+//	resp, err := client.ApproveStep("wf_123", "step_456", "Approved after full audit review")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //	fmt.Printf("Step %s approved, status: %s\n", resp.StepID, resp.Status)
-func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepResponse, error) {
+//
+// The signature took no comment argument before v5.6.0. Existing callers
+// can pass their justification string directly; pass ApproveStepWithRequest
+// for richer options (approver identity).
+func (c *AxonFlowClient) ApproveStep(workflowID, stepID, comment string) (*ApproveStepResponse, error) {
+	return c.ApproveStepWithRequest(workflowID, stepID, ApproveStepRequest{Comment: comment})
+}
+
+// ApproveStepWithRequest approves a workflow step with full control over
+// the request body (comment, approved_by).
+func (c *AxonFlowClient) ApproveStepWithRequest(workflowID, stepID string, req ApproveStepRequest) (*ApproveStepResponse, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow ID is required")
 	}
@@ -1033,7 +1064,6 @@ func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepRes
 	}
 
 	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/approve", c.config.Endpoint, workflowID, stepID)
-	req := ApproveStepRequest{}
 	var result ApproveStepResponse
 
 	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, &result); err != nil {
@@ -1043,18 +1073,26 @@ func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepRes
 	return &result, nil
 }
 
-// RejectStep rejects a workflow step that requires human approval.
-//
-// Call this to reject a step that returned GateDecisionRequireApproval from StepGate.
+// RejectStep rejects a workflow step that requires human approval, with
+// an audit reason. The reason is required by the server (min 10 chars).
 //
 // Example:
 //
-//	resp, err := client.RejectStep("wf_123", "step_456")
+//	resp, err := client.RejectStep("wf_123", "step_456", "Output contained unredacted PII")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //	fmt.Printf("Step %s rejected, status: %s\n", resp.StepID, resp.Status)
-func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepResponse, error) {
+//
+// The signature took no reason argument before v5.6.0. Pass
+// RejectStepWithRequest for richer options.
+func (c *AxonFlowClient) RejectStep(workflowID, stepID, reason string) (*RejectStepResponse, error) {
+	return c.RejectStepWithRequest(workflowID, stepID, RejectStepRequest{Reason: reason})
+}
+
+// RejectStepWithRequest rejects a workflow step with full control over the
+// request body (reason, rejected_by).
+func (c *AxonFlowClient) RejectStepWithRequest(workflowID, stepID string, req RejectStepRequest) (*RejectStepResponse, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow ID is required")
 	}
@@ -1063,7 +1101,6 @@ func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepRespo
 	}
 
 	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/reject", c.config.Endpoint, workflowID, stepID)
-	req := RejectStepRequest{}
 	var result RejectStepResponse
 
 	if err := c.makeJSONRequest(context.Background(), "POST", fullURL, req, &result); err != nil {

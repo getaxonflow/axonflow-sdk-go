@@ -812,7 +812,7 @@ func TestApproveStep(t *testing.T) {
 		ClientSecret: "test-secret",
 	})
 
-	resp, err := client.ApproveStep("wf_test123", "step_456")
+	resp, err := client.ApproveStep("wf_test123", "step_456", "Approved after full audit review")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -868,7 +868,7 @@ func TestApproveStep_RichResponse(t *testing.T) {
 		ClientSecret: "test-secret",
 	})
 
-	resp, err := client.ApproveStep("wf-abc", "step-1")
+	resp, err := client.ApproveStep("wf-abc", "step-1", "Approved after full audit review")
 	if err != nil {
 		t.Fatalf("ApproveStep: %v", err)
 	}
@@ -928,7 +928,7 @@ func TestRejectStep_RichResponse(t *testing.T) {
 		ClientSecret: "test-secret",
 	})
 
-	resp, err := client.RejectStep("wf-abc", "step-1")
+	resp, err := client.RejectStep("wf-abc", "step-1", "Rejected for compliance review")
 	if err != nil {
 		t.Fatalf("RejectStep: %v", err)
 	}
@@ -951,13 +951,13 @@ func TestApproveStepEmptyIDs(t *testing.T) {
 	})
 
 	// Test empty workflow ID
-	_, err := client.ApproveStep("", "step_1")
+	_, err := client.ApproveStep("", "step_1", "Approved after full audit review")
 	if err == nil {
 		t.Error("Expected error for empty workflow ID")
 	}
 
 	// Test empty step ID
-	_, err = client.ApproveStep("wf_1", "")
+	_, err = client.ApproveStep("wf_1", "", "Approved after full audit review")
 	if err == nil {
 		t.Error("Expected error for empty step ID")
 	}
@@ -976,7 +976,7 @@ func TestApproveStepServerError(t *testing.T) {
 		ClientID: "test",
 	})
 
-	_, err := client.ApproveStep("wf_1", "step_1")
+	_, err := client.ApproveStep("wf_1", "step_1", "Approved after full audit review")
 	if err == nil {
 		t.Error("Expected error for server error response")
 	}
@@ -1010,7 +1010,7 @@ func TestRejectStep(t *testing.T) {
 		ClientSecret: "test-secret",
 	})
 
-	resp, err := client.RejectStep("wf_test123", "step_456")
+	resp, err := client.RejectStep("wf_test123", "step_456", "Rejected for compliance review")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1033,13 +1033,13 @@ func TestRejectStepEmptyIDs(t *testing.T) {
 	})
 
 	// Test empty workflow ID
-	_, err := client.RejectStep("", "step_1")
+	_, err := client.RejectStep("", "step_1", "Rejected for compliance review")
 	if err == nil {
 		t.Error("Expected error for empty workflow ID")
 	}
 
 	// Test empty step ID
-	_, err = client.RejectStep("wf_1", "")
+	_, err = client.RejectStep("wf_1", "", "Rejected for compliance review")
 	if err == nil {
 		t.Error("Expected error for empty step ID")
 	}
@@ -1058,7 +1058,7 @@ func TestRejectStepServerError(t *testing.T) {
 		ClientID: "test",
 	})
 
-	_, err := client.RejectStep("wf_1", "step_1")
+	_, err := client.RejectStep("wf_1", "step_1", "Rejected for compliance review")
 	if err == nil {
 		t.Error("Expected error for server error response")
 	}
