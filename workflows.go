@@ -940,6 +940,11 @@ type RejectStepResponse struct {
 }
 
 // PendingApproval represents a workflow step awaiting human approval.
+//
+// Populated by both `GetPendingApprovals` (WCP plane) and
+// `GetPendingPlanApprovals` (MAP plane). The `PlanID` field is the intentional
+// asymmetry between the two planes — populated on MAP-plane entries, empty on
+// WCP-plane entries. Mirrors the server-side ADR-046 parity rule.
 type PendingApproval struct {
 	// WorkflowID is the workflow containing the pending step
 	WorkflowID string `json:"workflow_id"`
@@ -947,32 +952,61 @@ type PendingApproval struct {
 	// WorkflowName is the human-readable name of the workflow
 	WorkflowName string `json:"workflow_name"`
 
+	// PlanID is populated on MAP-plane entries (from GetPendingPlanApprovals);
+	// empty on WCP-plane entries.
+	PlanID string `json:"plan_id,omitempty"`
+
 	// StepID is the step awaiting approval
 	StepID string `json:"step_id"`
 
+	// StepIndex is the zero-based step position within the workflow.
+	StepIndex int `json:"step_index"`
+
 	// StepName is the human-readable name of the step
-	StepName string `json:"step_name"`
+	StepName string `json:"step_name,omitempty"`
 
 	// StepType is the type of the step
-	StepType string `json:"step_type"`
+	StepType string `json:"step_type,omitempty"`
+
+	// Decision is the gate decision that paused the step — always
+	// "require_approval" for pending entries.
+	Decision string `json:"decision"`
+
+	// DecisionReason is the reason the policy engine paused the step.
+	DecisionReason string `json:"decision_reason,omitempty"`
+
+	// PoliciesMatched is the list of policies that triggered the approval.
+	PoliciesMatched []map[string]any `json:"policies_matched,omitempty"`
+
+	// StepInput is the step input payload (may be redacted).
+	StepInput map[string]any `json:"step_input,omitempty"`
+
+	// ApprovalStatus is the current approval state — "pending" for listed
+	// entries. Typed as *string so callers can distinguish absent from pending.
+	ApprovalStatus *string `json:"approval_status,omitempty"`
 
 	// CreatedAt is when the approval request was created
 	CreatedAt string `json:"created_at"`
 }
 
 // PendingApprovalsResponse is the response from listing pending approvals.
+// Shape matches the server wire contract: `pending_approvals` array + `count`.
 type PendingApprovalsResponse struct {
-	// Approvals is the list of pending approvals
-	Approvals []PendingApproval `json:"approvals"`
+	// PendingApprovals is the list of entries awaiting human approval.
+	PendingApprovals []PendingApproval `json:"pending_approvals"`
 
-	// Total is the total count of pending approvals
-	Total int `json:"total"`
+	// Count is the total number of pending approvals matching the request scope.
+	Count int `json:"count"`
 }
 
 // PendingApprovalsOptions contains options for listing pending approvals.
 type PendingApprovalsOptions struct {
 	// Limit is the maximum number of results to return
 	Limit int
+
+	// PlanID (MAP-plane only) scopes the listing to a single plan. Ignored by
+	// GetPendingApprovals; honored by GetPendingPlanApprovals.
+	PlanID string
 }
 
 // ============================================================================
@@ -998,7 +1032,7 @@ func (c *AxonFlowClient) ApproveStep(workflowID, stepID string) (*ApproveStepRes
 		return nil, fmt.Errorf("step ID is required")
 	}
 
-	fullURL := fmt.Sprintf("%s/api/v1/workflow-control/%s/steps/%s/approve", c.config.Endpoint, workflowID, stepID)
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/approve", c.config.Endpoint, workflowID, stepID)
 	req := ApproveStepRequest{}
 	var result ApproveStepResponse
 
@@ -1028,7 +1062,7 @@ func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepRespo
 		return nil, fmt.Errorf("step ID is required")
 	}
 
-	fullURL := fmt.Sprintf("%s/api/v1/workflow-control/%s/steps/%s/reject", c.config.Endpoint, workflowID, stepID)
+	fullURL := fmt.Sprintf("%s/api/v1/workflows/%s/steps/%s/reject", c.config.Endpoint, workflowID, stepID)
 	req := RejectStepRequest{}
 	var result RejectStepResponse
 
@@ -1039,7 +1073,11 @@ func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepRespo
 	return &result, nil
 }
 
-// GetPendingApprovals lists all workflow steps awaiting human approval.
+// GetPendingApprovals lists all workflow steps awaiting human approval across
+// all planes for the caller's tenant — the WCP-plane listing.
+//
+// Use GetPendingPlanApprovals for the MAP-plane listing (scopes to MAP-backed
+// workflows and populates PendingApproval.PlanID on every entry).
 //
 // Example:
 //
@@ -1047,8 +1085,8 @@ func (c *AxonFlowClient) RejectStep(workflowID, stepID string) (*RejectStepRespo
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	fmt.Printf("Found %d pending approvals\n", pending.Total)
-//	for _, a := range pending.Approvals {
+//	fmt.Printf("Found %d pending approvals\n", pending.Count)
+//	for _, a := range pending.PendingApprovals {
 //	    fmt.Printf("  Workflow %s, Step %s (%s)\n", a.WorkflowID, a.StepID, a.StepName)
 //	}
 func (c *AxonFlowClient) GetPendingApprovals(opts *PendingApprovalsOptions) (*PendingApprovalsResponse, error) {
@@ -1060,7 +1098,7 @@ func (c *AxonFlowClient) GetPendingApprovals(opts *PendingApprovalsOptions) (*Pe
 		}
 	}
 
-	fullURL := c.config.Endpoint + "/api/v1/workflow-control/pending-approvals"
+	fullURL := c.config.Endpoint + "/api/v1/workflows/approvals/pending"
 	if len(params) > 0 {
 		fullURL += "?" + params.Encode()
 	}
@@ -1069,6 +1107,53 @@ func (c *AxonFlowClient) GetPendingApprovals(opts *PendingApprovalsOptions) (*Pe
 
 	if err := c.makeJSONRequest(context.Background(), "GET", fullURL, nil, &result); err != nil {
 		return nil, fmt.Errorf("failed to get pending approvals: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetPendingPlanApprovals lists pending approvals for MAP-backed workflows —
+// the MAP-plane counterpart of GetPendingApprovals. Every entry has PlanID
+// populated; WCP-only approvals are not returned.
+//
+// Pass opts.PlanID to scope the listing to a single plan.
+//
+// Requires an Evaluation or Enterprise license (same tier as the MAP
+// step approve/reject endpoints).
+//
+// Example:
+//
+//	pending, err := client.GetPendingPlanApprovals(&PendingApprovalsOptions{
+//	    PlanID: "plan-abc123",
+//	    Limit:  10,
+//	})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	for _, a := range pending.PendingApprovals {
+//	    fmt.Printf("  Plan %s step %s awaiting approval\n", a.PlanID, a.StepID)
+//	}
+func (c *AxonFlowClient) GetPendingPlanApprovals(opts *PendingApprovalsOptions) (*PendingApprovalsResponse, error) {
+	params := url.Values{}
+
+	if opts != nil {
+		if opts.Limit > 0 {
+			params.Set("limit", strconv.Itoa(opts.Limit))
+		}
+		if opts.PlanID != "" {
+			params.Set("plan_id", opts.PlanID)
+		}
+	}
+
+	fullURL := c.config.Endpoint + "/api/v1/plans/approvals/pending"
+	if len(params) > 0 {
+		fullURL += "?" + params.Encode()
+	}
+
+	var result PendingApprovalsResponse
+
+	if err := c.makeJSONRequest(context.Background(), "GET", fullURL, nil, &result); err != nil {
+		return nil, fmt.Errorf("failed to get pending plan approvals: %w", err)
 	}
 
 	return &result, nil

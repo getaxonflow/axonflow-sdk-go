@@ -796,7 +796,7 @@ func TestApproveStep(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("Expected POST method, got %s", r.Method)
 		}
-		expectedPath := "/api/v1/workflow-control/wf_test123/steps/step_456/approve"
+		expectedPath := "/api/v1/workflows/wf_test123/steps/step_456/approve"
 		if r.URL.Path != expectedPath {
 			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
@@ -994,7 +994,7 @@ func TestRejectStep(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("Expected POST method, got %s", r.Method)
 		}
-		expectedPath := "/api/v1/workflow-control/wf_test123/steps/step_456/reject"
+		expectedPath := "/api/v1/workflows/wf_test123/steps/step_456/reject"
 		if r.URL.Path != expectedPath {
 			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
@@ -1067,25 +1067,27 @@ func TestRejectStepServerError(t *testing.T) {
 // TestGetPendingApprovals tests listing pending approvals
 func TestGetPendingApprovals(t *testing.T) {
 	expectedResponse := PendingApprovalsResponse{
-		Approvals: []PendingApproval{
+		PendingApprovals: []PendingApproval{
 			{
 				WorkflowID:   "wf_test123",
 				WorkflowName: "test-workflow",
 				StepID:       "step_456",
+				StepIndex:    1,
 				StepName:     "Generate Code",
 				StepType:     "llm_call",
+				Decision:     "require_approval",
 				CreatedAt:    "2026-02-07T10:00:00Z",
 			},
 		},
-		Total: 1,
+		Count: 1,
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("Expected GET method, got %s", r.Method)
 		}
-		if r.URL.Path != "/api/v1/workflow-control/pending-approvals" {
-			t.Errorf("Expected path /api/v1/workflow-control/pending-approvals, got %s", r.URL.Path)
+		if r.URL.Path != "/api/v1/workflows/approvals/pending" {
+			t.Errorf("Expected path /api/v1/workflows/approvals/pending, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1103,17 +1105,21 @@ func TestGetPendingApprovals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result.Total != 1 {
-		t.Errorf("Expected total 1, got %d", result.Total)
+	if result.Count != 1 {
+		t.Errorf("Expected count 1, got %d", result.Count)
 	}
-	if len(result.Approvals) != 1 {
-		t.Errorf("Expected 1 approval, got %d", len(result.Approvals))
+	if len(result.PendingApprovals) != 1 {
+		t.Errorf("Expected 1 approval, got %d", len(result.PendingApprovals))
 	}
-	if result.Approvals[0].WorkflowID != "wf_test123" {
-		t.Errorf("Expected workflow_id 'wf_test123', got '%s'", result.Approvals[0].WorkflowID)
+	if result.PendingApprovals[0].WorkflowID != "wf_test123" {
+		t.Errorf("Expected workflow_id 'wf_test123', got '%s'", result.PendingApprovals[0].WorkflowID)
 	}
-	if result.Approvals[0].StepName != "Generate Code" {
-		t.Errorf("Expected step_name 'Generate Code', got '%s'", result.Approvals[0].StepName)
+	if result.PendingApprovals[0].StepName != "Generate Code" {
+		t.Errorf("Expected step_name 'Generate Code', got '%s'", result.PendingApprovals[0].StepName)
+	}
+	// WCP entries must not carry plan_id
+	if result.PendingApprovals[0].PlanID != "" {
+		t.Errorf("WCP entry leaked plan_id = %q", result.PendingApprovals[0].PlanID)
 	}
 }
 
@@ -1127,8 +1133,8 @@ func TestGetPendingApprovalsWithLimit(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(PendingApprovalsResponse{
-			Approvals: []PendingApproval{},
-			Total:     0,
+			PendingApprovals: []PendingApproval{},
+			Count:            0,
 		})
 	}))
 	defer server.Close()
@@ -1152,8 +1158,8 @@ func TestGetPendingApprovalsEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(PendingApprovalsResponse{
-			Approvals: []PendingApproval{},
-			Total:     0,
+			PendingApprovals: []PendingApproval{},
+			Count:            0,
 		})
 	}))
 	defer server.Close()
@@ -1167,11 +1173,11 @@ func TestGetPendingApprovalsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result.Total != 0 {
-		t.Errorf("Expected total 0, got %d", result.Total)
+	if result.Count != 0 {
+		t.Errorf("Expected count 0, got %d", result.Count)
 	}
-	if len(result.Approvals) != 0 {
-		t.Errorf("Expected 0 approvals, got %d", len(result.Approvals))
+	if len(result.PendingApprovals) != 0 {
+		t.Errorf("Expected 0 approvals, got %d", len(result.PendingApprovals))
 	}
 }
 
@@ -1191,6 +1197,180 @@ func TestGetPendingApprovalsServerError(t *testing.T) {
 	_, err := client.GetPendingApprovals(nil)
 	if err == nil {
 		t.Error("Expected error for server error response")
+	}
+}
+
+// TestGetPendingPlanApprovals exercises the MAP-plane listing — the
+// counterpart of TestGetPendingApprovals (Issue #1680). Asserts the right
+// path is hit and plan_id flows through the deserialization.
+func TestGetPendingPlanApprovals(t *testing.T) {
+	expectedResponse := PendingApprovalsResponse{
+		PendingApprovals: []PendingApproval{
+			{
+				WorkflowID:   "wf_map_abc",
+				WorkflowName: "map-confirm-plan-abc",
+				PlanID:       "plan-abc",
+				StepID:       "step_0_analyze",
+				StepIndex:    0,
+				StepName:     "Analyze transaction",
+				StepType:     "tool_call",
+				Decision:     "require_approval",
+				CreatedAt:    "2026-04-22T10:00:00Z",
+			},
+		},
+		Count: 1,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/plans/approvals/pending" {
+			t.Errorf("Expected path /api/v1/plans/approvals/pending, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(expectedResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	result, err := client.GetPendingPlanApprovals(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Count != 1 {
+		t.Errorf("Expected count 1, got %d", result.Count)
+	}
+	if len(result.PendingApprovals) != 1 {
+		t.Fatalf("Expected 1 entry, got %d", len(result.PendingApprovals))
+	}
+	if result.PendingApprovals[0].PlanID != "plan-abc" {
+		t.Errorf("plan_id = %q, want plan-abc", result.PendingApprovals[0].PlanID)
+	}
+}
+
+// TestGetPendingPlanApprovals_PlanIDFilter asserts opts.PlanID propagates to
+// the query string as ?plan_id=.
+func TestGetPendingPlanApprovals_PlanIDFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("plan_id"); got != "plan-abc" {
+			t.Errorf("expected plan_id=plan-abc, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PendingApprovalsResponse{})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "test"})
+	if _, err := client.GetPendingPlanApprovals(&PendingApprovalsOptions{PlanID: "plan-abc"}); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestGetPendingPlanApprovals_LimitAndPlanID asserts both knobs are encoded.
+func TestGetPendingPlanApprovals_LimitAndPlanID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("limit") != "3" || q.Get("plan_id") != "plan-x" {
+			t.Errorf("query = %v, want limit=3 plan_id=plan-x", q.Encode())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PendingApprovalsResponse{})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "test"})
+	if _, err := client.GetPendingPlanApprovals(&PendingApprovalsOptions{PlanID: "plan-x", Limit: 3}); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestGetPendingPlanApprovals_Empty asserts the empty-list case deserializes.
+func TestGetPendingPlanApprovals_Empty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PendingApprovalsResponse{
+			PendingApprovals: []PendingApproval{},
+			Count:            0,
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "test"})
+	result, err := client.GetPendingPlanApprovals(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Count != 0 || len(result.PendingApprovals) != 0 {
+		t.Errorf("empty: got count=%d entries=%d", result.Count, len(result.PendingApprovals))
+	}
+}
+
+// TestGetPendingPlanApprovals_ServerError covers the error return path.
+func TestGetPendingPlanApprovals_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"License tier does not permit approval listing"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "test"})
+	if _, err := client.GetPendingPlanApprovals(nil); err == nil {
+		t.Error("Expected error for 403 response")
+	}
+}
+
+// TestPendingApproval_RoundTrip_PlanIDOmittedWhenEmpty asserts plan_id is
+// absent from the JSON when empty — the WCP-plane contract.
+func TestPendingApproval_RoundTrip_PlanIDOmittedWhenEmpty(t *testing.T) {
+	entry := PendingApproval{
+		WorkflowID:   "wf-1",
+		WorkflowName: "wcp-native",
+		StepID:       "step-1",
+		StepIndex:    0,
+		Decision:     "require_approval",
+		CreatedAt:    "2026-04-22T10:00:00Z",
+	}
+	raw, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, present := m["plan_id"]; present {
+		t.Errorf("plan_id must be absent on empty; got %s", string(raw))
+	}
+}
+
+// TestPendingApproval_RoundTrip_PlanIDPresentWhenSet asserts plan_id is
+// present on MAP-plane entries.
+func TestPendingApproval_RoundTrip_PlanIDPresentWhenSet(t *testing.T) {
+	entry := PendingApproval{
+		WorkflowID:   "wf-1",
+		WorkflowName: "map-confirm-plan-1",
+		PlanID:       "plan-1",
+		StepID:       "step-1",
+		StepIndex:    0,
+		Decision:     "require_approval",
+		CreatedAt:    "2026-04-22T10:00:00Z",
+	}
+	raw, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m["plan_id"] != "plan-1" {
+		t.Errorf("plan_id = %v, want plan-1; raw=%s", m["plan_id"], string(raw))
 	}
 }
 
