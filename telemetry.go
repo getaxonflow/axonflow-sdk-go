@@ -102,15 +102,15 @@ type healthVersionResponse struct {
 	Version string `json:"version"`
 }
 
-// detectPlatformVersion calls the agent's /health endpoint to get the platform version.
-// Returns nil on any failure.
-func detectPlatformVersion(endpoint string) *string {
+// detectPlatformVersion calls the agent's /health endpoint to get the platform
+// version. Returns nil on any failure. The caller's context controls the
+// deadline so the health probe and the checkpoint POST share one budget —
+// preventing the two 3-second timeouts from stacking into ~6s of blocking on
+// unreachable endpoints (see issue #1693).
+func detectPlatformVersion(ctx context.Context, endpoint string) *string {
 	if endpoint == "" {
 		return nil
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/health", nil)
 	if err != nil {
@@ -182,16 +182,19 @@ func (c *AxonFlowClient) isTelemetryEnabled() bool {
 	return c.config.Mode != "sandbox"
 }
 
-// sendTelemetryPing sends a synchronous, bounded-timeout telemetry ping to
-// the checkpoint service. It never returns an error — all failures are
+// sendTelemetryPing sends a synchronous telemetry ping to the checkpoint
+// service under a single shared context deadline covering both the /health
+// probe and the checkpoint POST. Never returns an error — all failures are
 // silently ignored. In debug mode, a version-outdated warning may be logged.
 //
 // Previously invoked as a goroutine (`go client.sendTelemetryPing()`), but
 // short-lived processes (CLI, serverless, quickstart scripts) returned from
 // main() before the goroutine's POST could complete, silently dropping the
-// ping. The function is now called synchronously from NewClient; the
-// context.WithTimeout + http.Client.Timeout below bound the worst case to
-// ~3s. See issue #1693.
+// ping. The function is now called synchronously from NewClient.
+//
+// Worst-case blocking time: telemetryTimeout (3s). Both detectPlatformVersion
+// and the checkpoint POST share the same context, so the individual
+// timeouts no longer stack. See issue #1693.
 func (c *AxonFlowClient) sendTelemetryPing() {
 	if !c.isTelemetryEnabled() {
 		return
@@ -211,8 +214,16 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		deploymentMode = "production"
 	}
 
-	// Detect platform version from health endpoint
-	platformVersion := detectPlatformVersion(c.config.Endpoint)
+	// Single shared deadline covering the ENTIRE telemetry path (health
+	// probe + checkpoint POST). Without this, the /health GET and the
+	// checkpoint POST each had their own timeout (2s + 3s), stacking into
+	// ~5s of potential blocking on NewClient when endpoints are
+	// unreachable — defeating the "bounded at telemetryTimeout" guarantee.
+	ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
+	defer cancel()
+
+	// Detect platform version from health endpoint (uses the shared deadline).
+	platformVersion := detectPlatformVersion(ctx, c.config.Endpoint)
 
 	payload := telemetryPayload{
 		SDK:             "go",
@@ -232,9 +243,7 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
-	defer cancel()
-
+	// POST uses whatever budget remains after the health probe.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, checkpointURL, bytes.NewReader(body))
 	if err != nil {
 		return

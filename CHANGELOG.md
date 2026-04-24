@@ -5,6 +5,28 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Telemetry delivery on short-lived processes.** `NewClient` spawned
+  `sendTelemetryPing` as a goroutine that was abandoned when `main()`
+  returned, so any short-lived Go binary — CLI tools, serverless handlers,
+  quickstart snippets, cold-start functions — exited before the HTTP POST
+  to the checkpoint completed and silently dropped telemetry. The ping is
+  now sent synchronously from `NewClient` under a single shared
+  `context.WithTimeout(telemetryTimeout)`. `NewClient` blocks briefly
+  (typically ~350ms warm, ~1.3s cold; worst case bounded at
+  `telemetryTimeout`) but telemetry delivery is now deterministic.
+- **Telemetry budget no longer stacks.** `detectPlatformVersion` previously
+  used its own 2-second `context.WithTimeout`, and the checkpoint POST
+  used its own 3-second timeout on top. In the unreachable-endpoint case
+  the two stacked, blocking `NewClient` for up to ~5s — defeating the
+  bounded-at-`telemetryTimeout` guarantee. Both operations now share the
+  same context deadline so the total blocking time on `NewClient` stays
+  within `telemetryTimeout`. `detectPlatformVersion` now takes a
+  `context.Context` parameter; internal-only, no user-visible API change.
+
 ## [5.6.0] - 2026-04-22
 
 ### Added

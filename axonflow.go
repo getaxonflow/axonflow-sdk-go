@@ -625,9 +625,11 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	// cold-start function) returns from main() before the goroutine's HTTP
 	// POST completes, silently dropping the ping. See issue #1693.
 	//
-	// sendTelemetryPing is already bounded by context.WithTimeout(3s) and an
-	// http.Client timeout, so worst-case init latency is 3s when the
-	// checkpoint is unreachable; typical is ~350ms warm / ~1.3s cold.
+	// sendTelemetryPing runs the health probe and the checkpoint POST under a
+	// single shared context.WithTimeout(telemetryTimeout) so the total
+	// blocking time on NewClient is bounded at ~telemetryTimeout (3s),
+	// regardless of whether endpoints are reachable. Typical is ~350ms warm
+	// / ~1.3s cold.
 	client.sendTelemetryPing()
 
 	return client
