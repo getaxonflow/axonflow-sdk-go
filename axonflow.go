@@ -618,8 +618,19 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 		log.Printf("[AxonFlow] Client initialized - Mode: %s, Endpoint: %s, MapTimeout: %v", config.Mode, config.Endpoint, config.MapTimeout)
 	}
 
-	// Send telemetry ping (fire-and-forget).
-	go client.sendTelemetryPing()
+	// Send telemetry ping synchronously with a bounded timeout.
+	//
+	// A goroutine here would be fire-and-forget in theory, but in practice any
+	// short-lived process (CLI binary, serverless handler, quickstart snippet,
+	// cold-start function) returns from main() before the goroutine's HTTP
+	// POST completes, silently dropping the ping. See issue #1693.
+	//
+	// sendTelemetryPing runs the health probe and the checkpoint POST under a
+	// single shared context.WithTimeout(telemetryTimeout) so the total
+	// blocking time on NewClient is bounded at ~telemetryTimeout (3s),
+	// regardless of whether endpoints are reachable. Typical is ~350ms warm
+	// / ~1.3s cold.
+	client.sendTelemetryPing()
 
 	return client
 }

@@ -5,6 +5,13 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Telemetry pings now deliver reliably from short-lived processes (CLI, serverless, cold-starts). `NewClient` blocks briefly (~350ms warm, ~1.3s cold; bounded at `telemetryTimeout`) while the ping is sent synchronously.
+- Telemetry path is bounded at `telemetryTimeout` (3s) total; the `/health` probe and checkpoint POST share a single context deadline instead of stacking.
+
 ## [5.6.0] - 2026-04-22
 
 ### Added
