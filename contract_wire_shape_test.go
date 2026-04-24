@@ -9,7 +9,7 @@
 //   - Load every *.yaml under AXONFLOW_OPENAPI_SPECS_DIR (set by CI
 //     after cloning the community repo). Collect every schema that has
 //     concrete `properties`.
-//   - Walk the current package's source files via go/parser, find every
+//   - Walk this package's source files via go/parser, find every
 //     exported struct, compute its wire-shape field names (the `json`
 //     tag when set, otherwise the Go field name).
 //   - For every struct whose type name matches a schema name, diff the
@@ -21,8 +21,12 @@
 // dev box with no specs checkout continues to work. The dedicated CI
 // job sets the env var and runs only TestWireShape* via -run.
 //
-// To regenerate the baseline (after a legitimate burn-down or a
-// platform spec change), run:
+// All schema/struct/yaml logic lives in internal/wireshape so this test
+// and scripts/refresh_wire_shape_baseline share a single source of
+// truth. See internal/wireshape/wireshape.go.
+//
+// To regenerate the baseline (after a legitimate burn-down or platform
+// spec change):
 //
 //	go run ./scripts/refresh_wire_shape_baseline \
 //	    /path/to/axonflow/docs/api \
@@ -34,17 +38,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
-	yaml "gopkg.in/yaml.v3"
+	"github.com/getaxonflow/axonflow-sdk-go/v5/internal/wireshape"
 )
 
 // ExcludedTypes names struct types that legitimately do not participate
@@ -54,38 +54,19 @@ var ExcludedTypes = map[string]string{}
 
 const baselinePath = "testdata/wire_shape_baseline.json"
 
-// wireShapeBaseline mirrors the structure of
-// tests/fixtures/wire_shape_baseline.json in the Python SDK so the two
-// gates stay conceptually aligned.
-type wireShapeBaseline struct {
-	Comment             string                         `json:"_comment,omitempty"`
-	OpenAPISpecsSHA     string                         `json:"openapi_specs_sha"`
-	CrossSpecDuplicates map[string]map[string][]string `json:"cross_spec_duplicates"`
-	RegisteredTypes     []string                       `json:"registered_types"`
-	PerTypeDrift        map[string]perTypeDrift        `json:"per_type_drift"`
-}
-
-type perTypeDrift struct {
-	SDKOnly  []string `json:"sdk_only"`
-	SpecOnly []string `json:"spec_only"`
-}
-
-// loadBaseline returns an empty baseline when the file is missing so
-// that bootstrap runs (before the first refresh) can produce actionable
-// output instead of failing in setup.
-func loadBaseline(t *testing.T) wireShapeBaseline {
+// loadBaseline returns a zero baseline when the file is missing so that
+// bootstrap runs (before the first refresh) produce actionable output
+// instead of failing in fixture setup.
+func loadBaseline(t *testing.T) wireshape.Baseline {
 	t.Helper()
 	data, err := os.ReadFile(baselinePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return wireShapeBaseline{
-				CrossSpecDuplicates: map[string]map[string][]string{},
-				PerTypeDrift:        map[string]perTypeDrift{},
-			}
+			return wireshape.NewEmptyBaseline()
 		}
 		t.Fatalf("read baseline %s: %v", baselinePath, err)
 	}
-	var b wireShapeBaseline
+	var b wireshape.Baseline
 	if err := json.Unmarshal(data, &b); err != nil {
 		t.Fatalf("parse baseline %s: %v", baselinePath, err)
 	}
@@ -93,194 +74,9 @@ func loadBaseline(t *testing.T) wireShapeBaseline {
 		b.CrossSpecDuplicates = map[string]map[string][]string{}
 	}
 	if b.PerTypeDrift == nil {
-		b.PerTypeDrift = map[string]perTypeDrift{}
+		b.PerTypeDrift = map[string]wireshape.DriftEntry{}
 	}
 	return b
-}
-
-// schemasFromSpecs loads every *.yaml in specDir and returns
-// (mergedSchemas, duplicatesBySpec).
-//
-//   - mergedSchemas maps schema name → sorted field names, last-loaded wins
-//     on name collision; this is what SDK structs are diffed against.
-//
-//   - duplicatesBySpec keeps only schemas whose declarations DIFFER across
-//     specs (identical redundant declarations are benign). The baseline
-//     fingerprint pins these per-spec so an already-acknowledged collision
-//     can't quietly drift further.
-func schemasFromSpecs(specDir string) (map[string][]string, map[string]map[string][]string, error) {
-	merged := map[string][]string{}
-	allDecls := map[string]map[string][]string{}
-
-	entries, err := os.ReadDir(specDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read %s: %w", specDir, err)
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".yaml") {
-			continue
-		}
-		names = append(names, e.Name())
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		full := filepath.Join(specDir, name)
-		data, err := os.ReadFile(full)
-		if err != nil {
-			return nil, nil, fmt.Errorf("read %s: %w", full, err)
-		}
-		// yaml.v3 is strict on duplicate mapping keys; Python's yaml.safe_load
-		// is lenient (last-wins). To keep the Go and Python gates seeing the
-		// same specs, decode into a tolerant Node tree and fold to a map
-		// ourselves with last-wins semantics. A duplicate key here is
-		// itself a platform spec bug worth tracking, but it must not
-		// prevent the SDK gate from functioning against the other keys.
-		var root yaml.Node
-		if err := yaml.Unmarshal(data, &root); err != nil {
-			return nil, nil, fmt.Errorf("parse %s: %w", full, err)
-		}
-		doc, ok := yamlNodeToMap(&root)
-		if !ok {
-			continue
-		}
-		comps, _ := doc["components"].(map[string]any)
-		if comps == nil {
-			continue
-		}
-		schemas, _ := comps["schemas"].(map[string]any)
-		for schemaName, raw := range schemas {
-			schema, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			props, ok := schema["properties"].(map[string]any)
-			if !ok || len(props) == 0 {
-				continue
-			}
-			fields := make([]string, 0, len(props))
-			for k := range props {
-				fields = append(fields, k)
-			}
-			sort.Strings(fields)
-			if _, seen := allDecls[schemaName]; !seen {
-				allDecls[schemaName] = map[string][]string{}
-			}
-			allDecls[schemaName][name] = fields
-			merged[schemaName] = fields
-		}
-	}
-
-	duplicates := map[string]map[string][]string{}
-	for schemaName, decls := range allDecls {
-		if len(decls) < 2 {
-			continue
-		}
-		shapes := map[string]struct{}{}
-		for _, f := range decls {
-			shapes[strings.Join(f, "|")] = struct{}{}
-		}
-		if len(shapes) > 1 {
-			duplicates[schemaName] = decls
-		}
-	}
-	return merged, duplicates, nil
-}
-
-// discoverSDKTypes walks the current package's non-test .go files and
-// returns {StructName: sortedWireFieldNames} for every exported
-// struct with at least one JSON-tagged field.
-//
-// Go doesn't offer a runtime "list all types in package" the way
-// Python's pkgutil.walk_packages does, so we parse the AST directly.
-// Embedded structs would need recursive resolution; the current Go SDK
-// doesn't use embedding in public types (verified), so the simple
-// first-level pass is sufficient. If that changes, the embedded field
-// will appear as a fieldspec with empty Names and will need handling.
-func discoverSDKTypes(pkgDir string) (map[string][]string, error) {
-	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, pkgDir, func(info os.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, parser.ParseComments)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", pkgDir, err)
-	}
-
-	result := map[string][]string{}
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			ast.Inspect(file, func(n ast.Node) bool {
-				ts, ok := n.(*ast.TypeSpec)
-				if !ok {
-					return true
-				}
-				if !ts.Name.IsExported() {
-					return true
-				}
-				st, ok := ts.Type.(*ast.StructType)
-				if !ok {
-					return true
-				}
-				fields := extractWireFieldsFromAST(st)
-				if len(fields) == 0 {
-					return true
-				}
-				result[ts.Name.Name] = fields
-				return true
-			})
-		}
-	}
-	return result, nil
-}
-
-func extractWireFieldsFromAST(st *ast.StructType) []string {
-	if st.Fields == nil {
-		return nil
-	}
-	out := []string{}
-	for _, field := range st.Fields.List {
-		if len(field.Names) == 0 {
-			// Anonymous / embedded — not used in current SDK, ignore.
-			continue
-		}
-		tagStr := ""
-		if field.Tag != nil {
-			tagStr = reflect.StructTag(strings.Trim(field.Tag.Value, "`")).Get("json")
-		}
-		wireName := parseJSONTagName(tagStr)
-		if wireName == "-" {
-			continue
-		}
-		for _, name := range field.Names {
-			if !name.IsExported() {
-				continue
-			}
-			if wireName != "" {
-				out = append(out, wireName)
-			} else {
-				// No json tag — Go uses the field name verbatim on the
-				// wire. This won't match a snake_case spec property,
-				// which is exactly what the gate should surface.
-				out = append(out, name.Name)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// parseJSONTagName returns the name portion of a json struct tag —
-// everything before the first comma. "" means no tag / no name portion.
-// "-" means omit-from-json; callers should skip the field.
-func parseJSONTagName(tag string) string {
-	if tag == "" {
-		return ""
-	}
-	if i := strings.Index(tag, ","); i >= 0 {
-		return tag[:i]
-	}
-	return tag
 }
 
 // specsDir returns the env-var path if it points at an existing
@@ -302,7 +98,7 @@ func TestWireShapeSpecsDirIsPopulated(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	schemas, _, err := schemasFromSpecs(dir)
+	schemas, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -316,7 +112,7 @@ func TestWireShapeNoNewCrossSpecDivergence(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	_, observed, err := schemasFromSpecs(dir)
+	_, observed, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -387,11 +183,11 @@ func TestWireShapeNoNewSDKVsSpecDrift(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := schemasFromSpecs(dir)
+	merged, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
-	sdk, err := discoverSDKTypes(".")
+	sdk, err := wireshape.DiscoverSDKTypes(".")
 	if err != nil {
 		t.Fatalf("discover SDK types: %v", err)
 	}
@@ -416,8 +212,8 @@ func TestWireShapeNoNewSDKVsSpecDrift(t *testing.T) {
 			continue
 		}
 		matched++
-		sdkOnly := difference(sdkFields, specFields)
-		specOnly := difference(specFields, sdkFields)
+		sdkOnly := wireshape.Difference(sdkFields, specFields)
+		specOnly := wireshape.Difference(specFields, sdkFields)
 
 		allowed, ok := baseline.PerTypeDrift[name]
 		expectedSDK := map[string]struct{}{}
@@ -480,11 +276,11 @@ func TestWireShapeRegisteredTypesStillMap(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := schemasFromSpecs(dir)
+	merged, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
-	sdk, err := discoverSDKTypes(".")
+	sdk, err := wireshape.DiscoverSDKTypes(".")
 	if err != nil {
 		t.Fatalf("discover SDK types: %v", err)
 	}
@@ -523,11 +319,11 @@ func TestWireShapeBaselineIsNotStale(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := schemasFromSpecs(dir)
+	merged, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
-	sdk, err := discoverSDKTypes(".")
+	sdk, err := wireshape.DiscoverSDKTypes(".")
 	if err != nil {
 		t.Fatalf("discover SDK types: %v", err)
 	}
@@ -547,8 +343,8 @@ func TestWireShapeBaselineIsNotStale(t *testing.T) {
 			staleEntries = append(staleEntries, stale{name: name, vanished: true})
 			continue
 		}
-		sdkOnly := toSet(difference(sdkFields, specFields))
-		specOnly := toSet(difference(specFields, sdkFields))
+		sdkOnly := toSet(wireshape.Difference(sdkFields, specFields))
+		specOnly := toSet(wireshape.Difference(specFields, sdkFields))
 		staleSDK := subtractSet(expected.SDKOnly, sdkOnly)
 		staleSpec := subtractSet(expected.SpecOnly, specOnly)
 		if len(staleSDK) > 0 || len(staleSpec) > 0 {
@@ -580,11 +376,11 @@ func TestWireShapeUnmappedTypesAreTracked(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := schemasFromSpecs(dir)
+	merged, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
-	sdk, err := discoverSDKTypes(".")
+	sdk, err := wireshape.DiscoverSDKTypes(".")
 	if err != nil {
 		t.Fatalf("discover SDK types: %v", err)
 	}
@@ -610,11 +406,11 @@ func TestWireShapeUnmappedSchemasAreTracked(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := schemasFromSpecs(dir)
+	merged, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
-	sdk, err := discoverSDKTypes(".")
+	sdk, err := wireshape.DiscoverSDKTypes(".")
 	if err != nil {
 		t.Fatalf("discover SDK types: %v", err)
 	}
@@ -631,73 +427,7 @@ func TestWireShapeUnmappedSchemasAreTracked(t *testing.T) {
 	}
 }
 
-// yamlNodeToMap folds a YAML tree into a `map[string]any` with
-// last-wins semantics on duplicate keys. Match's Python yaml.safe_load
-// behavior so the gate tolerates platform-side spec duplicates
-// (tracked separately as a spec bug) rather than refusing to parse.
-func yamlNodeToMap(n *yaml.Node) (map[string]any, bool) {
-	v := yamlNodeToValue(n)
-	m, ok := v.(map[string]any)
-	return m, ok
-}
-
-func yamlNodeToValue(n *yaml.Node) any {
-	if n == nil {
-		return nil
-	}
-	switch n.Kind {
-	case yaml.DocumentNode:
-		if len(n.Content) == 0 {
-			return nil
-		}
-		return yamlNodeToValue(n.Content[0])
-	case yaml.MappingNode:
-		out := map[string]any{}
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			key := n.Content[i]
-			val := n.Content[i+1]
-			if key.Kind != yaml.ScalarNode {
-				continue
-			}
-			out[key.Value] = yamlNodeToValue(val) // last wins on duplicate
-		}
-		return out
-	case yaml.SequenceNode:
-		out := make([]any, 0, len(n.Content))
-		for _, c := range n.Content {
-			out = append(out, yamlNodeToValue(c))
-		}
-		return out
-	case yaml.ScalarNode:
-		var v any
-		if err := n.Decode(&v); err == nil {
-			return v
-		}
-		return n.Value
-	case yaml.AliasNode:
-		if n.Alias != nil {
-			return yamlNodeToValue(n.Alias)
-		}
-	}
-	return nil
-}
-
-// ---- small set/diff helpers ----
-
-func difference(a, b []string) []string {
-	bs := map[string]struct{}{}
-	for _, s := range b {
-		bs[s] = struct{}{}
-	}
-	out := []string{}
-	for _, s := range a {
-		if _, ok := bs[s]; !ok {
-			out = append(out, s)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
+// ---- small test-local helpers ----
 
 func toSet(s []string) map[string]struct{} {
 	out := make(map[string]struct{}, len(s))
