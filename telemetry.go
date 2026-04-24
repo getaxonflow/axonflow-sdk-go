@@ -182,9 +182,16 @@ func (c *AxonFlowClient) isTelemetryEnabled() bool {
 	return c.config.Mode != "sandbox"
 }
 
-// sendTelemetryPing sends a fire-and-forget telemetry ping to the checkpoint
-// service. It never returns an error — all failures are silently ignored.
-// In debug mode, a version-outdated warning may be logged.
+// sendTelemetryPing sends a synchronous, bounded-timeout telemetry ping to
+// the checkpoint service. It never returns an error — all failures are
+// silently ignored. In debug mode, a version-outdated warning may be logged.
+//
+// Previously invoked as a goroutine (`go client.sendTelemetryPing()`), but
+// short-lived processes (CLI, serverless, quickstart scripts) returned from
+// main() before the goroutine's POST could complete, silently dropping the
+// ping. The function is now called synchronously from NewClient; the
+// context.WithTimeout + http.Client.Timeout below bound the worst case to
+// ~3s. See issue #1693.
 func (c *AxonFlowClient) sendTelemetryPing() {
 	if !c.isTelemetryEnabled() {
 		return
