@@ -1,8 +1,22 @@
 # AxonFlow SDK for Go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v4.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v4)
+[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v5.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v5)
 [![Go Report Card](https://goreportcard.com/badge/github.com/getaxonflow/axonflow-sdk-go)](https://goreportcard.com/report/github.com/getaxonflow/axonflow-sdk-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+> ## ⚠️ Use the `/v5` import path
+>
+> Go's semantic import versioning requires the module path to include the major version suffix for v2+. The current release line is **v5.x**, imported as:
+>
+> ```go
+> import "github.com/getaxonflow/axonflow-sdk-go/v5"
+> ```
+>
+> ```bash
+> go get github.com/getaxonflow/axonflow-sdk-go/v5
+> ```
+>
+> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v5`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is four major release lines behind current. See the [Migration Guide](#migration-guide) below.
 
 > **Evaluating AxonFlow in production?** We're opening limited Design Partner slots.
 >
@@ -35,7 +49,7 @@ If you're new to AxonFlow, this short video shows how the control plane and SDKs
 ## Installation
 
 ```bash
-go get github.com/getaxonflow/axonflow-sdk-go/v4
+go get github.com/getaxonflow/axonflow-sdk-go/v5
 ```
 
 ## Evaluation Tier (Free License)
@@ -83,7 +97,7 @@ import (
     "log"
     "os"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v4"
+    "github.com/getaxonflow/axonflow-sdk-go/v5"
 )
 
 func main() {
@@ -121,7 +135,7 @@ func main() {
 import (
     "time"
     "os"
-    "github.com/getaxonflow/axonflow-sdk-go/v4"
+    "github.com/getaxonflow/axonflow-sdk-go/v5"
 )
 
 // Full configuration with all features
@@ -159,7 +173,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v4"
+    "github.com/getaxonflow/axonflow-sdk-go/v5"
 )
 
 func main() {
@@ -293,8 +307,8 @@ Wrap your LLM clients with automatic AxonFlow governance using the interceptors 
 import (
     "context"
     "github.com/sashabaranov/go-openai"
-    "github.com/getaxonflow/axonflow-sdk-go/v4"
-    "github.com/getaxonflow/axonflow-sdk-go/v4/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v5"
+    "github.com/getaxonflow/axonflow-sdk-go/v5/interceptors"
 )
 
 // Initialize AxonFlow client
@@ -346,8 +360,8 @@ if err != nil {
 ```go
 import (
     "context"
-    "github.com/getaxonflow/axonflow-sdk-go/v4"
-    "github.com/getaxonflow/axonflow-sdk-go/v4/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v5"
+    "github.com/getaxonflow/axonflow-sdk-go/v5/interceptors"
 )
 
 // Create Anthropic interceptor
@@ -771,6 +785,40 @@ fmt.Printf("Result: %v\n", resp.Data)
 **Note:** For self-hosted (localhost) deployments, `ClientID` and `ClientSecret` are optional.
 
 ## Migration Guide
+
+### Migrating from v1.x (bare import path) to v5
+
+If `go get github.com/getaxonflow/axonflow-sdk-go@latest` resolved to **v1.17.0**, you are on a 2026-01 relic because you used the bare module path. Go's semantic import versioning requires the `/v5` suffix for v2+ releases.
+
+```bash
+# In go.mod, remove the old entry and replace with the v5 path:
+#   github.com/getaxonflow/axonflow-sdk-go → github.com/getaxonflow/axonflow-sdk-go/v5
+go get github.com/getaxonflow/axonflow-sdk-go/v5
+```
+
+Update all imports in your `.go` files to include `/v5`:
+
+```go
+// Before:
+import "github.com/getaxonflow/axonflow-sdk-go"
+
+// After:
+import "github.com/getaxonflow/axonflow-sdk-go/v5"
+```
+
+The API surface between v1 and v5 is substantially different. Check the release notes for v2, v3, v4, and v5 for the breaking changes you'll need to adopt. If you're coming from v1.x directly, the fastest path is usually to re-read the [Quick Start](#quick-start) section rather than trying to incrementally migrate.
+
+### Migrating from v4 to v5
+
+**1. Update module path:**
+
+```bash
+# In go.mod, change:
+#   github.com/getaxonflow/axonflow-sdk-go/v4 → github.com/getaxonflow/axonflow-sdk-go/v5
+go get github.com/getaxonflow/axonflow-sdk-go/v5
+```
+
+Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface changes are required for the v4 → v5 bump itself — the major version increment reflects a policy break in how plan-scoped HITL responses are returned. See the [v5.0.0 release notes](https://github.com/getaxonflow/axonflow-sdk-go/releases/tag/v5.0.0) for the specifics.
 
 ### Migrating from v3 to v4
 
