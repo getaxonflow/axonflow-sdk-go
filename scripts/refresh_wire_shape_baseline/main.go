@@ -375,4 +375,3 @@ func yamlNodeToValue(n *yaml.Node) any {
 	}
 	return nil
 }
-

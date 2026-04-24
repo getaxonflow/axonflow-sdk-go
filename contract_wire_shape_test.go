@@ -101,13 +101,13 @@ func loadBaseline(t *testing.T) wireShapeBaseline {
 // schemasFromSpecs loads every *.yaml in specDir and returns
 // (mergedSchemas, duplicatesBySpec).
 //
-// - mergedSchemas maps schema name → sorted field names, last-loaded wins
-//   on name collision; this is what SDK structs are diffed against.
+//   - mergedSchemas maps schema name → sorted field names, last-loaded wins
+//     on name collision; this is what SDK structs are diffed against.
 //
-// - duplicatesBySpec keeps only schemas whose declarations DIFFER across
-//   specs (identical redundant declarations are benign). The baseline
-//   fingerprint pins these per-spec so an already-acknowledged collision
-//   can't quietly drift further.
+//   - duplicatesBySpec keeps only schemas whose declarations DIFFER across
+//     specs (identical redundant declarations are benign). The baseline
+//     fingerprint pins these per-spec so an already-acknowledged collision
+//     can't quietly drift further.
 func schemasFromSpecs(specDir string) (map[string][]string, map[string]map[string][]string, error) {
 	merged := map[string][]string{}
 	allDecls := map[string]map[string][]string{}
@@ -399,10 +399,10 @@ func TestWireShapeNoNewSDKVsSpecDrift(t *testing.T) {
 
 	matched := 0
 	type drift struct {
-		name        string
-		newSDKOnly  []string
-		newSpecOnly []string
-		baseSDKOnly []string
+		name         string
+		newSDKOnly   []string
+		newSpecOnly  []string
+		baseSDKOnly  []string
 		baseSpecOnly []string
 	}
 	var newDrift []drift
@@ -534,10 +534,10 @@ func TestWireShapeBaselineIsNotStale(t *testing.T) {
 	baseline := loadBaseline(t)
 
 	type stale struct {
-		name      string
-		sdkOnly   []string
-		specOnly  []string
-		vanished  bool
+		name     string
+		sdkOnly  []string
+		specOnly []string
+		vanished bool
 	}
 	var staleEntries []stale
 	for name, expected := range baseline.PerTypeDrift {
