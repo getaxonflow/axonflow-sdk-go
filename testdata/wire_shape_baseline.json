@@ -178,6 +178,11 @@
       ]
     }
   },
+  "intra_file_duplicates": {
+    "orchestrator-api.yaml": {
+      "PolicyMatch": 2
+    }
+  },
   "registered_types": [
     "AISystemRegistry",
     "AuditLogEntry",

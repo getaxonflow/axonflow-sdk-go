@@ -66,7 +66,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	merged, duplicates, err := wireshape.LoadSchemas(specsDir)
+	merged, crossSpecDuplicates, intraFileDuplicates, err := wireshape.LoadSchemas(specsDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -101,7 +101,8 @@ func main() {
 			"down over time via targeted fix PRs. See axonflow-enterprise tracking " +
 			"issue (QF-11 follow-up).",
 		OpenAPISpecsSHA:     sha,
-		CrossSpecDuplicates: duplicates,
+		CrossSpecDuplicates: crossSpecDuplicates,
+		IntraFileDuplicates: intraFileDuplicates,
 		RegisteredTypes:     registered,
 		PerTypeDrift:        drift,
 	}
@@ -113,7 +114,8 @@ func main() {
 
 	fmt.Printf("Wrote baseline: %s\n", baselineOut)
 	fmt.Printf("  openapi_specs_sha:     %s\n", sha)
-	fmt.Printf("  cross_spec_duplicates: %d\n", len(duplicates))
+	fmt.Printf("  cross_spec_duplicates: %d\n", len(crossSpecDuplicates))
+	fmt.Printf("  intra_file_duplicates: %d files affected\n", len(intraFileDuplicates))
 	fmt.Printf("  registered_types:      %d\n", len(registered))
 	fmt.Printf("  per_type_drift:        %d\n", len(drift))
 }

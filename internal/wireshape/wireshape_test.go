@@ -33,7 +33,7 @@ components:
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	merged, duplicates, err := LoadSchemas(dir)
+	merged, crossSpec, intraFile, err := LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("LoadSchemas: %v", err)
 	}
@@ -43,9 +43,66 @@ components:
 		t.Fatalf("last-wins broken: Foo fields = %v, want %v", got, want)
 	}
 	// Single file with self-duplicate: both declarations share the same
-	// file name, so duplicatesBySpec (cross-spec) should be empty.
-	if len(duplicates) != 0 {
-		t.Fatalf("intra-file duplicates incorrectly reported cross-spec: %v", duplicates)
+	// file name, so cross-spec duplicates should be empty.
+	if len(crossSpec) != 0 {
+		t.Fatalf("intra-file duplicates incorrectly reported cross-spec: %v", crossSpec)
+	}
+	// But intra-file duplicates MUST surface — this is exactly the
+	// PolicyMatch-class bug the gate needs to catch.
+	if got, want := intraFile["dup.yaml"]["Foo"], 2; got != want {
+		t.Fatalf("intra-file duplicate count: got %d want %d (full map: %v)", got, want, intraFile)
+	}
+}
+
+// TestLoadSchemasIntraFilePositiveNegative covers both sides of the
+// intra-file duplicate detector: a schema declared twice in one file
+// MUST surface; a schema declared once in each of two files (cross-
+// spec, already covered by another gate) MUST NOT surface as intra-
+// file.
+func TestLoadSchemasIntraFilePositiveNegative(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(filepath.Join(dir, "triple.yaml"), `
+components:
+  schemas:
+    Foo:
+      type: object
+      properties: {a: {type: string}}
+    Bar:
+      type: object
+      properties: {x: {type: string}}
+    Foo:
+      type: object
+      properties: {b: {type: string}}
+    Foo:
+      type: object
+      properties: {c: {type: string}}
+`); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := writeFile(filepath.Join(dir, "other.yaml"), `
+components:
+  schemas:
+    Unique:
+      type: object
+      properties: {z: {type: string}}
+`); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, _, intraFile, err := LoadSchemas(dir)
+	if err != nil {
+		t.Fatalf("LoadSchemas: %v", err)
+	}
+	// Positive: Foo in triple.yaml, counted 3 times
+	if got, want := intraFile["triple.yaml"]["Foo"], 3; got != want {
+		t.Errorf("triple.yaml.Foo count: got %d want %d", got, want)
+	}
+	// Negative: Bar in triple.yaml (declared once) should not be listed
+	if _, ok := intraFile["triple.yaml"]["Bar"]; ok {
+		t.Errorf("Bar was incorrectly flagged as intra-file duplicate")
+	}
+	// Negative: other.yaml has no duplicates
+	if _, ok := intraFile["other.yaml"]; ok {
+		t.Errorf("other.yaml was incorrectly flagged despite having no duplicates")
 	}
 }
 
@@ -76,7 +133,7 @@ components:
 `); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	_, duplicates, err := LoadSchemas(dir)
+	_, duplicates, _, err := LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("LoadSchemas: %v", err)
 	}
@@ -112,7 +169,7 @@ components:
 	if err := writeFile(filepath.Join(dir, "orch.yaml"), body); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, duplicates, err := LoadSchemas(dir)
+	_, duplicates, _, err := LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("LoadSchemas: %v", err)
 	}

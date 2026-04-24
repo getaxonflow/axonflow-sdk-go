@@ -98,7 +98,7 @@ func TestWireShapeSpecsDirIsPopulated(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	schemas, _, err := wireshape.LoadSchemas(dir)
+	schemas, _, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestWireShapeNoNewCrossSpecDivergence(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	_, observed, err := wireshape.LoadSchemas(dir)
+	_, observed, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -178,12 +178,75 @@ func TestWireShapeNoNewCrossSpecDivergence(t *testing.T) {
 	t.Fatal(out.String())
 }
 
+func TestWireShapeNoNewIntraFileDuplicates(t *testing.T) {
+	dir := specsDir()
+	if dir == "" {
+		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
+	}
+	_, _, observed, err := wireshape.LoadSchemas(dir)
+	if err != nil {
+		t.Fatalf("load specs: %v", err)
+	}
+	baseline := loadBaseline(t)
+	allowed := baseline.IntraFileDuplicates
+
+	type problem struct{ body string }
+	var problems []problem
+
+	// Every observed intra-file duplicate must match the baseline entry
+	// exactly — both file AND count. A new duplicate OR a count change
+	// (e.g. PolicyMatch going from 2 to 3 copies) fails the gate.
+	for file, schemas := range observed {
+		for schemaName, count := range schemas {
+			allowedCount, ok := allowed[file][schemaName]
+			if ok && allowedCount == count {
+				continue
+			}
+			problems = append(problems, problem{fmt.Sprintf(
+				"  %s: schema '%s' declared %d times (baseline says %d).",
+				file, schemaName, count, allowedCount,
+			)})
+		}
+	}
+	// A baselined duplicate that no longer appears also fails — force
+	// the baseline author to remove it deliberately, the same contract
+	// as the cross-spec gate.
+	for file, schemas := range allowed {
+		for schemaName := range schemas {
+			if _, ok := observed[file][schemaName]; !ok {
+				problems = append(problems, problem{fmt.Sprintf(
+					"  %s: baselined duplicate '%s' no longer observed — remove from baseline.intra_file_duplicates.",
+					file, schemaName,
+				)})
+			}
+		}
+	}
+
+	if len(problems) == 0 {
+		return
+	}
+	sort.Slice(problems, func(i, j int) bool { return problems[i].body < problems[j].body })
+	var b strings.Builder
+	b.WriteString("\nIntra-file schema duplicate gate failed:\n\n")
+	for _, p := range problems {
+		b.WriteString(p.body)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nFix: remove the duplicate declaration in the OpenAPI spec. " +
+		"A schema declared twice in one file leaves the contract ambiguous — " +
+		"only the last declaration is authoritative at parse time, so readers " +
+		"of the first disagree with readers of the second. If the duplicate " +
+		"is intentional and must stand, regenerate " +
+		"testdata/wire_shape_baseline.json to acknowledge it.\n")
+	t.Fatal(b.String())
+}
+
 func TestWireShapeNoNewSDKVsSpecDrift(t *testing.T) {
 	dir := specsDir()
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := wireshape.LoadSchemas(dir)
+	merged, _, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -276,7 +339,7 @@ func TestWireShapeRegisteredTypesStillMap(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := wireshape.LoadSchemas(dir)
+	merged, _, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -319,7 +382,7 @@ func TestWireShapeBaselineIsNotStale(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := wireshape.LoadSchemas(dir)
+	merged, _, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -376,7 +439,7 @@ func TestWireShapeUnmappedTypesAreTracked(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := wireshape.LoadSchemas(dir)
+	merged, _, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
@@ -406,7 +469,7 @@ func TestWireShapeUnmappedSchemasAreTracked(t *testing.T) {
 	if dir == "" {
 		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
 	}
-	merged, _, err := wireshape.LoadSchemas(dir)
+	merged, _, _, err := wireshape.LoadSchemas(dir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}

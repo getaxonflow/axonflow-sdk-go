@@ -31,8 +31,14 @@ type Baseline struct {
 	Comment             string                         `json:"_comment,omitempty"`
 	OpenAPISpecsSHA     string                         `json:"openapi_specs_sha"`
 	CrossSpecDuplicates map[string]map[string][]string `json:"cross_spec_duplicates"`
-	RegisteredTypes     []string                       `json:"registered_types"`
-	PerTypeDrift        map[string]DriftEntry          `json:"per_type_drift"`
+	// IntraFileDuplicates records schemas declared more than once in the
+	// same spec file. Key: spec filename → schema name → declaration count.
+	// yaml.v3 would collapse these before the gate ever saw them; this
+	// field exists so such collisions must be explicitly acknowledged.
+	// Each entry should carry a tracking issue.
+	IntraFileDuplicates map[string]map[string]int `json:"intra_file_duplicates"`
+	RegisteredTypes     []string                  `json:"registered_types"`
+	PerTypeDrift        map[string]DriftEntry     `json:"per_type_drift"`
 }
 
 // DriftEntry records the acknowledged drift between an SDK struct and
@@ -47,29 +53,44 @@ type DriftEntry struct {
 func NewEmptyBaseline() Baseline {
 	return Baseline{
 		CrossSpecDuplicates: map[string]map[string][]string{},
+		IntraFileDuplicates: map[string]map[string]int{},
 		PerTypeDrift:        map[string]DriftEntry{},
 	}
 }
 
 // LoadSchemas parses every *.yaml in specDir and returns
-// (mergedSchemas, duplicatesBySpec).
+// (mergedSchemas, crossSpecDuplicates, intraFileDuplicates, err).
 //
 //   - mergedSchemas maps each schema name to its sorted property names.
-//     On name collision the last-loaded declaration wins — this is the
-//     set of shapes the gate diffs SDK structs against.
+//     On any name collision (intra-file or cross-file) the last-seen
+//     declaration wins; this is the set of shapes the gate diffs SDK
+//     structs against.
 //
-//   - duplicatesBySpec contains only schemas whose declarations DIFFER
-//     across specs (identical redundant declarations are benign).
+//   - crossSpecDuplicates contains schemas whose declarations DIFFER
+//     across spec files (identical redundant declarations are benign).
 //     Keyed by {schemaName: {specFilename: sortedFields}}. The baseline
-//     pins these so an already-acknowledged cross-spec collision cannot
-//     quietly drift further.
-func LoadSchemas(specDir string) (map[string][]string, map[string]map[string][]string, error) {
-	merged := map[string][]string{}
+//     pins these so an already-acknowledged cross-spec collision can't
+//     quietly widen later.
+//
+//   - intraFileDuplicates records schemas declared more than once in
+//     the same file. Keyed by {specFilename: {schemaName: count}}.
+//     yaml.v3 would collapse these at map-decode time, hiding the bug
+//     (see the real PolicyMatch duplicate in orchestrator-api.yaml),
+//     so we walk the Node tree manually at components.schemas level
+//     and count pairs before any map dedup happens.
+func LoadSchemas(specDir string) (
+	merged map[string][]string,
+	crossSpecDuplicates map[string]map[string][]string,
+	intraFileDuplicates map[string]map[string]int,
+	err error,
+) {
+	merged = map[string][]string{}
 	allDecls := map[string]map[string][]string{}
+	intraFileDuplicates = map[string]map[string]int{}
 
 	entries, err := os.ReadDir(specDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read %s: %w", specDir, err)
+		return nil, nil, nil, fmt.Errorf("read %s: %w", specDir, err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -81,36 +102,40 @@ func LoadSchemas(specDir string) (map[string][]string, map[string]map[string][]s
 
 	for _, name := range names {
 		full := filepath.Join(specDir, name)
-		data, err := os.ReadFile(full)
-		if err != nil {
-			return nil, nil, fmt.Errorf("read %s: %w", full, err)
+		data, readErr := os.ReadFile(full)
+		if readErr != nil {
+			return nil, nil, nil, fmt.Errorf("read %s: %w", full, readErr)
 		}
-		// yaml.v3 is strict on duplicate mapping keys. Python's
+		// yaml.v3 errors on duplicate mapping keys by default; Python's
 		// yaml.safe_load is lenient (last-wins). To keep the Go and
 		// Python gates seeing the same specs, decode into a tolerant
-		// Node tree and fold it to a map ourselves with last-wins
-		// semantics. A duplicate key here is itself a platform spec
-		// bug worth tracking, but it must not block the SDK gate on
-		// every other schema.
+		// Node tree.
 		var root yaml.Node
-		if err := yaml.Unmarshal(data, &root); err != nil {
-			return nil, nil, fmt.Errorf("parse %s: %w", full, err)
+		if parseErr := yaml.Unmarshal(data, &root); parseErr != nil {
+			return nil, nil, nil, fmt.Errorf("parse %s: %w", full, parseErr)
 		}
-		doc, ok := NodeToMap(&root)
-		if !ok {
+		schemasNode := findSchemasNode(&root)
+		if schemasNode == nil {
 			continue
 		}
-		comps, _ := doc["components"].(map[string]any)
-		if comps == nil {
-			continue
-		}
-		schemas, _ := comps["schemas"].(map[string]any)
-		for schemaName, raw := range schemas {
-			schema, ok := raw.(map[string]any)
+
+		// Walk components.schemas pairwise so we can count intra-file
+		// duplicates before any map collapses them.
+		intraCounts := map[string]int{}
+		for i := 0; i+1 < len(schemasNode.Content); i += 2 {
+			keyNode := schemasNode.Content[i]
+			valNode := schemasNode.Content[i+1]
+			if keyNode.Kind != yaml.ScalarNode {
+				continue
+			}
+			schemaName := keyNode.Value
+			intraCounts[schemaName]++
+
+			schemaMap, ok := nodeToValue(valNode).(map[string]any)
 			if !ok {
 				continue
 			}
-			props, ok := schema["properties"].(map[string]any)
+			props, ok := schemaMap["properties"].(map[string]any)
 			if !ok || len(props) == 0 {
 				continue
 			}
@@ -122,12 +147,23 @@ func LoadSchemas(specDir string) (map[string][]string, map[string]map[string][]s
 			if _, seen := allDecls[schemaName]; !seen {
 				allDecls[schemaName] = map[string][]string{}
 			}
+			// Last-wins inside a file: overwriting allDecls[name][file]
+			// here matches the merged-schemas last-wins semantic and
+			// keeps the cross-file comparison clean.
 			allDecls[schemaName][name] = fields
 			merged[schemaName] = fields
 		}
+		for schemaName, count := range intraCounts {
+			if count > 1 {
+				if intraFileDuplicates[name] == nil {
+					intraFileDuplicates[name] = map[string]int{}
+				}
+				intraFileDuplicates[name][schemaName] = count
+			}
+		}
 	}
 
-	duplicates := map[string]map[string][]string{}
+	crossSpecDuplicates = map[string]map[string][]string{}
 	for schemaName, decls := range allDecls {
 		if len(decls) < 2 {
 			continue
@@ -137,10 +173,44 @@ func LoadSchemas(specDir string) (map[string][]string, map[string]map[string][]s
 			shapes[strings.Join(f, "|")] = struct{}{}
 		}
 		if len(shapes) > 1 {
-			duplicates[schemaName] = decls
+			crossSpecDuplicates[schemaName] = decls
 		}
 	}
-	return merged, duplicates, nil
+	return merged, crossSpecDuplicates, intraFileDuplicates, nil
+}
+
+// findSchemasNode navigates the YAML tree to components.schemas and
+// returns the MappingNode there (or nil if the path doesn't exist /
+// isn't a map). Needed because yamlNodeToMap would collapse duplicate
+// keys at every level, including the components.schemas level we
+// specifically need to inspect for intra-file duplicates.
+func findSchemasNode(root *yaml.Node) *yaml.Node {
+	top := root
+	if top != nil && top.Kind == yaml.DocumentNode && len(top.Content) > 0 {
+		top = top.Content[0]
+	}
+	if top == nil || top.Kind != yaml.MappingNode {
+		return nil
+	}
+	compsNode := findMapChild(top, "components")
+	if compsNode == nil || compsNode.Kind != yaml.MappingNode {
+		return nil
+	}
+	schemas := findMapChild(compsNode, "schemas")
+	if schemas == nil || schemas.Kind != yaml.MappingNode {
+		return nil
+	}
+	return schemas
+}
+
+func findMapChild(mapping *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		k := mapping.Content[i]
+		if k.Kind == yaml.ScalarNode && k.Value == key {
+			return mapping.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // DiscoverSDKTypes walks the non-test .go files under pkgDir and
@@ -243,15 +313,10 @@ func ParseJSONTagName(tag string) string {
 	return tag
 }
 
-// NodeToMap folds the top-level YAML document into a map[string]any
-// with last-wins semantics on duplicate keys. See LoadSchemas for the
-// rationale.
-func NodeToMap(n *yaml.Node) (map[string]any, bool) {
-	v := nodeToValue(n)
-	m, ok := v.(map[string]any)
-	return m, ok
-}
-
+// nodeToValue folds a YAML tree into Go types with last-wins semantics
+// on duplicate mapping keys. It is intentionally unexported: callers
+// that need to detect duplicates at a specific level (like LoadSchemas
+// does at components.schemas) must walk the Node tree themselves.
 func nodeToValue(n *yaml.Node) any {
 	if n == nil {
 		return nil

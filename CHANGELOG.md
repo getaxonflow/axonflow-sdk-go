@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - README makes the `/v5` import path requirement explicit. `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v5`) resolves to the pre-v2 `v1.17.0` relic; the correct module path is `github.com/getaxonflow/axonflow-sdk-go/v5`. Added a top-of-README banner, corrected the install command and import examples (all formerly `/v4`), and expanded the Migration Guide with v1→v5 and v4→v5 paths.
 
+### Notes
+
+- `go.mod` now declares `gopkg.in/yaml.v3` as a test-only dependency, used by the internal wire-shape contract CI (`contract_wire_shape_test.go` and the `internal/wireshape` helper package). It is not imported by any non-test source file, so consumers' compiled binaries do not link it — the dep appears only in `go.sum` / `go mod graph`.
+
 ## [5.6.0] - 2026-04-22
 
 ### Added
