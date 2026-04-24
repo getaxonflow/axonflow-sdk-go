@@ -23,7 +23,13 @@ ERRORS=0
 # accumulates in-flight changes between tags and must not be used as
 # the expected-version target — the manifest only gets bumped when we
 # actually cut a tag.
-LATEST_VERSION=$(grep -m1 -E '^## \[[0-9]' CHANGELOG.md | sed 's/## \[\(.*\)\].*/\1/' | sed 's/^v//')
+#
+# `{ grep || true; }` is deliberate: under `set -euo pipefail`, a
+# failing grep (no match) aborts the whole command substitution
+# before the `-z` check can produce the friendly error below. The
+# wrapper lets the -z branch fire with a readable message instead of
+# a silent exit.
+LATEST_VERSION=$({ grep -m1 -E '^## \[[0-9]' CHANGELOG.md || true; } | sed 's/## \[\(.*\)\].*/\1/' | sed 's/^v//')
 
 if [ -z "${LATEST_VERSION:-}" ]; then
     echo "❌ Could not extract a released version (## [X.Y.Z]) from CHANGELOG.md"
