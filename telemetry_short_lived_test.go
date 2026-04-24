@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -81,14 +82,12 @@ func TestTelemetryDeliveryOnShortLivedProcess(t *testing.T) {
 	}
 
 	// Run the binary, no wait, no sleep. Point telemetry at the mock server.
+	// Inherit parent env so the test works on any CI runner / shell, but
+	// scrub the two opt-out vars that might otherwise disable telemetry
+	// (e.g. a developer shell with DO_NOT_TRACK=1 exported globally).
 	runCmd := exec.Command(binPath)
-	runCmd.Env = append(runCmd.Env,
-		"PATH="+envPath(),
-		"HOME="+binDir,
+	runCmd.Env = append(filterOptOutEnv(os.Environ()),
 		"AXONFLOW_CHECKPOINT_URL="+server.URL+"/v1/ping",
-		// explicit: unset common opt-outs that might leak in from developer shells
-		"DO_NOT_TRACK=",
-		"AXONFLOW_TELEMETRY=",
 	)
 	if out, err := runCmd.CombinedOutput(); err != nil {
 		t.Fatalf("binary run failed: %v\n%s", err, out)
@@ -108,11 +107,19 @@ func TestTelemetryDeliveryOnShortLivedProcess(t *testing.T) {
 	}
 }
 
-// envPath returns a minimal PATH sufficient to find `go` in the subprocess's
-// build step (for transitive tooling if any). Kept narrow to avoid leaking
-// the test shell's developer env into the binary's runtime.
-func envPath() string {
-	return "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+// filterOptOutEnv returns the parent environment with DO_NOT_TRACK and
+// AXONFLOW_TELEMETRY removed. Used so the regression test exercises the
+// telemetry-enabled code path even when the developer's shell has one of
+// those set globally.
+func filterOptOutEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, "DO_NOT_TRACK=") || strings.HasPrefix(e, "AXONFLOW_TELEMETRY=") {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 func writeShortLivedBinary(dir, modRoot string) error {
