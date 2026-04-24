@@ -16,7 +16,7 @@
 > go get github.com/getaxonflow/axonflow-sdk-go/v5
 > ```
 >
-> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v5`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is missing three major versions of functionality. See the [Migration Guide](#migration-guide) below.
+> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v5`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is four major release lines behind current. See the [Migration Guide](#migration-guide) below.
 
 > **Evaluating AxonFlow in production?** We're opening limited Design Partner slots.
 >
@@ -825,8 +825,8 @@ Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface chang
 **1. Update module path:**
 ```bash
 # In go.mod, change:
-#   github.com/getaxonflow/axonflow-sdk-go/v3 → github.com/getaxonflow/axonflow-sdk-go/v5
-go get github.com/getaxonflow/axonflow-sdk-go/v5@v4.0.0
+#   github.com/getaxonflow/axonflow-sdk-go/v3 → github.com/getaxonflow/axonflow-sdk-go/v4
+go get github.com/getaxonflow/axonflow-sdk-go/v4@v4.0.0
 ```
 
 Update all imports in your `.go` files from `v3` to `v4`.
