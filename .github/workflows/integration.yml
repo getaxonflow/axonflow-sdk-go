@@ -36,6 +36,109 @@ jobs:
     - name: Run Contract Tests
       run: go test -v -run "Contract" ./...
 
+  # QF-15 Go arm: wire-shape contract CI. Blocks drift between Go SDK
+  # struct tags and the OpenAPI specs that are the authoritative wire
+  # contract. Runs on every PR. Drift the baseline doesn't cover fails.
+  #
+  # Spec revision is pinned via openapi_specs_sha in
+  # testdata/wire_shape_baseline.json so the gate is deterministic. A
+  # 'spec-pin-bump' label is required on PRs that change the SHA,
+  # preserving review integrity — a PR that both changes the SHA and
+  # SDK models could otherwise silence drift by retargeting the
+  # contract.
+  #
+  # Regenerate the baseline via:
+  #   go run ./scripts/refresh_wire_shape_baseline <specs_dir>
+  wire-shape-contract:
+    name: Wire-Shape Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout SDK (full history for SHA-bump guard)
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Read pinned OpenAPI specs SHA from baseline
+      id: specs_sha
+      run: |
+        python3 - <<'PY' >> "$GITHUB_OUTPUT"
+        import json
+        import sys
+        path = "testdata/wire_shape_baseline.json"
+        data = json.load(open(path))
+        sha = (data.get("openapi_specs_sha", "") or "").strip()
+        if not sha:
+            print(
+                f"::error::{path} is missing openapi_specs_sha. "
+                "Regenerate via scripts/refresh_wire_shape_baseline.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"sha={sha}")
+        PY
+
+    - name: Guard against unauthorized OpenAPI specs SHA bump
+      if: github.event_name == 'pull_request'
+      env:
+        PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        BASE_REF: ${{ github.base_ref }}
+        PR_SHA: ${{ steps.specs_sha.outputs.sha }}
+      run: |
+        set -e
+        BASE_SHA=$(
+          git show "origin/${BASE_REF}:testdata/wire_shape_baseline.json" 2>/dev/null \
+            | python3 -c "import json, sys; print(json.load(sys.stdin).get('openapi_specs_sha','') or '')" \
+            || true
+        )
+        if [ -z "$BASE_SHA" ]; then
+          echo "::notice::Base branch has no openapi_specs_sha yet; treating this PR as the first pin introduction."
+          exit 0
+        fi
+        if [ "$BASE_SHA" = "$PR_SHA" ]; then
+          echo "openapi_specs_sha unchanged (${PR_SHA})."
+          exit 0
+        fi
+        echo "SHA change detected: ${BASE_SHA} -> ${PR_SHA}"
+        HAS_LABEL=$(printf '%s' "$PR_LABELS" | python3 -c "import json, sys; print('spec-pin-bump' in json.load(sys.stdin))")
+        if [ "$HAS_LABEL" = "True" ]; then
+          echo "::notice::'spec-pin-bump' label present — SHA bump authorized."
+          exit 0
+        fi
+        echo "::error::openapi_specs_sha changed from ${BASE_SHA} to ${PR_SHA}."
+        echo "::error::The wire-shape contract's spec revision is pinned to preserve"
+        echo "::error::review integrity: a SHA change in the same PR as SDK changes"
+        echo "::error::can silence drift by retargeting the contract to a friendlier"
+        echo "::error::revision. Either split this into a dedicated SHA-bump PR, or"
+        echo "::error::apply the 'spec-pin-bump' label to this PR."
+        exit 1
+
+    - name: Checkout OpenAPI specs (pinned to baseline SHA)
+      uses: actions/checkout@v4
+      with:
+        repository: getaxonflow/axonflow
+        ref: ${{ steps.specs_sha.outputs.sha }}
+        path: axonflow-community
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Run wire-shape contract tests
+      env:
+        AXONFLOW_OPENAPI_SPECS_DIR: ${{ github.workspace }}/axonflow-community/docs/api
+      run: go test -v -run "TestWireShape" .
+
   # Integration tests only run on main branch (after merge) and scheduled runs
   # They require the community stack which needs docker compose
   integration:
