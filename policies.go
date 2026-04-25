@@ -112,15 +112,20 @@ const (
 
 // StaticPolicy represents a static policy definition
 type StaticPolicy struct {
-	ID             string          `json:"id"`
-	Name           string          `json:"name"`
-	Description    string          `json:"description,omitempty"`
-	Category       PolicyCategory  `json:"category"`
-	Tier           PolicyTier      `json:"tier"`
-	Pattern        string          `json:"pattern"`
-	Severity       PolicySeverity  `json:"severity"`
-	Enabled        bool            `json:"enabled"`
-	Action         PolicyAction    `json:"action"`
+	ID string `json:"id"`
+	// PolicyID is the human-readable policy identifier (e.g.
+	// "sys_sqli_union_select"). Distinct from ID (the UUID).
+	PolicyID       string         `json:"policy_id,omitempty"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description,omitempty"`
+	Category       PolicyCategory `json:"category"`
+	Tier           PolicyTier     `json:"tier"`
+	Pattern        string         `json:"pattern"`
+	Severity       PolicySeverity `json:"severity"`
+	Enabled        bool           `json:"enabled"`
+	Action         PolicyAction   `json:"action"`
+	// Priority is the evaluation order — lower values run first.
+	Priority       int             `json:"priority,omitempty"`
 	OrganizationID *string         `json:"organization_id,omitempty"`
 	TenantID       *string         `json:"tenant_id,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
@@ -132,13 +137,23 @@ type StaticPolicy struct {
 
 // PolicyOverride represents an override for a static policy
 type PolicyOverride struct {
+	// ID is the override identifier (required to revoke a specific
+	// override).
+	ID        string         `json:"id,omitempty"`
 	PolicyID  string         `json:"policy_id"`
 	Action    OverrideAction `json:"action_override"`
 	Reason    string         `json:"override_reason"`
 	CreatedBy string         `json:"created_by,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	ExpiresAt *time.Time     `json:"expires_at,omitempty"`
-	Active    bool           `json:"active"`
+	// EnabledOverride is the canonical wire field for override enabled
+	// state. The legacy `Active` field reads the same wire key as
+	// `active`, but the server actually emits `enabled_override`.
+	EnabledOverride bool `json:"enabled_override,omitempty"`
+	// Deprecated: use EnabledOverride. The wire field is
+	// `enabled_override`, so `Active` has always read false against
+	// JSON-decoded server responses. Removed in v6.
+	Active bool `json:"active,omitempty"`
 }
 
 // ListStaticPoliciesOptions represents options for listing static policies
@@ -168,6 +183,10 @@ type CreateStaticPolicyRequest struct {
 	Severity       PolicySeverity `json:"severity,omitempty"`
 	Enabled        bool           `json:"enabled"`
 	Action         PolicyAction   `json:"action,omitempty"`
+	// Priority is the evaluation order — lower values run first.
+	Priority int `json:"priority,omitempty"`
+	// Tags are free-form labels for grouping and filtering.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // UpdateStaticPolicyRequest represents a request to update an existing static policy
@@ -179,6 +198,10 @@ type UpdateStaticPolicyRequest struct {
 	Severity    *PolicySeverity `json:"severity,omitempty"`
 	Enabled     *bool           `json:"enabled,omitempty"`
 	Action      *PolicyAction   `json:"action,omitempty"`
+	// Priority updates the evaluation order.
+	Priority *int `json:"priority,omitempty"`
+	// Tags replaces the policy's tag set.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // CreatePolicyOverrideRequest represents a request to create a policy override
@@ -311,15 +334,33 @@ type TestPatternMatch struct {
 // Policy Version Types
 // ============================================================================
 
-// PolicyVersion represents a policy version history entry
+// PolicyVersion represents a policy version history entry.
+//
+// The wire shape is an immutable snapshot, not a before/after diff.
+// The fields ChangeDescription, PreviousValues, and NewValues are
+// kept for source-compat only — the server actually emits
+// ChangeSummary and Snapshot.
 type PolicyVersion struct {
-	Version           int                    `json:"version"`
-	ChangedBy         string                 `json:"changed_by,omitempty"`
-	ChangedAt         time.Time              `json:"changed_at"`
-	ChangeType        string                 `json:"change_type"`
-	ChangeDescription string                 `json:"change_description,omitempty"`
-	PreviousValues    map[string]interface{} `json:"previous_values,omitempty"`
-	NewValues         map[string]interface{} `json:"new_values,omitempty"`
+	// ID is the snapshot identifier.
+	ID string `json:"id,omitempty"`
+	// PolicyID is the policy this snapshot belongs to.
+	PolicyID  string    `json:"policy_id,omitempty"`
+	Version   int       `json:"version"`
+	ChangedBy string    `json:"changed_by,omitempty"`
+	ChangedAt time.Time `json:"changed_at"`
+	ChangeType string `json:"change_type"`
+	// ChangeSummary is the canonical wire field summarising the change.
+	ChangeSummary string `json:"change_summary,omitempty"`
+	// Snapshot is the complete policy state at this version.
+	Snapshot map[string]interface{} `json:"snapshot,omitempty"`
+	// Deprecated: the wire field is `change_summary`. ChangeDescription
+	// has always read empty against JSON-decoded responses. Removed in v6.
+	ChangeDescription string `json:"change_description,omitempty"`
+	// Deprecated: the wire emits a single `snapshot`, not before/after
+	// diffs. Use Snapshot. Removed in v6.
+	PreviousValues map[string]interface{} `json:"previous_values,omitempty"`
+	// Deprecated: same as PreviousValues. Use Snapshot. Removed in v6.
+	NewValues map[string]interface{} `json:"new_values,omitempty"`
 }
 
 // EffectivePoliciesOptions represents options for getting effective policies

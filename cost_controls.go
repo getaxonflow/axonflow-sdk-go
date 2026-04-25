@@ -50,8 +50,12 @@ type Budget struct {
 	AlertThresholds []int   `json:"alert_thresholds"`
 	Enabled         bool    `json:"enabled"`
 	ScopeID         string  `json:"scope_id,omitempty"`
-	CreatedAt       string  `json:"created_at,omitempty"`
-	UpdatedAt       string  `json:"updated_at,omitempty"`
+	// TenantID is the tenant that owns this budget.
+	TenantID string `json:"tenant_id,omitempty"`
+	// OrgID is the organization that owns this budget.
+	OrgID     string `json:"org_id,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 // BudgetsResponse represents a list of budgets response
@@ -90,6 +94,8 @@ type BudgetAlert struct {
 	AmountUSD         float64 `json:"amount_usd"`
 	Message           string  `json:"message"`
 	CreatedAt         string  `json:"created_at"`
+	// Acknowledged signals whether an operator has dismissed the alert.
+	Acknowledged bool `json:"acknowledged,omitempty"`
 }
 
 // BudgetAlertsResponse represents a list of budget alerts
@@ -146,6 +152,8 @@ type UsageSummary struct {
 
 // UsageBreakdownItem represents a single item in usage breakdown
 type UsageBreakdownItem struct {
+	// GroupBy is the dimension name (provider, model, agent, etc).
+	GroupBy      string  `json:"group_by,omitempty"`
 	GroupValue   string  `json:"group_value"`
 	CostUSD      float64 `json:"cost_usd"`
 	Percentage   float64 `json:"percentage"`
@@ -175,7 +183,27 @@ type UsageRecord struct {
 	RequestID string  `json:"request_id,omitempty"`
 	OrgID     string  `json:"org_id,omitempty"`
 	AgentID   string  `json:"agent_id,omitempty"`
-	Timestamp string  `json:"timestamp,omitempty"`
+	// CreatedAt is the canonical wire timestamp; the server emits
+	// `created_at`, not `timestamp`.
+	CreatedAt string `json:"created_at,omitempty"`
+	// Success signals whether the underlying request succeeded.
+	Success bool `json:"success,omitempty"`
+	// ErrorMessage carries the failure reason when Success is false.
+	ErrorMessage string `json:"error_message,omitempty"`
+	// LatencyMS is request latency in milliseconds.
+	LatencyMS int `json:"latency_ms,omitempty"`
+	// TeamID associates the record with a team scope.
+	TeamID string `json:"team_id,omitempty"`
+	// TenantID is the tenant that owns this record.
+	TenantID string `json:"tenant_id,omitempty"`
+	// UserID is the user that initiated the request.
+	UserID string `json:"user_id,omitempty"`
+	// WorkflowID is set when the record came from a workflow execution.
+	WorkflowID string `json:"workflow_id,omitempty"`
+	// Deprecated: the wire field is `created_at`; `Timestamp` has
+	// always read empty against JSON-decoded server responses. Use
+	// CreatedAt. Removed in v6.
+	Timestamp string `json:"timestamp,omitempty"`
 }
 
 // UsageRecordsResponse represents a list of usage records

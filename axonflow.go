@@ -222,8 +222,15 @@ type ExfiltrationCheckInfo struct {
 	BytesReturned int64 `json:"bytes_returned"`
 	// ByteLimit is the configured maximum bytes per response
 	ByteLimit int64 `json:"byte_limit"`
-	// WithinLimits indicates whether the response is within configured limits
-	WithinLimits bool `json:"within_limits"`
+	// Exceeded indicates whether any exfiltration limit was exceeded
+	// (canonical wire field; logical negation of WithinLimits).
+	Exceeded bool `json:"exceeded,omitempty"`
+	// LimitType identifies which limit was exceeded ("rows", "bytes", "none").
+	LimitType string `json:"limit_type,omitempty"`
+	// Deprecated: the wire emits Exceeded + LimitType, not WithinLimits.
+	// This field has always read false against JSON-decoded responses.
+	// Removed in v6.
+	WithinLimits bool `json:"within_limits,omitempty"`
 }
 
 // DynamicPolicyInfo contains information about dynamic policy evaluation (Issue #968).
@@ -250,7 +257,11 @@ type DynamicPolicyMatch struct {
 	PolicyType string `json:"policy_type"`
 	// Action is the action taken (allow, block, log, etc.)
 	Action string `json:"action"`
-	// Reason provides context for the policy match
+	// Message is the policy evaluation message (canonical wire field).
+	Message string `json:"message,omitempty"`
+	// Deprecated: the wire emits `message`, not `reason`. This field
+	// has always read empty against JSON-decoded responses. Removed
+	// in v6.
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -298,6 +309,18 @@ type PlanResponse struct {
 	Parallel          bool                   `json:"parallel"`           // Whether steps can run in parallel
 	EstimatedDuration string                 `json:"estimated_duration"` // Estimated execution time
 	Metadata          map[string]interface{} `json:"metadata"`
+	// Success indicates whether the plan was created successfully (wire top-level field).
+	Success bool `json:"success,omitempty"`
+	// Version is the plan version number for optimistic locking.
+	Version int `json:"version,omitempty"`
+	// Result is the final aggregated result if the plan executed inline.
+	Result interface{} `json:"result,omitempty"`
+	// Error is the error message if creation failed.
+	Error string `json:"error,omitempty"`
+	// WorkflowExecutionID is set when the plan was auto-executed.
+	WorkflowExecutionID string `json:"workflow_execution_id,omitempty"`
+	// PolicyInfo is the policy evaluation summary for this plan creation.
+	PolicyInfo *PolicyEvaluationResult `json:"policy_info,omitempty"`
 }
 
 // PlanStep represents a single step in a multi-agent plan
@@ -376,10 +399,19 @@ type GeneratePlanOptions struct {
 }
 
 // CancelPlanResponse represents the response from cancelling a plan.
+//
+// The wire shape is `{success, plan_id, status}`. The legacy
+// `Message` field reads `data.message` which the server doesn't emit;
+// use `Success` and the `Status` enum to detect outcome.
 type CancelPlanResponse struct {
-	PlanID  string `json:"plan_id"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	PlanID string `json:"plan_id"`
+	Status string `json:"status"`
+	// Success signals whether the cancel succeeded (canonical wire field).
+	Success bool `json:"success,omitempty"`
+	// Deprecated: the wire emits success+status, not message. This
+	// field has always read empty against JSON-decoded responses.
+	// Removed in v6.
+	Message string `json:"message,omitempty"`
 }
 
 // UpdatePlanRequest represents a request to update a plan's configuration.
@@ -387,6 +419,8 @@ type UpdatePlanRequest struct {
 	ExpectedVersion int           `json:"version"`
 	ExecutionMode   ExecutionMode `json:"execution_mode,omitempty"`
 	Domain          string        `json:"domain,omitempty"`
+	// Metadata is arbitrary plan metadata, opaque to the platform.
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // UpdatePlanResponse represents the response from updating a plan.
@@ -413,16 +447,32 @@ type PlanVersionsResponse struct {
 }
 
 // ResumePlanResponse represents the response from resuming a paused plan.
+//
+// Wire shape: {plan_id, status, result}. The Approved/Message/StepResult/
+// NextStep/NextStepName/TotalSteps/WorkflowID fields are kept for
+// source-compat — none of them are populated by the resume decoder
+// against the actual server response. New code should read Result.
 type ResumePlanResponse struct {
-	PlanID       string      `json:"plan_id"`
-	WorkflowID   string      `json:"workflow_id,omitempty"`
-	Status       string      `json:"status"`
-	Approved     bool        `json:"approved,omitempty"`
-	Message      string      `json:"message,omitempty"`
-	StepResult   interface{} `json:"step_result,omitempty"`
-	NextStep     int         `json:"next_step,omitempty"`
-	NextStepName string      `json:"next_step_name,omitempty"`
-	TotalSteps   int         `json:"total_steps,omitempty"`
+	PlanID string `json:"plan_id"`
+	Status string `json:"status"`
+	// Result is the final aggregated result if the resume completed
+	// (canonical wire field).
+	Result interface{} `json:"result,omitempty"`
+	// Approved is sometimes populated (legacy). Prefer Status enum.
+	Approved bool `json:"approved,omitempty"`
+	// Deprecated: never populated; the wire emits result, not message.
+	// Removed in v6.
+	Message string `json:"message,omitempty"`
+	// Deprecated: never populated; use Result. Removed in v6.
+	StepResult interface{} `json:"step_result,omitempty"`
+	// Deprecated: not on the wire; never populated. Removed in v6.
+	NextStep int `json:"next_step,omitempty"`
+	// Deprecated: not on the wire; never populated. Removed in v6.
+	NextStepName string `json:"next_step_name,omitempty"`
+	// Deprecated: not on the wire; never populated. Removed in v6.
+	TotalSteps int `json:"total_steps,omitempty"`
+	// Deprecated: not on the wire; never populated. Removed in v6.
+	WorkflowID string `json:"workflow_id,omitempty"`
 }
 
 // RollbackPlanRequest represents a request to rollback a plan to a previous version.
@@ -1030,6 +1080,11 @@ type HealthResponse struct {
 	Timestamp    string               `json:"timestamp"`
 	Capabilities []PlatformCapability `json:"capabilities,omitempty"`
 	SDKCompat    *SDKCompatibility    `json:"sdk_compatibility,omitempty"`
+	// Components reports the health status of individual platform
+	// components (database, redis, orchestrator, etc).
+	Components map[string]string `json:"components,omitempty"`
+	// Features reports enabled feature flags relevant to the SDK.
+	Features map[string]interface{} `json:"features,omitempty"`
 }
 
 // PlatformCapability describes a feature supported by the platform.

@@ -60,6 +60,8 @@ type ExecutionSnapshot struct {
 	ApprovalRequired  bool     `json:"approval_required,omitempty"`
 	ApprovedBy        string   `json:"approved_by,omitempty"`
 	ApprovedAt        string   `json:"approved_at,omitempty"`
+	// RetryCount is the number of retry attempts on this step.
+	RetryCount int `json:"retry_count,omitempty"`
 }
 
 // TimelineEntry represents an entry in the execution timeline

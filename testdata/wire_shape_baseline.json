@@ -307,24 +307,13 @@
       "sdk_only": [
         "enabled"
       ],
-      "spec_only": [
-        "org_id",
-        "tenant_id"
-      ]
-    },
-    "BudgetAlert": {
-      "sdk_only": [],
-      "spec_only": [
-        "acknowledged"
-      ]
+      "spec_only": []
     },
     "CancelPlanResponse": {
       "sdk_only": [
         "message"
       ],
-      "spec_only": [
-        "success"
-      ]
+      "spec_only": []
     },
     "ClientRequest": {
       "sdk_only": [
@@ -346,19 +335,14 @@
       "sdk_only": [
         "organization_id"
       ],
-      "spec_only": [
-        "priority",
-        "tags"
-      ]
+      "spec_only": []
     },
     "CreateWorkflowResponse": {
       "sdk_only": [
         "created_at",
         "source"
       ],
-      "spec_only": [
-        "started_at"
-      ]
+      "spec_only": []
     },
     "DynamicPolicy": {
       "sdk_only": [
@@ -395,9 +379,7 @@
       "sdk_only": [
         "reason"
       ],
-      "spec_only": [
-        "message"
-      ]
+      "spec_only": []
     },
     "ExecutionSnapshot": {
       "sdk_only": [
@@ -405,9 +387,7 @@
         "approved_at",
         "approved_by"
       ],
-      "spec_only": [
-        "retry_count"
-      ]
+      "spec_only": []
     },
     "ExecutionSummary": {
       "sdk_only": [
@@ -420,33 +400,14 @@
       "sdk_only": [
         "within_limits"
       ],
-      "spec_only": [
-        "exceeded",
-        "limit_type"
-      ]
+      "spec_only": []
     },
     "Finding": {
       "sdk_only": [
         "due_date",
         "pillar"
       ],
-      "spec_only": [
-        "article"
-      ]
-    },
-    "HealthResponse": {
-      "sdk_only": [],
-      "spec_only": [
-        "components",
-        "features"
-      ]
-    },
-    "ListWorkflowsResponse": {
-      "sdk_only": [],
-      "spec_only": [
-        "limit",
-        "offset"
-      ]
+      "spec_only": []
     },
     "MCPCheckInputRequest": {
       "sdk_only": [],
@@ -518,14 +479,7 @@
         "parallel",
         "status"
       ],
-      "spec_only": [
-        "error",
-        "policy_info",
-        "result",
-        "success",
-        "version",
-        "workflow_execution_id"
-      ]
+      "spec_only": []
     },
     "PolicyEvaluationInfo": {
       "sdk_only": [
@@ -537,10 +491,7 @@
       "sdk_only": [
         "active"
       ],
-      "spec_only": [
-        "enabled_override",
-        "id"
-      ]
+      "spec_only": []
     },
     "PolicyVersion": {
       "sdk_only": [
@@ -548,12 +499,7 @@
         "new_values",
         "previous_values"
       ],
-      "spec_only": [
-        "change_summary",
-        "id",
-        "policy_id",
-        "snapshot"
-      ]
+      "spec_only": []
     },
     "RegisterSystemRequest": {
       "sdk_only": [
@@ -579,45 +525,13 @@
         "total_steps",
         "workflow_id"
       ],
-      "spec_only": [
-        "result"
-      ]
-    },
-    "StaticPolicy": {
-      "sdk_only": [],
-      "spec_only": [
-        "policy_id",
-        "priority"
-      ]
-    },
-    "StepGateRequest": {
-      "sdk_only": [],
-      "spec_only": [
-        "cost_usd",
-        "tokens_in",
-        "tokens_out"
-      ]
-    },
-    "StepGateResponse": {
-      "sdk_only": [],
-      "spec_only": [
-        "decision_id"
-      ]
-    },
-    "UpdatePlanRequest": {
-      "sdk_only": [],
-      "spec_only": [
-        "metadata"
-      ]
+      "spec_only": []
     },
     "UpdateStaticPolicyRequest": {
       "sdk_only": [
         "category"
       ],
-      "spec_only": [
-        "priority",
-        "tags"
-      ]
+      "spec_only": []
     },
     "UpdateSystemRequest": {
       "sdk_only": [
@@ -642,46 +556,17 @@
       ],
       "spec_only": []
     },
-    "UsageBreakdownItem": {
-      "sdk_only": [],
-      "spec_only": [
-        "group_by"
-      ]
-    },
     "UsageRecord": {
       "sdk_only": [
         "timestamp"
       ],
-      "spec_only": [
-        "created_at",
-        "error_message",
-        "latency_ms",
-        "success",
-        "team_id",
-        "tenant_id",
-        "user_id",
-        "workflow_id"
-      ]
+      "spec_only": []
     },
     "UsageSummary": {
       "sdk_only": [
         "period"
       ],
       "spec_only": []
-    },
-    "WebhookSubscription": {
-      "sdk_only": [],
-      "spec_only": [
-        "org_id",
-        "secret",
-        "tenant_id"
-      ]
-    },
-    "WorkflowStatusResponse": {
-      "sdk_only": [],
-      "spec_only": [
-        "metadata"
-      ]
     },
     "WorkflowStepInfo": {
       "sdk_only": [
