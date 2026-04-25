@@ -1463,6 +1463,16 @@ type MCPCheckInputResponse struct {
 	BlockReason       string      `json:"block_reason,omitempty"`
 	PoliciesEvaluated int         `json:"policies_evaluated"`
 	PolicyInfo        *PolicyInfo `json:"policy_info,omitempty"`
+
+	// Plugin Batch 1 / ADR-042 / ADR-043 — richer governance context
+	// surfaced when the platform is v7.1.0+. All fields are optional
+	// (pointer / ,omitempty); pre-v7.1.0 platforms return zero values.
+	// Source of truth: platform/agent/mcp_server_handler.go:880-940.
+	DecisionID         string          `json:"decision_id,omitempty"`
+	RiskLevel          string          `json:"risk_level,omitempty"` // low | medium | high | critical
+	PolicyMatches      []ExplainPolicy `json:"policy_matches,omitempty"`
+	OverrideAvailable  *bool           `json:"override_available,omitempty"`
+	OverrideExistingID string          `json:"override_existing_id,omitempty"`
 }
 
 // MCPCheckOutputRequest represents a request to validate output against MCP policies.
@@ -1476,12 +1486,26 @@ type MCPCheckOutputRequest struct {
 
 // MCPCheckOutputResponse represents the result of output policy evaluation.
 type MCPCheckOutputResponse struct {
-	Allowed           bool                   `json:"allowed"`
-	BlockReason       string                 `json:"block_reason,omitempty"`
-	RedactedData      interface{}            `json:"redacted_data,omitempty"`
+	Allowed     bool   `json:"allowed"`
+	BlockReason string `json:"block_reason,omitempty"`
+	// RedactedData carries tabular response data with PII fields masked
+	// (used when the connector returned rows; e.g. SQL/CSV results).
+	// Empty if no redaction needed or if the response was a text message.
+	RedactedData interface{} `json:"redacted_data,omitempty"`
+	// RedactedMessage carries a text message with PII fields masked
+	// (used when the connector returned a string message rather than
+	// tabular rows; e.g. execute-style responses). Empty if no
+	// redaction needed or if the response was tabular. Source of
+	// truth: platform/agent/mcp_server_handler.go:988.
+	RedactedMessage   string                 `json:"redacted_message,omitempty"`
 	PoliciesEvaluated int                    `json:"policies_evaluated"`
 	ExfiltrationInfo  *ExfiltrationCheckInfo `json:"exfiltration_info,omitempty"`
 	PolicyInfo        *PolicyInfo            `json:"policy_info,omitempty"`
+
+	// Plugin Batch 1 / ADR-043 — explainability context (matches the
+	// MCPCheckInputResponse fields on the same call site).
+	DecisionID    string          `json:"decision_id,omitempty"`
+	PolicyMatches []ExplainPolicy `json:"policy_matches,omitempty"`
 }
 
 // MCPCheckInput validates an MCP request against configured policies without executing it.
