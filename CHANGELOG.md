@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.7.0] - 2026-04-25 — Wire-shape canonicalization
+
+Minor release. Purely additive — new fields are pointer or `,omitempty`-tagged so existing user code keeps compiling; deprecated aliases preserved for source-compat. Coordinated with TypeScript v6.0.0 / Java v6.0.0 / Python v6.7.0 SDK releases. The wire-shape contract gate's pinned OpenAPI spec SHA bumps with the platform v7.4.2 spec corrections; one baseline drift entry (`DynamicPolicyInfo`) auto-resolves.
+
 ### Added
 
 - **`WebhookSubscription.Secret`** — HMAC-SHA256 signing key now exposed on the response from `CreateWebhook`. Required to verify the `X-AxonFlow-Signature` header on inbound webhook deliveries; without it, callers couldn't validate payload authenticity. Also adds `OrgID` and `TenantID` (ownership scoping).
