@@ -52,6 +52,18 @@ type WebhookSubscription struct {
 	// Active indicates whether the webhook is active
 	Active bool `json:"active"`
 
+	// TenantID is the tenant that owns this subscription.
+	TenantID string `json:"tenant_id,omitempty"`
+
+	// OrgID is the organization that owns this subscription.
+	OrgID string `json:"org_id,omitempty"`
+
+	// Secret is the HMAC-SHA256 signing key for verifying inbound
+	// webhook payload signatures (X-AxonFlow-Signature header).
+	// Returned by CreateWebhook on initial creation; required for
+	// callers to validate payload authenticity.
+	Secret string `json:"secret,omitempty"`
+
 	// CreatedAt is when the webhook was created
 	CreatedAt string `json:"created_at"`
 

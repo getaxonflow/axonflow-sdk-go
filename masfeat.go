@@ -105,7 +105,10 @@ type Finding struct {
 	Description string          `json:"description"`
 	Status      FindingStatus   `json:"status"`
 	Remediation string          `json:"remediation,omitempty"`
-	DueDate     *time.Time      `json:"due_date,omitempty"`
+	// Article is the regulatory article reference (e.g. MAS FEAT
+	// principle number).
+	Article string     `json:"article,omitempty"`
+	DueDate *time.Time `json:"due_date,omitempty"`
 }
 
 // ===========================================================================

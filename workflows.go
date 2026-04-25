@@ -120,17 +120,25 @@ type CreateWorkflowResponse struct {
 	// WorkflowName is the name of the workflow
 	WorkflowName string `json:"workflow_name"`
 
-	// Source is the source orchestrator
-	Source WorkflowSource `json:"source"`
-
 	// Status is the current status (always "in_progress" for new workflows)
 	Status WorkflowStatus `json:"status"`
 
-	// CreatedAt is when the workflow was created
-	CreatedAt time.Time `json:"created_at"`
+	// StartedAt is when the workflow started executing (canonical wire field).
+	StartedAt time.Time `json:"started_at"`
 
 	// TraceID is the trace ID for correlating with external tracing systems
 	TraceID string `json:"trace_id,omitempty"`
+
+	// Deprecated: the wire emits started_at, not created_at. This field
+	// has always read zero against JSON-decoded server responses. Use
+	// StartedAt. Removed in v6.
+	CreatedAt time.Time `json:"created_at,omitempty"`
+
+	// Deprecated: not emitted on the create response. The wire shape
+	// for CreateWorkflowResponse does not include `source`; this
+	// field has always read empty. Read Source from a subsequent
+	// GetWorkflow() call instead. Removed in v6.
+	Source WorkflowSource `json:"source,omitempty"`
 }
 
 // RetryPolicy controls how step gate decisions behave on repeated calls for the
@@ -176,6 +184,16 @@ type StepGateRequest struct {
 	// subsequent gate/complete calls must pass the same key or receive IdempotencyKeyMismatchError.
 	// The key is echoed on RetryContext.IdempotencyKey in every subsequent gate response.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+
+	// TokensIn is the estimated input tokens for the step at gate time
+	// (used by budget-based policies).
+	TokensIn int `json:"tokens_in,omitempty"`
+
+	// TokensOut is the estimated output tokens for the step at gate time.
+	TokensOut int `json:"tokens_out,omitempty"`
+
+	// CostUSD is the estimated cost in USD for the step at gate time.
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 // StepGateOptions controls gate-call behavior that lives outside the request body.
@@ -202,6 +220,9 @@ type StepGateResponse struct {
 
 	// ApprovalURL is the URL to the approval portal (if decision is require_approval)
 	ApprovalURL string `json:"approval_url,omitempty"`
+
+	// DecisionID is the unique audit correlator for this gate decision.
+	DecisionID string `json:"decision_id,omitempty"`
 
 	// PoliciesEvaluated contains all policies that were evaluated for this step (Issue #1021)
 	PoliciesEvaluated []PolicyMatch `json:"policies_evaluated,omitempty"`
@@ -303,6 +324,9 @@ type WorkflowStatusResponse struct {
 	// TraceID is the trace ID for correlating with external tracing systems
 	TraceID string `json:"trace_id,omitempty"`
 
+	// Metadata is arbitrary workflow metadata, opaque to the platform.
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+
 	// Steps contains the list of steps in the workflow
 	Steps []WorkflowStepInfo `json:"steps,omitempty"`
 }
@@ -337,6 +361,12 @@ type ListWorkflowsResponse struct {
 
 	// Total is the total count for pagination
 	Total int `json:"total"`
+
+	// Limit echoes the limit query parameter (for pagination clients).
+	Limit int `json:"limit,omitempty"`
+
+	// Offset echoes the offset query parameter (for pagination clients).
+	Offset int `json:"offset,omitempty"`
 }
 
 // AbortWorkflowRequest is the request to abort a workflow.

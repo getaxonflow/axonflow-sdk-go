@@ -5,6 +5,40 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`WebhookSubscription.Secret`** — HMAC-SHA256 signing key now exposed on the response from `CreateWebhook`. Required to verify the `X-AxonFlow-Signature` header on inbound webhook deliveries; without it, callers couldn't validate payload authenticity. Also adds `OrgID` and `TenantID` (ownership scoping).
+- **`StepGateRequest`** carries `TokensIn`, `TokensOut`, `CostUSD` so budget-based policies can evaluate gate-time cost estimates.
+- **`StepGateResponse.DecisionID`** — unique audit correlator that links a gate response to its audit row (previously absent on the SDK, present on the wire).
+- **`ListWorkflowsResponse.Limit` / `Offset`** — pagination echo, surfaced on the response.
+- **`StaticPolicy.PolicyID` / `Priority`** — wire-canonical fields surfaced.
+- **`CreateStaticPolicyRequest.Priority` / `Tags`** and **`UpdateStaticPolicyRequest.Priority` / `Tags`** — match the spec.
+- **`UpdatePlanRequest.Metadata`** — accept arbitrary plan metadata, opaque to the platform.
+- **`UsageBreakdownItem.GroupBy`** — dimension name (provider/model/agent/etc.) is now exposed on each item.
+- **`BudgetAlert.Acknowledged`** — alert dismissal flag.
+- **`Budget.OrgID` / `TenantID`** — ownership scoping.
+- **`UsageRecord`** gains `CreatedAt`, `Success`, `ErrorMessage`, `LatencyMS`, `TeamID`, `TenantID`, `UserID`, `WorkflowID` to match the wire. The legacy `Timestamp` field is `Deprecated`; the wire emits `created_at`, so `Timestamp` has always read empty.
+- **`WorkflowStatusResponse.Metadata`** — arbitrary workflow metadata.
+- **`CreateWorkflowResponse.StartedAt`** — wire-canonical timestamp. Legacy `CreatedAt` and `Source` are `Deprecated`; they have always read zero/empty (wire emits neither).
+- **`ExecutionSnapshot.RetryCount`** — number of retry attempts on a step.
+- **`Finding.Article`** — regulatory article reference (e.g. MAS FEAT principle number).
+- **`PolicyOverride.ID` / `EnabledOverride`** — wire-canonical fields. `Active` is `Deprecated`; the wire emits `enabled_override`, so `Active` has always read false.
+- **`PolicyVersion.ID` / `PolicyID` / `ChangeSummary` / `Snapshot`** — match the wire shape (versions are immutable snapshots, not before/after diffs). `ChangeDescription`, `PreviousValues`, `NewValues` are `Deprecated` orphan-reads.
+- **`DynamicPolicyMatch.Message`** — wire-canonical name. `Reason` is `Deprecated` (read empty today).
+- **`ExfiltrationCheckInfo.Exceeded` / `LimitType`** — match the wire. `WithinLimits` is `Deprecated`.
+- **`CancelPlanResponse.Success`** — wire-canonical boolean. `Message` is `Deprecated` (orphan read).
+- **`PlanResponse`** gains the wire top-level fields `Success`, `Version`, `Result`, `Error`, `WorkflowExecutionID`, `PolicyInfo`. The decoder is JSON.Decode passthrough, so consumers can now read these directly.
+- **`ResumePlanResponse.Result`** — final aggregated result (canonical wire field). The 6 fields `WorkflowID`, `Message`, `StepResult`, `NextStep`, `NextStepName`, `TotalSteps` are now `Deprecated`; none of them were populated by the resume decoder against the actual server response.
+- **`HealthResponse.Components` / `Features`** — match the wire health shape.
+
+### Notes
+
+The above is an audit-driven sweep against the wire-shape contract gate. All changes are additive (new fields are pointer or `,omitempty`-tagged so existing user code keeps compiling) or `Deprecated`-marked alias fields kept for source-compat. Removal scheduled for v6.
+
+Two platform-side spec corrections filed alongside this work, for issues the audit surfaced where the spec was wrong (server emits the SDK's name): `AISystemRegistry.materiality_classification` (axonflow-enterprise#1708), `DynamicPolicyInfo` schema completely wrong shape (axonflow-enterprise#1709). No SDK change for those — the SDK is correct.
+
 ## [5.6.1] - 2026-04-25
 
 ### Changed
