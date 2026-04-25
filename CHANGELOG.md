@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.0] - 2026-04-25 — Plugin Batch 1 / ADR-043 explainability fields on MCP responses
+
+Minor release. Surfaces fields the AxonFlow agent has emitted since v7.1.0 (Plugin Batch 1 / ADR-042 / ADR-043) but the SDK didn't declare. Pure Cat B field-additions on existing methods — `,omitempty`-tagged so existing user code keeps compiling. Documented in OpenAPI via platform v7.4.3 (axonflow-enterprise#1714); SDK catches up here.
+
+Coordinated cycle: TypeScript v6.1.0 / Python v6.8.0 / Java v6.1.0 ship same day with the same field set.
+
+### Added
+
+- **`MCPCheckInputResponse`** gains 5 optional Plugin Batch 1 fields:
+  - `DecisionID string` — audit correlator
+  - `RiskLevel string` — `low` | `medium` | `high` | `critical`
+  - `PolicyMatches []ExplainPolicy` — per-policy explainability records
+  - `OverrideAvailable *bool` — whether session override is permitted for the matched policies
+  - `OverrideExistingID string` — already-active override consumed by this decision (if any)
+- **`MCPCheckOutputResponse`** gains 3 optional fields:
+  - `DecisionID`
+  - `PolicyMatches []ExplainPolicy`
+  - `RedactedMessage string` — text-redaction counterpart to `RedactedData` (used when the connector returned a string message rather than tabular rows; e.g. execute-style responses)
+
+`ExplainPolicy` already shipped (in `decisions.go`) — same struct now reused on MCP responses. Pre-v7.1.0 platforms return zero values; callers should treat absence as "context not available" rather than an error.
+
+### Deferred
+
+`Client.ExplainDecision(ctx, decisionID)` and the full `ExplainRule` / `DecisionExplanation` type surface are tracked separately as feature work — see axonflow-enterprise#1716. This release ships only field-surfacing on existing methods.
+
 ## [5.7.0] - 2026-04-25 — Wire-shape canonicalization
 
 Minor release. Purely additive — new fields are pointer or `,omitempty`-tagged so existing user code keeps compiling; deprecated aliases preserved for source-compat. Coordinated with TypeScript v6.0.0 / Java v6.0.0 / Python v6.7.0 SDK releases. The wire-shape contract gate's pinned OpenAPI spec SHA bumps with the platform v7.4.2 spec corrections; one baseline drift entry (`DynamicPolicyInfo`) auto-resolves.
