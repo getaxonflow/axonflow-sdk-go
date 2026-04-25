@@ -115,15 +115,15 @@ type StaticPolicy struct {
 	ID string `json:"id"`
 	// PolicyID is the human-readable policy identifier (e.g.
 	// "sys_sqli_union_select"). Distinct from ID (the UUID).
-	PolicyID       string         `json:"policy_id,omitempty"`
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	Category       PolicyCategory `json:"category"`
-	Tier           PolicyTier     `json:"tier"`
-	Pattern        string         `json:"pattern"`
-	Severity       PolicySeverity `json:"severity"`
-	Enabled        bool           `json:"enabled"`
-	Action         PolicyAction   `json:"action"`
+	PolicyID    string         `json:"policy_id,omitempty"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Category    PolicyCategory `json:"category"`
+	Tier        PolicyTier     `json:"tier"`
+	Pattern     string         `json:"pattern"`
+	Severity    PolicySeverity `json:"severity"`
+	Enabled     bool           `json:"enabled"`
+	Action      PolicyAction   `json:"action"`
 	// Priority is the evaluation order — lower values run first.
 	Priority       int             `json:"priority,omitempty"`
 	OrganizationID *string         `json:"organization_id,omitempty"`
@@ -344,11 +344,11 @@ type PolicyVersion struct {
 	// ID is the snapshot identifier.
 	ID string `json:"id,omitempty"`
 	// PolicyID is the policy this snapshot belongs to.
-	PolicyID  string    `json:"policy_id,omitempty"`
-	Version   int       `json:"version"`
-	ChangedBy string    `json:"changed_by,omitempty"`
-	ChangedAt time.Time `json:"changed_at"`
-	ChangeType string `json:"change_type"`
+	PolicyID   string    `json:"policy_id,omitempty"`
+	Version    int       `json:"version"`
+	ChangedBy  string    `json:"changed_by,omitempty"`
+	ChangedAt  time.Time `json:"changed_at"`
+	ChangeType string    `json:"change_type"`
 	// ChangeSummary is the canonical wire field summarising the change.
 	ChangeSummary string `json:"change_summary,omitempty"`
 	// Snapshot is the complete policy state at this version.
