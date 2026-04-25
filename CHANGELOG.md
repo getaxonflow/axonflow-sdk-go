@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [5.8.0] - 2026-04-25 — Plugin Batch 1 / ADR-043 explainability fields on MCP responses
+## [5.8.0] - 2026-04-25 — Plugin Batch 1 explainability fields on MCP responses
 
-Minor release. Surfaces fields the AxonFlow agent has emitted since v7.1.0 (Plugin Batch 1 / ADR-042 / ADR-043) but the SDK didn't declare. Pure Cat B field-additions on existing methods — `,omitempty`-tagged so existing user code keeps compiling. Documented in OpenAPI via platform v7.4.3 (axonflow-enterprise#1714); SDK catches up here.
+Minor release. Surfaces fields the AxonFlow agent has emitted since v7.1.0 (Plugin Batch 1) but the SDK didn't declare. Pure field-additions on existing methods — `,omitempty`-tagged so existing user code keeps compiling. Documented in OpenAPI via platform v7.4.3.
 
 Coordinated cycle: TypeScript v6.1.0 / Python v6.8.0 / Java v6.1.0 ship same day with the same field set.
 
@@ -30,7 +30,7 @@ Coordinated cycle: TypeScript v6.1.0 / Python v6.8.0 / Java v6.1.0 ship same day
 
 ### Deferred
 
-`Client.ExplainDecision(ctx, decisionID)` and the full `ExplainRule` / `DecisionExplanation` type surface are tracked separately as feature work — see axonflow-enterprise#1716. This release ships only field-surfacing on existing methods.
+`Client.ExplainDecision(ctx, decisionID)` and the full `ExplainRule` / `DecisionExplanation` type surface are tracked separately as feature work. This release ships only field-surfacing on existing methods.
 
 ## [5.7.0] - 2026-04-25 — Wire-shape canonicalization
 
@@ -66,7 +66,7 @@ Minor release. Purely additive — new fields are pointer or `,omitempty`-tagged
 
 The above is an audit-driven sweep against the wire-shape contract gate. All changes are additive (new fields are pointer or `,omitempty`-tagged so existing user code keeps compiling) or `Deprecated`-marked alias fields kept for source-compat. Removal scheduled for v6.
 
-Two platform-side spec corrections filed alongside this work, for issues the audit surfaced where the spec was wrong (server emits the SDK's name): `AISystemRegistry.materiality_classification` (axonflow-enterprise#1708), `DynamicPolicyInfo` schema completely wrong shape (axonflow-enterprise#1709). No SDK change for those — the SDK is correct.
+Two platform-side spec corrections filed alongside this work, for issues the audit surfaced where the spec was wrong (server emits the SDK's name): `AISystemRegistry.materiality_classification` and `DynamicPolicyInfo` schema. No SDK change for those — the SDK is correct.
 
 ## [5.6.1] - 2026-04-25
 
@@ -686,7 +686,7 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Breaking Changes
 
 - **BREAKING**: Renamed `AgentURL` to `Endpoint` in `AxonFlowConfig`
-- **BREAKING**: Removed `OrchestratorURL` and `PortalURL` config options (Agent now proxies all routes per ADR-026)
+- **BREAKING**: Removed `OrchestratorURL` and `PortalURL` config options (Agent now proxies all routes)
 - **BREAKING**: Dynamic policy API path changed from `/api/v1/policies/dynamic` to `/api/v1/dynamic-policies`
 
 ### Added
