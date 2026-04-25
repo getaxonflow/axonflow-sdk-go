@@ -211,6 +211,17 @@ func TestClientProxyLLMCall(t *testing.T) {
 3. Address feedback and update your PR
 4. Once approved, a maintainer will merge your PR
 
+## Baseline burndown policy
+
+The wire-shape contract gate uses a baseline file (`testdata/wire_shape_baseline.json`) to grandfather pre-existing drift findings — the gate fails on any *new* drift but tolerates the listed entries. The baseline exists to land the gate without a giant cleanup PR; it is not intended to be permanent.
+
+When your PR touches a type listed in the baseline, do one of:
+
+- **Burn it down.** Realign the struct with the OpenAPI spec in this PR, regenerate the baseline (`go run ./scripts/refresh_wire_shape_baseline ../axonflow/docs/api`), and note "burndown: `<entry>`" in the PR description.
+- **Justify it.** If the drift can't be resolved in this PR (different scope, blocked on a platform spec change, etc.), say so in the PR description in one line.
+
+CI does not block PRs that touch a baselined type without addressing it, but reviewers will ask the burndown-or-justify question.
+
 ## License
 
 By contributing to AxonFlow Go SDK, you agree that your contributions will be licensed under the MIT License.
