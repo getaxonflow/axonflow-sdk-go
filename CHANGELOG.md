@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Breaking type change in `SDKCompatibility`.** `MinSDKVersion` and `RecommendedSDKVersion` are now `map[string]string` (per-language) instead of `string`, matching the actual on-the-wire shape returned by the platform `/health` endpoint since v4.8.0. The previous `string` type silently unmarshalled the JSON object to an empty string, making the SDK version-mismatch warning a no-op. New helpers `(*SDKCompatibility).MinSDKVersionFor("go")` / `RecommendedSDKVersionFor("go")` return the per-language entry. Aligns Go with Java + TypeScript SDKs.
+
 ## [5.8.0] - 2026-04-25 — Plugin Batch 1 explainability fields on MCP responses
 
 Minor release. Surfaces fields the AxonFlow agent has emitted since v7.1.0 (Plugin Batch 1) but the SDK didn't declare. Pure field-additions on existing methods — `,omitempty`-tagged so existing user code keeps compiling. Documented in OpenAPI via platform v7.4.3.

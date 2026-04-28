@@ -1094,10 +1094,38 @@ type PlatformCapability struct {
 	Description string `json:"description"`
 }
 
-// SDKCompatibility describes SDK version compatibility.
+// SDKCompatibility describes per-language SDK version compatibility returned
+// by the platform `/health` endpoint.
+//
+// The platform emits these as per-language maps, e.g.
+//
+//	{"go": "5.0.0", "java": "5.0.0", "python": "6.0.0", "typescript": "5.0.0"}
+//
+// Older SDK builds typed both fields as a single string; the dict shape would
+// then unmarshal into an empty string and the SDK version-mismatch warning
+// silently no-op'd. Keeping the fields as maps aligns Go with Java + TypeScript.
 type SDKCompatibility struct {
-	MinSDKVersion         string `json:"min_sdk_version"`
-	RecommendedSDKVersion string `json:"recommended_sdk_version"`
+	MinSDKVersion         map[string]string `json:"min_sdk_version"`
+	RecommendedSDKVersion map[string]string `json:"recommended_sdk_version"`
+}
+
+// MinSDKVersionFor returns the minimum required SDK version for the given
+// language (e.g. "go"), or an empty string if the platform did not declare
+// one for that language.
+func (s *SDKCompatibility) MinSDKVersionFor(language string) string {
+	if s == nil || s.MinSDKVersion == nil {
+		return ""
+	}
+	return s.MinSDKVersion[language]
+}
+
+// RecommendedSDKVersionFor returns the recommended SDK version for the given
+// language, or an empty string if the platform did not declare one.
+func (s *SDKCompatibility) RecommendedSDKVersionFor(language string) string {
+	if s == nil || s.RecommendedSDKVersion == nil {
+		return ""
+	}
+	return s.RecommendedSDKVersion[language]
 }
 
 // HasCapability checks if the platform supports a named capability.
@@ -1140,9 +1168,10 @@ func (c *AxonFlowClient) HealthCheckDetailed() (*HealthResponse, error) {
 		log.Printf("[AxonFlow] Platform version: %s, SDK version: %s", health.Version, Version)
 	}
 
-	if health.SDKCompat != nil && health.SDKCompat.MinSDKVersion != "" {
-		if compareSemver(Version, health.SDKCompat.MinSDKVersion) < 0 {
-			log.Printf("[AxonFlow] WARNING: SDK version %s is below minimum supported version %s. Please upgrade.", Version, health.SDKCompat.MinSDKVersion)
+	if health.SDKCompat != nil {
+		minForGo := health.SDKCompat.MinSDKVersionFor("go")
+		if minForGo != "" && compareSemver(Version, minForGo) < 0 {
+			log.Printf("[AxonFlow] WARNING: SDK version %s is below minimum supported version %s. Please upgrade.", Version, minForGo)
 		}
 	}
 
