@@ -104,7 +104,7 @@ scrutinise the SHA move.
 Set up your environment variables:
 
 ```bash
-export AXONFLOW_AGENT_URL="https://staging-eu.getaxonflow.com"
+export AXONFLOW_AGENT_URL="http://localhost:8080"  # Local docker-compose default
 export AXONFLOW_CLIENT_ID="your-client-id"
 export AXONFLOW_CLIENT_SECRET="your-client-secret"
 ```

@@ -695,14 +695,19 @@ func NewClientSimple(endpoint, clientID, clientSecret string) *AxonFlowClient {
 	})
 }
 
-// Sandbox creates a client in sandbox mode for testing
+// Sandbox creates a client in sandbox mode for testing.
+//
+// Defaults to http://localhost:8080 (the local docker-compose default).
+// The previous staging-eu.getaxonflow.com endpoint was decommissioned
+// 2026-04-09. To point sandbox at a hosted environment, construct the
+// client directly with NewClient and an explicit Endpoint.
 func Sandbox(apiKey string) *AxonFlowClient {
 	if apiKey == "" {
 		apiKey = "demo-key"
 	}
 
 	return NewClient(AxonFlowConfig{
-		Endpoint:     "https://staging-eu.getaxonflow.com",
+		Endpoint:     "http://localhost:8080",
 		ClientID:     apiKey,
 		ClientSecret: apiKey,
 		Mode:         "sandbox",

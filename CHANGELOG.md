@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Breaking type change in `SDKCompatibility`.** `MinSDKVersion` and `RecommendedSDKVersion` are now `map[string]string` (per-language) instead of `string`, matching the actual on-the-wire shape returned by the platform `/health` endpoint since v4.8.0. The previous `string` type silently unmarshalled the JSON object to an empty string, making the SDK version-mismatch warning a no-op. New helpers `(*SDKCompatibility).MinSDKVersionFor("go")` / `RecommendedSDKVersionFor("go")` return the per-language entry. Aligns Go with Java + TypeScript SDKs.
+- **`Sandbox()`** now targets `http://localhost:8080` (was the decommissioned `https://staging-eu.getaxonflow.com`). Override via `NewClient` with an explicit `Endpoint` if you need to point sandbox at a hosted environment. The staging-eu environment was torn down 2026-04-09.
+- **`examples/basic/`, `examples/connectors/`, `examples/planning/`, `examples/README.md`** — replaced the decommissioned `staging-eu.getaxonflow.com` default endpoint with `http://localhost:8080` (the local docker-compose default).
+- **`README.md`, `SECURITY.md`, `CONTRIBUTING.md`** — bulk-replaced staging-eu URL references with `http://localhost:8080` in code samples and env-var instructions.
 
 ## [5.8.0] - 2026-04-25 — Plugin Batch 1 explainability fields on MCP responses
 

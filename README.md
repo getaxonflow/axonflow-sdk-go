@@ -107,7 +107,7 @@ import (
 func main() {
     // Simple initialization with OAuth2 credentials
     client := axonflow.NewClient(axonflow.AxonFlowConfig{
-        Endpoint:     "https://staging-eu.getaxonflow.com",
+        Endpoint:     "http://localhost:8080",
         ClientID:     os.Getenv("AXONFLOW_CLIENT_ID"),
         ClientSecret: os.Getenv("AXONFLOW_CLIENT_SECRET"),
     })
@@ -144,7 +144,7 @@ import (
 
 // Full configuration with all features
 client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint:     "https://staging-eu.getaxonflow.com",
+    Endpoint:     "http://localhost:8080",
     ClientID:     os.Getenv("AXONFLOW_CLIENT_ID"),
     ClientSecret: os.Getenv("AXONFLOW_CLIENT_SECRET"),
     Mode:         "production",  // or "sandbox"
@@ -247,7 +247,7 @@ Automatic retry on transient failures with exponential backoff:
 
 ```go
 client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint: "https://staging-eu.getaxonflow.com",
+    Endpoint: "http://localhost:8080",
     ClientID: "your-client-id",
     ClientSecret: "your-secret",
     Retry: axonflow.RetryConfig{
@@ -267,7 +267,7 @@ Reduce latency and load with intelligent caching:
 
 ```go
 client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint: "https://staging-eu.getaxonflow.com",
+    Endpoint: "http://localhost:8080",
     ClientID: "your-client-id",
     ClientSecret: "your-secret",
     Cache: axonflow.CacheConfig{
@@ -289,7 +289,7 @@ Never block your users if AxonFlow is unavailable:
 
 ```go
 client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint: "https://staging-eu.getaxonflow.com",
+    Endpoint: "http://localhost:8080",
     ClientID: "your-client-id",
     ClientSecret: "your-secret",
     Mode:     "production",  // Fail-open in production
@@ -317,7 +317,7 @@ import (
 
 // Initialize AxonFlow client
 axonflowClient := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint:     "https://staging-eu.getaxonflow.com",
+    Endpoint:     "http://localhost:8080",
     ClientID:     os.Getenv("AXONFLOW_CLIENT_ID"),
     ClientSecret: os.Getenv("AXONFLOW_CLIENT_SECRET"),
 })
@@ -867,7 +867,7 @@ If you're using older authentication methods (`LicenseKey` or API keys), migrate
 **Before (v2.x):**
 ```go
 client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint:   "https://staging-eu.getaxonflow.com",
+    Endpoint:   "http://localhost:8080",
     LicenseKey: os.Getenv("AXONFLOW_LICENSE_KEY"),
 })
 ```
@@ -875,7 +875,7 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 **After (v3.x):**
 ```go
 client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint:     "https://staging-eu.getaxonflow.com",
+    Endpoint:     "http://localhost:8080",
     ClientID:     os.Getenv("AXONFLOW_CLIENT_ID"),
     ClientSecret: os.Getenv("AXONFLOW_CLIENT_SECRET"),
 })

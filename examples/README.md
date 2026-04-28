@@ -11,7 +11,7 @@ go get github.com/getaxonflow/axonflow-go
 Set environment variables:
 
 ```bash
-export AXONFLOW_AGENT_URL="https://staging-eu.getaxonflow.com"
+export AXONFLOW_AGENT_URL="http://localhost:8080"  # Default for local docker-compose
 export AXONFLOW_CLIENT_ID="your-client-id"
 export AXONFLOW_CLIENT_SECRET="AXON-PLUS-yourorg-20351025-signature"  # Your license key
 ```
