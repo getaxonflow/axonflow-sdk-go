@@ -5,6 +5,7 @@
 package axonflow
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +52,7 @@ func TestListProviders_DecodesProvidersAndHealth(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(AxonFlowConfig{Endpoint: server.URL})
-	providers, err := client.ListProviders(nil)
+	providers, err := client.ListProviders(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ListProviders returned error: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestListProviders_FiltersAreQueryParams(t *testing.T) {
 
 	client := NewClient(AxonFlowConfig{Endpoint: server.URL})
 	enabledFalse := false
-	if _, err := client.ListProviders(&ListProvidersOptions{
+	if _, err := client.ListProviders(context.Background(), &ListProvidersOptions{
 		Type:    "anthropic",
 		Enabled: &enabledFalse,
 	}); err != nil {
@@ -111,7 +112,7 @@ func TestListProviders_ProviderWithoutHealth(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(AxonFlowConfig{Endpoint: server.URL})
-	providers, err := client.ListProviders(nil)
+	providers, err := client.ListProviders(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("ListProviders returned error: %v", err)
 	}
@@ -131,7 +132,7 @@ func TestListProviders_HTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(AxonFlowConfig{Endpoint: server.URL})
-	_, err := client.ListProviders(nil)
+	_, err := client.ListProviders(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error from 403, got nil")
 	}
