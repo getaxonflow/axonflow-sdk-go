@@ -145,7 +145,7 @@ Keep dependencies up to date:
 go list -m -u all
 
 # Update dependencies
-go get -u github.com/getaxonflow/axonflow-sdk-go/v5
+go get -u github.com/getaxonflow/axonflow-sdk-go/v6
 go mod tidy
 ```
 
@@ -224,7 +224,7 @@ To receive security updates:
 
 - Watch this repository for releases
 - Subscribe to security advisories
-- Check https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v5 regularly
+- Check https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v6 regularly
 
 ## Questions?
 

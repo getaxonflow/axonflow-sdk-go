@@ -7,20 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-04-28 — ListProviders() + SDKCompatibility wire-shape fix
+
+Major release. The breaking change is `SDKCompatibility.MinSDKVersion` and `RecommendedSDKVersion` moving from `string` to `map[string]string` to match the real on-the-wire shape the platform has been returning since v4.8.0. Coordinated cycle: TypeScript v6.2.0 / Python v6.9.0 / Java v6.2.0 ship same day as minors.
+
+### BREAKING
+
+- **Module import path is now `github.com/getaxonflow/axonflow-sdk-go/v6`** (was `/v5`). Required by Go's semantic-import versioning rule for any module at v2+. To upgrade: `go get github.com/getaxonflow/axonflow-sdk-go/v6@latest` and update every import statement from `/v5` → `/v6`. No symbol-level changes from the path migration itself.
+- **`SDKCompatibility.MinSDKVersion`** and **`SDKCompatibility.RecommendedSDKVersion`** are now `map[string]string` (per-language) instead of `string`, matching the actual on-the-wire shape returned by the platform `/health` endpoint since v4.8.0. The previous `string` type silently unmarshalled the JSON object to an empty string, making the SDK version-mismatch warning a no-op. New helpers `(*SDKCompatibility).MinSDKVersionFor("go")` / `RecommendedSDKVersionFor("go")` return the per-language entry. Aligns Go with Java + TypeScript SDKs.
+
 ### Added
 
 - **`(*AxonFlowClient).ListProviders(opts *ListProvidersOptions)`** — list configured LLM providers and their per-provider health snapshot. Calls `GET /api/v1/llm-providers`. New `LLMProvider` and `LLMProviderHealth` types; `ListProvidersOptions{Type, Enabled}` for filtering. Closes the parity gap with the Java SDK's `listLLMProviders()` and the Python SDK's `list_providers()`.
 
 ### Fixed
 
-- **Breaking type change in `SDKCompatibility`.** `MinSDKVersion` and `RecommendedSDKVersion` are now `map[string]string` (per-language) instead of `string`, matching the actual on-the-wire shape returned by the platform `/health` endpoint since v4.8.0. The previous `string` type silently unmarshalled the JSON object to an empty string, making the SDK version-mismatch warning a no-op. New helpers `(*SDKCompatibility).MinSDKVersionFor("go")` / `RecommendedSDKVersionFor("go")` return the per-language entry. Aligns Go with Java + TypeScript SDKs.
-- **`Sandbox()`** now targets `http://localhost:8080` (was the decommissioned `https://staging-eu.getaxonflow.com`). Override via `NewClient` with an explicit `Endpoint` if you need to point sandbox at a hosted environment. The staging-eu environment was torn down 2026-04-09.
-- **`examples/basic/`, `examples/connectors/`, `examples/planning/`, `examples/README.md`** — replaced the decommissioned `staging-eu.getaxonflow.com` default endpoint with `http://localhost:8080` (the local docker-compose default).
-- **`README.md`, `SECURITY.md`, `CONTRIBUTING.md`** — bulk-replaced staging-eu URL references with `http://localhost:8080` in code samples and env-var instructions.
-- **Stale `axonflow-go` module path corrected to `axonflow-sdk-go/v5`** in `examples/README.md` (`go get` instruction + pkg.go.dev link), `SECURITY.md` (`go get -u` and pkg.go.dev advisory), and `CONTRIBUTING.md` (clone URL + cd target). The bare `axonflow-go` resolved to the v1.17.0 relic that the main README already warns about; the docs were sending readers straight into the trap.
-- **`examples/basic/`, `examples/connectors/`** — replaced hardcoded `"demo-user-token"` literal with empty string, letting the SDK auto-populate `user_token` (defaults to `"anonymous"` per `axonflow.go:734`). Stacks with JWT middleware enabled reject literal non-JWT strings outright; the same examples now work against community + JWT-validating deployments without modification.
-- **`README.md` VPC example** — replaced fictional `vpc-private-endpoint.getaxonflow.com:8443` hostname (does not resolve, doesn't follow the documented `{client}-{env}-{region}.getaxonflow.com` naming convention) with a clearly-placeholder `<your-vpc-endpoint>.example.com:8443`.
-- **`SECURITY.md` HTTPS example** — replaced fictional `https://api.getaxonflow.com` with a clearly-placeholder `https://your-axonflow-deployment.example.com`.
+- **`Sandbox()`** now targets `http://localhost:8080` (was the decommissioned `https://staging-eu.getaxonflow.com`, torn down 2026-04-09). Override via `NewClient` with an explicit `Endpoint` for hosted environments.
+- **All examples + READMEs** — replaced the decommissioned `staging-eu.getaxonflow.com` references with `http://localhost:8080` in `examples/basic/`, `examples/connectors/`, `examples/planning/`, `examples/README.md`, `README.md`, `SECURITY.md`, and `CONTRIBUTING.md`.
+- **Stale `axonflow-go` module path corrected to `axonflow-sdk-go/v5`** in `examples/README.md`, `SECURITY.md`, and `CONTRIBUTING.md`. The bare `axonflow-go` resolved to a v1.17.0 relic the main README already warns about; the docs were sending readers straight into the trap.
+- **`examples/basic/`, `examples/connectors/`** — replaced the hardcoded `"demo-user-token"` literal with an empty string. The SDK auto-populates `user_token` (defaulting to `"anonymous"`); the literal was rejected outright by stacks with JWT middleware enabled.
+- **`README.md` VPC example + `SECURITY.md` HTTPS example** — replaced fictional `vpc-private-endpoint.getaxonflow.com` and `api.getaxonflow.com` hostnames with clearly-placeholder `*.example.com` URLs.
 
 ## [5.8.0] - 2026-04-25 — Plugin Batch 1 explainability fields on MCP responses
 
