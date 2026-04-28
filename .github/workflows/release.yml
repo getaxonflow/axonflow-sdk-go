@@ -36,12 +36,12 @@ jobs:
             echo "### Installation"
             echo ""
             echo '```bash'
-            echo "go get github.com/getaxonflow/axonflow-sdk-go/v5@v${VERSION}"
+            echo "go get github.com/getaxonflow/axonflow-sdk-go/v6@v${VERSION}"
             echo '```'
             echo ""
             echo "### Documentation"
             echo ""
-            echo "- [pkg.go.dev](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v5@v${VERSION})"
+            echo "- [pkg.go.dev](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v6@v${VERSION})"
             echo "- [README](https://github.com/getaxonflow/axonflow-sdk-go#readme)"
             echo "- [Examples](https://github.com/getaxonflow/axonflow-sdk-go/tree/main/examples)"
             echo ""
@@ -105,4 +105,4 @@ jobs:
     - name: Trigger pkg.go.dev update
       run: |
         VERSION=${GITHUB_REF#refs/tags/}
-        curl https://proxy.golang.org/github.com/getaxonflow/axonflow-sdk-go/v5/@v/$VERSION.info
+        curl https://proxy.golang.org/github.com/getaxonflow/axonflow-sdk-go/v6/@v/$VERSION.info
