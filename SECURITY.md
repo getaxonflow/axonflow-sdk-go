@@ -80,8 +80,8 @@ client := axonflow.NewClientSimple(
 Always use HTTPS endpoints for production:
 
 ```go
-// ✅ GOOD - HTTPS endpoint
-client := axonflow.NewClientSimple("https://api.getaxonflow.com", clientID, secret)
+// ✅ GOOD - HTTPS endpoint (replace with your AxonFlow deployment URL)
+client := axonflow.NewClientSimple("https://your-axonflow-deployment.example.com", clientID, secret)
 
 // ⚠️ WARNING - HTTP should only be used for local development
 client := axonflow.NewClientSimple("http://localhost:8080", clientID, secret)
@@ -145,7 +145,7 @@ Keep dependencies up to date:
 go list -m -u all
 
 # Update dependencies
-go get -u github.com/getaxonflow/axonflow-go
+go get -u github.com/getaxonflow/axonflow-sdk-go/v5
 go mod tidy
 ```
 
@@ -224,7 +224,7 @@ To receive security updates:
 
 - Watch this repository for releases
 - Subscribe to security advisories
-- Check https://pkg.go.dev/github.com/getaxonflow/axonflow-go regularly
+- Check https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v5 regularly
 
 ## Questions?
 

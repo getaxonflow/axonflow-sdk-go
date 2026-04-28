@@ -34,7 +34,7 @@ func main() {
 	// Execute a simple query
 	fmt.Println("\nExecuting governed query...")
 	resp, err := client.ProxyLLMCall(
-		"demo-user-token",
+		"", // SDK auto-populates user_token (defaults to "anonymous" if no JWT). Don't pass a literal — JWT-validating stacks reject it.
 		"What is the capital of France?",
 		"chat",
 		map[string]interface{}{
@@ -79,7 +79,7 @@ func main() {
 	fmt.Println(strings.Repeat("=", 60))
 
 	resp2, err := client.ProxyLLMCall(
-		"demo-user-token",
+		"", // SDK auto-populates user_token (defaults to "anonymous" if no JWT). Don't pass a literal — JWT-validating stacks reject it.
 		"My email is john.doe@example.com and my SSN is 123-45-6789",
 		"chat",
 		map[string]interface{}{},

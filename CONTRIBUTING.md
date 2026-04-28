@@ -5,7 +5,7 @@ Thank you for your interest in contributing to the AxonFlow Go SDK! We welcome c
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/axonflow-go.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/axonflow-sdk-go.git`
 3. Create a feature branch: `git checkout -b feature/your-feature-name`
 4. Make your changes
 5. Run tests: `go test ./...`
@@ -23,8 +23,8 @@ Thank you for your interest in contributing to the AxonFlow Go SDK! We welcome c
 ### Installation
 
 ```bash
-git clone https://github.com/getaxonflow/axonflow-go.git
-cd axonflow-go
+git clone https://github.com/getaxonflow/axonflow-sdk-go.git
+cd axonflow-sdk-go
 go mod download
 ```
 
