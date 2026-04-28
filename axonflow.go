@@ -1229,13 +1229,13 @@ type LLMProviderHealth struct {
 
 // LLMProvider is a registered LLM provider as returned by ListProviders.
 type LLMProvider struct {
-	Name       string             `json:"name"`
-	Type       string             `json:"type"`
-	Enabled    bool               `json:"enabled"`
-	Priority   int                `json:"priority,omitempty"`
-	Weight     int                `json:"weight,omitempty"`
-	HasAPIKey  bool               `json:"has_api_key"`
-	Health     *LLMProviderHealth `json:"health,omitempty"`
+	Name      string             `json:"name"`
+	Type      string             `json:"type"`
+	Enabled   bool               `json:"enabled"`
+	Priority  int                `json:"priority,omitempty"`
+	Weight    int                `json:"weight,omitempty"`
+	HasAPIKey bool               `json:"has_api_key"`
+	Health    *LLMProviderHealth `json:"health,omitempty"`
 }
 
 // ListProvidersOptions narrows the result set returned by ListProviders.
