@@ -13,6 +13,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -1217,6 +1218,98 @@ func getMetadataKeys(metadata map[string]interface{}) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// LLMProviderHealth is the health snapshot for a registered provider.
+type LLMProviderHealth struct {
+	Status      string `json:"status"`
+	Message     string `json:"message,omitempty"`
+	LastChecked string `json:"last_checked,omitempty"`
+}
+
+// LLMProvider is a registered LLM provider as returned by ListProviders.
+type LLMProvider struct {
+	Name       string             `json:"name"`
+	Type       string             `json:"type"`
+	Enabled    bool               `json:"enabled"`
+	Priority   int                `json:"priority,omitempty"`
+	Weight     int                `json:"weight,omitempty"`
+	HasAPIKey  bool               `json:"has_api_key"`
+	Health     *LLMProviderHealth `json:"health,omitempty"`
+}
+
+// ListProvidersOptions narrows the result set returned by ListProviders.
+//
+// Either field is optional — leaving both at the zero value returns every
+// configured provider regardless of type or enabled status.
+type ListProvidersOptions struct {
+	// Type filters by provider type (e.g. "openai", "anthropic", "azure-openai").
+	Type string
+	// Enabled filters on the boolean flag. Use a pointer to distinguish
+	// "no filter" (nil) from "only enabled=false" (pointer to false).
+	Enabled *bool
+}
+
+// ListProviders returns the configured LLM providers and their health status,
+// optionally filtered by type and/or enabled flag.
+//
+// Calls GET /api/v1/llm-providers. Mirrors the Java SDK's listLLMProviders()
+// and the Python SDK's list_providers().
+//
+// Example:
+//
+//	providers, err := client.ListProviders(nil)
+//	for _, p := range providers {
+//	    log.Printf("%s (%s) — %s", p.Name, p.Type, p.Health.Status)
+//	}
+func (c *AxonFlowClient) ListProviders(opts *ListProvidersOptions) ([]LLMProvider, error) {
+	reqURL := c.config.Endpoint + "/api/v1/llm-providers"
+	if opts != nil {
+		q := url.Values{}
+		if opts.Type != "" {
+			q.Set("type", opts.Type)
+		}
+		if opts.Enabled != nil {
+			if *opts.Enabled {
+				q.Set("enabled", "true")
+			} else {
+				q.Set("enabled", "false")
+			}
+		}
+		if encoded := q.Encode(); encoded != "" {
+			reqURL = reqURL + "?" + encoded
+		}
+	}
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list providers request: %w", err)
+	}
+	c.addAuthHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list providers request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list providers failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var response struct {
+		Providers []LLMProvider `json:"providers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode providers response: %w", err)
+	}
+
+	if c.config.Debug {
+		log.Printf("[AxonFlow] Listed %d LLM providers", len(response.Providers))
+	}
+
+	return response.Providers, nil
 }
 
 // ListConnectors returns all available MCP connectors from the marketplace
