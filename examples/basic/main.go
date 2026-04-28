@@ -11,7 +11,7 @@ import (
 
 func main() {
 	// Load configuration from environment variables
-	agentURL := getEnv("AXONFLOW_AGENT_URL", "https://staging-eu.getaxonflow.com")
+	agentURL := getEnv("AXONFLOW_AGENT_URL", "http://localhost:8080")
 	clientID := getEnv("AXONFLOW_CLIENT_ID", "")
 	clientSecret := getEnv("AXONFLOW_CLIENT_SECRET", "")
 

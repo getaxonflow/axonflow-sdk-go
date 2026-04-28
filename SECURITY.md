@@ -62,7 +62,7 @@ When using the AxonFlow Go SDK:
 ```go
 // ❌ BAD - Credentials in code
 client := axonflow.NewClientSimple(
-    "https://staging-eu.getaxonflow.com",
+    "http://localhost:8080",
     "client-id-here",
     "secret-here",
 )
