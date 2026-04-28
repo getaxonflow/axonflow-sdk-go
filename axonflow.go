@@ -1228,41 +1228,84 @@ type LLMProviderHealth struct {
 }
 
 // LLMProvider is a registered LLM provider as returned by ListProviders.
+//
+// Mirrors the platform's LLMProviderResource schema. Optional fields are
+// populated when the underlying provider config has them set; Settings is
+// a free-form provider-specific map (e.g. Bedrock inference-profile id,
+// Azure OpenAI deployment name).
 type LLMProvider struct {
-	Name      string             `json:"name"`
-	Type      string             `json:"type"`
-	Enabled   bool               `json:"enabled"`
-	Priority  int                `json:"priority,omitempty"`
-	Weight    int                `json:"weight,omitempty"`
-	HasAPIKey bool               `json:"has_api_key"`
-	Health    *LLMProviderHealth `json:"health,omitempty"`
+	Name           string             `json:"name"`
+	Type           string             `json:"type"`
+	Enabled        bool               `json:"enabled"`
+	Priority       int                `json:"priority,omitempty"`
+	Weight         int                `json:"weight,omitempty"`
+	HasAPIKey      bool               `json:"has_api_key"`
+	Health         *LLMProviderHealth `json:"health,omitempty"`
+	Endpoint       string             `json:"endpoint,omitempty"`
+	Model          string             `json:"model,omitempty"`
+	Region         string             `json:"region,omitempty"`
+	RateLimit      int                `json:"rate_limit,omitempty"`
+	TimeoutSeconds int                `json:"timeout_seconds,omitempty"`
+	Settings       map[string]any     `json:"settings,omitempty"`
+}
+
+// PaginationMeta is the pagination block returned alongside paginated list
+// responses from the platform.
+type PaginationMeta struct {
+	Page       int `json:"page"`
+	PageSize   int `json:"page_size"`
+	TotalItems int `json:"total_items"`
+	TotalPages int `json:"total_pages"`
+}
+
+// LLMProviderListResponse is the paginated response wrapper returned by
+// ListProvidersPaged.
+type LLMProviderListResponse struct {
+	Providers  []LLMProvider  `json:"providers"`
+	Pagination PaginationMeta `json:"pagination"`
 }
 
 // ListProvidersOptions narrows the result set returned by ListProviders.
 //
-// Either field is optional — leaving both at the zero value returns every
-// configured provider regardless of type or enabled status.
+// All fields are optional — leaving them at zero values returns the first
+// page with the server's default page size.
 type ListProvidersOptions struct {
 	// Type filters by provider type (e.g. "openai", "anthropic", "azure-openai").
 	Type string
 	// Enabled filters on the boolean flag. Use a pointer to distinguish
 	// "no filter" (nil) from "only enabled=false" (pointer to false).
 	Enabled *bool
+	// Page is the 1-indexed page number (zero or negative means "use server default").
+	Page int
+	// PageSize is the items per page (zero or negative means "use server default";
+	// platform-side cap is 100).
+	PageSize int
 }
 
-// ListProviders returns the configured LLM providers and their health status,
+// ListProviders returns the providers from a SINGLE page of results,
 // optionally filtered by type and/or enabled flag.
 //
 // Calls GET /api/v1/llm-providers. Mirrors the Java SDK's listLLMProviders()
-// and the Python SDK's list_providers().
+// and the Python SDK's list_providers(). For multi-page traversal use
+// ListAllProviders; for pagination metadata use ListProvidersPaged.
 //
 // Example:
 //
-//	providers, err := client.ListProviders(nil)
+//	providers, err := client.ListProviders(ctx, nil)
 //	for _, p := range providers {
 //	    log.Printf("%s (%s) — %s", p.Name, p.Type, p.Health.Status)
 //	}
-func (c *AxonFlowClient) ListProviders(opts *ListProvidersOptions) ([]LLMProvider, error) {
+func (c *AxonFlowClient) ListProviders(ctx context.Context, opts *ListProvidersOptions) ([]LLMProvider, error) {
+	resp, err := c.ListProvidersPaged(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Providers, nil
+}
+
+// ListProvidersPaged returns one page of providers along with pagination
+// metadata so callers can paginate manually.
+func (c *AxonFlowClient) ListProvidersPaged(ctx context.Context, opts *ListProvidersOptions) (*LLMProviderListResponse, error) {
 	reqURL := c.config.Endpoint + "/api/v1/llm-providers"
 	if opts != nil {
 		q := url.Values{}
@@ -1276,12 +1319,18 @@ func (c *AxonFlowClient) ListProviders(opts *ListProvidersOptions) ([]LLMProvide
 				q.Set("enabled", "false")
 			}
 		}
+		if opts.Page > 0 {
+			q.Set("page", strconv.Itoa(opts.Page))
+		}
+		if opts.PageSize > 0 {
+			q.Set("page_size", strconv.Itoa(opts.PageSize))
+		}
 		if encoded := q.Encode(); encoded != "" {
 			reqURL = reqURL + "?" + encoded
 		}
 	}
 
-	req, err := http.NewRequest("GET", reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list providers request: %w", err)
 	}
@@ -1298,18 +1347,48 @@ func (c *AxonFlowClient) ListProviders(opts *ListProvidersOptions) ([]LLMProvide
 		return nil, fmt.Errorf("list providers failed: HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	var response struct {
-		Providers []LLMProvider `json:"providers"`
-	}
+	var response LLMProviderListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to decode providers response: %w", err)
 	}
 
 	if c.config.Debug {
-		log.Printf("[AxonFlow] Listed %d LLM providers", len(response.Providers))
+		log.Printf("[AxonFlow] Listed %d LLM providers (page %d/%d)",
+			len(response.Providers), response.Pagination.Page, response.Pagination.TotalPages)
 	}
 
-	return response.Providers, nil
+	return &response, nil
+}
+
+// ListAllProviders walks every page of providers and returns the combined
+// list. Defaults to PageSize=100 (the server-side max) to minimise round
+// trips. Per-page Type and Enabled filters from opts are honoured on every
+// page; opts.Page and opts.PageSize are overridden by the walker.
+func (c *AxonFlowClient) ListAllProviders(ctx context.Context, opts *ListProvidersOptions) ([]LLMProvider, error) {
+	pageSize := 100
+	walker := ListProvidersOptions{}
+	if opts != nil {
+		walker.Type = opts.Type
+		walker.Enabled = opts.Enabled
+		if opts.PageSize > 0 {
+			pageSize = opts.PageSize
+		}
+	}
+
+	var all []LLMProvider
+	for page := 1; ; page++ {
+		walker.Page = page
+		walker.PageSize = pageSize
+		resp, err := c.ListProvidersPaged(ctx, &walker)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Providers...)
+		if resp.Pagination.TotalPages <= page || len(resp.Providers) == 0 {
+			break
+		}
+	}
+	return all, nil
 }
 
 // ListConnectors returns all available MCP connectors from the marketplace
