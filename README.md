@@ -705,7 +705,7 @@ For applications running in AWS VPC, use the private endpoint for lower latency:
 
 ```go
 client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint:     "https://vpc-private-endpoint.getaxonflow.com:8443",  // VPC private endpoint
+    Endpoint:     "https://<your-vpc-endpoint>.example.com:8443",  // VPC private endpoint (replace with your deployment URL)
     ClientID:     "your-client-id",
     ClientSecret: "your-secret",
     Mode:         "production",

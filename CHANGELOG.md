@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Sandbox()`** now targets `http://localhost:8080` (was the decommissioned `https://staging-eu.getaxonflow.com`). Override via `NewClient` with an explicit `Endpoint` if you need to point sandbox at a hosted environment. The staging-eu environment was torn down 2026-04-09.
 - **`examples/basic/`, `examples/connectors/`, `examples/planning/`, `examples/README.md`** — replaced the decommissioned `staging-eu.getaxonflow.com` default endpoint with `http://localhost:8080` (the local docker-compose default).
 - **`README.md`, `SECURITY.md`, `CONTRIBUTING.md`** — bulk-replaced staging-eu URL references with `http://localhost:8080` in code samples and env-var instructions.
+- **Stale `axonflow-go` module path corrected to `axonflow-sdk-go/v5`** in `examples/README.md` (`go get` instruction + pkg.go.dev link), `SECURITY.md` (`go get -u` and pkg.go.dev advisory), and `CONTRIBUTING.md` (clone URL + cd target). The bare `axonflow-go` resolved to the v1.17.0 relic that the main README already warns about; the docs were sending readers straight into the trap.
+- **`examples/basic/`, `examples/connectors/`** — replaced hardcoded `"demo-user-token"` literal with empty string, letting the SDK auto-populate `user_token` (defaults to `"anonymous"` per `axonflow.go:734`). Stacks with JWT middleware enabled reject literal non-JWT strings outright; the same examples now work against community + JWT-validating deployments without modification.
+- **`README.md` VPC example** — replaced fictional `vpc-private-endpoint.getaxonflow.com:8443` hostname (does not resolve, doesn't follow the documented `{client}-{env}-{region}.getaxonflow.com` naming convention) with a clearly-placeholder `<your-vpc-endpoint>.example.com:8443`.
+- **`SECURITY.md` HTTPS example** — replaced fictional `https://api.getaxonflow.com` with a clearly-placeholder `https://your-axonflow-deployment.example.com`.
 
 ## [5.8.0] - 2026-04-25 — Plugin Batch 1 explainability fields on MCP responses
 

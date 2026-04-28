@@ -1204,7 +1204,7 @@ func TestNonLocalHostIncludesAuth(t *testing.T) {
 	// This tests that non-localhost URLs would include auth headers
 	// We verify this by checking the auth logic in the client configuration
 	client := NewClient(AxonFlowConfig{
-		Endpoint:     "https://api.getaxonflow.com",
+		Endpoint:     "https://example.test",
 		ClientID:     "test",
 		ClientSecret: "secret",
 		Cache:        CacheConfig{Enabled: false},
@@ -1214,7 +1214,7 @@ func TestNonLocalHostIncludesAuth(t *testing.T) {
 	if client.config.ClientSecret != "secret" {
 		t.Errorf("Expected ClientSecret 'secret', got '%s'", client.config.ClientSecret)
 	}
-	if client.config.Endpoint != "https://api.getaxonflow.com" {
+	if client.config.Endpoint != "https://example.test" {
 		t.Errorf("Expected non-localhost URL")
 	}
 }

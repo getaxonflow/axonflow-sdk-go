@@ -9,10 +9,18 @@ on:
   workflow_dispatch:
   # Run weekly to catch API drift
   schedule:
-    - cron: '0 6 * * 1'  # Monday 6am UTC
+    # Tuesday 06:00 UTC — failures land in EU/IN working hours, not weekend
+    # handover. Aligns with the TS + Java SDK integration crons.
+    - cron: '0 6 * * 2'
 
 permissions:
   contents: read
+
+# Avoid spawning parallel docker-compose stacks on back-to-back pushes;
+# also cancels stale PR runs when a new commit lands.
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   DO_NOT_TRACK: '1'
@@ -173,10 +181,11 @@ jobs:
     - name: Start Community Stack
       run: |
         cd ../axonflow
-        docker compose up -d
+        docker compose up -d --wait --wait-timeout 120
 
-        # Wait for services to be healthy
-        echo "Waiting for services to be healthy..."
+        # Belt-and-suspenders: also poll /health since not every compose
+        # service has a healthcheck wired.
+        echo "Waiting for agent to be healthy..."
         timeout 120 bash -c 'until curl -sf http://localhost:8080/health; do sleep 2; done'
         echo "Agent is healthy"
 
@@ -194,26 +203,42 @@ jobs:
         AXONFLOW_CLIENT_SECRET: demo-secret
 
     - name: Run Basic Example
+      # `|| echo` was masking real failures (compile errors, panics,
+      # connection refused). Demo creds against the community stack should
+      # pass; if they don't, the smoke surfaces the regression.
       run: |
         cd examples/basic
-        timeout 30 go run main.go || echo "Example completed (may fail without LLM configured)"
+        timeout 30 go run main.go
       env:
         AXONFLOW_AGENT_URL: http://localhost:8080
         AXONFLOW_CLIENT_ID: demo-client
         AXONFLOW_CLIENT_SECRET: demo-secret
+
+    # Logs MUST be captured before `Stop Community Stack` runs — `compose
+    # down` destroys the containers and `compose logs` then returns
+    # nothing. `if: failure()` here, `if: always()` on teardown.
+    - name: Show Docker Logs on Failure
+      if: failure()
+      run: |
+        if [ -d "../axonflow" ]; then
+          cd ../axonflow
+          docker compose logs --tail=200 || true
+        fi
+
+    - name: Upload Docker Logs on Failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-compose-logs
+        path: ../axonflow/docker-compose-logs.txt
+        if-no-files-found: ignore
 
     - name: Stop Community Stack
       if: always()
       run: |
         if [ -d "../axonflow" ]; then
           cd ../axonflow
+          # Persist logs to disk so the upload step can grab them post-teardown.
+          docker compose logs --tail=500 > docker-compose-logs.txt 2>/dev/null || true
           docker compose down --volumes --remove-orphans || true
-        fi
-
-    - name: Show Docker Logs on Failure
-      if: failure()
-      run: |
-        if [ -d "../axonflow" ]; then
-          cd ../axonflow
-          docker compose logs --tail=100 || true
         fi
