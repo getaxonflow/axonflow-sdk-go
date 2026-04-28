@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`(*AxonFlowClient).ListProviders(opts *ListProvidersOptions)`** — list configured LLM providers and their per-provider health snapshot. Calls `GET /api/v1/llm-providers`. New `LLMProvider` and `LLMProviderHealth` types; `ListProvidersOptions{Type, Enabled}` for filtering. Closes the parity gap with the Java SDK's `listLLMProviders()` and the Python SDK's `list_providers()`.
+
 ### Fixed
 
 - **Breaking type change in `SDKCompatibility`.** `MinSDKVersion` and `RecommendedSDKVersion` are now `map[string]string` (per-language) instead of `string`, matching the actual on-the-wire shape returned by the platform `/health` endpoint since v4.8.0. The previous `string` type silently unmarshalled the JSON object to an empty string, making the SDK version-mismatch warning a no-op. New helpers `(*SDKCompatibility).MinSDKVersionFor("go")` / `RecommendedSDKVersionFor("go")` return the per-language entry. Aligns Go with Java + TypeScript SDKs.
