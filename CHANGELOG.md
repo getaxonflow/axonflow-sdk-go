@@ -5,11 +5,11 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.0.0] - 2026-04-29 — DO_NOT_TRACK removal + 7-day delivered heartbeat
+## [7.0.0] - 2026-04-29
 
 **Upgrade strongly recommended.** Over the past month we've shipped substantial production, quality, and security hardening across all AxonFlow SDKs and plugins — upgrade to the latest version for a more secure, reliable, and bug-free experience.
 
-Major release. Two headline changes: removal of `DO_NOT_TRACK` as an AxonFlow telemetry opt-out (`AXONFLOW_TELEMETRY=off` is now the canonical and only opt-out signal), and a move from "one ping per `NewClient`" to a 7-day delivered-heartbeat contract that better matches active-customer signal across both long-running services and short-lived Lambdas / CLI tools. Companion releases on the same day: TypeScript v7.0.0 / Python v7.0.0 / Java v7.0.0.
+Major release across the AxonFlow SDK family. Companion releases ship the same day: TypeScript v7.0.0 / Python v7.0.0 / Go v7.0.0 (with `/v7` module path migration) / Java v7.0.0.
 
 ### BREAKING
 
