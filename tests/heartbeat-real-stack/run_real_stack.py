@@ -66,16 +66,42 @@ def main(argv: list[str]) -> int:
     )
 
     try:
-        # Wait for port file to appear.
-        deadline = time.time() + 15
+        # Wait for port file to appear. 60s is generous — macos-latest GitHub
+        # runners can be slow to cold-start Python; 15s sometimes wasn't enough.
+        # On any timeout we surface the server's stdout+stderr so the cause is
+        # visible in CI logs instead of failing silently.
+        deadline = time.time() + 60
+        port_text: str | None = None
         while time.time() < deadline:
+            if server_proc.poll() is not None:
+                # Server crashed before writing the port file.
+                stdout_bytes, _ = server_proc.communicate(timeout=2)
+                output = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+                print(
+                    f"FAIL: server exited with code {server_proc.returncode} before writing port file.\n"
+                    f"--- server stdout/stderr ---\n{output}",
+                    file=sys.stderr,
+                )
+                return 1
             if port_file.exists():
                 port_text = port_file.read_text().strip()
                 if port_text:
                     break
             time.sleep(0.1)
-        else:
-            print("FAIL: server didn't write port file in 15s", file=sys.stderr)
+        if not port_text:
+            # Port file timeout — kill server and surface its output.
+            server_proc.terminate()
+            try:
+                stdout_bytes, _ = server_proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                server_proc.kill()
+                stdout_bytes, _ = server_proc.communicate()
+            output = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+            print(
+                "FAIL: server didn't write port file in 60s.\n"
+                f"--- server stdout/stderr ---\n{output}",
+                file=sys.stderr,
+            )
             return 1
 
         port = int(port_text)

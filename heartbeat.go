@@ -39,10 +39,10 @@ var (
 // so we send at most one POST, not one per goroutine.
 type heartbeatState struct {
 	mu               sync.Mutex
-	lastChecked      time.Time // last wall-clock instant the gate ran (read under mu)
+	lastChecked      time.Time    // last wall-clock instant the gate ran (read under mu)
 	lastCheckedNanos atomic.Int64 // mirror of lastChecked.UnixNano(), for lock-free pre-check on the request hot path
-	inFlight         bool      // true while a ping POST is in progress
-	stampPath        string    // empty when no user cache dir is available
+	inFlight         bool         // true while a ping POST is in progress
+	stampPath        string       // empty when no user cache dir is available
 }
 
 // resolveStampPath returns the OS-native path to the SDK's heartbeat stamp

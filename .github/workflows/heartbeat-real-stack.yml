@@ -39,10 +39,23 @@ jobs:
 
       - name: Build smoke binary
         working-directory: tests/heartbeat-real-stack
+        shell: bash
         run: |
           go mod tidy
-          go build -o smoke_go ./smoke_go.go
-        shell: bash
+          # Explicit .exe on Windows so the run step's path is unambiguous;
+          # Go's `-o smoke_go` behavior on Windows is version-dependent.
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            go build -o smoke_go.exe ./smoke_go.go
+          else
+            go build -o smoke_go ./smoke_go.go
+          fi
 
       - name: Run real-stack heartbeat E2E (cold + warm)
-        run: python tests/heartbeat-real-stack/run_real_stack.py tests/heartbeat-real-stack/smoke_go${{ runner.os == 'Windows' && '.exe' || '' }}
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            BIN="tests/heartbeat-real-stack/smoke_go.exe"
+          else
+            BIN="tests/heartbeat-real-stack/smoke_go"
+          fi
+          python tests/heartbeat-real-stack/run_real_stack.py "$BIN"
