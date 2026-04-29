@@ -4,9 +4,11 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/getaxonflow/axonflow-sdk-go)](https://goreportcard.com/report/github.com/getaxonflow/axonflow-sdk-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> ## ⚠️ Use the `/v5` import path
+> **Upgrade strongly recommended.** Over the past month we've shipped substantial production, quality, and security hardening across the AxonFlow SDKs and platform — see the [v7.0.0 release notes](./CHANGELOG.md), the per-SDK advisory [`GHSA-mhc4-qq83-fmrr`](https://github.com/getaxonflow/axonflow-sdk-go/security/advisories/GHSA-mhc4-qq83-fmrr), and the consolidated platform advisory [`GHSA-9h64-2846-7x7f`](https://github.com/getaxonflow/axonflow/security/advisories/GHSA-9h64-2846-7x7f). Upgrade to the latest major for a more secure, reliable, and bug-free experience.
+
+> ## ⚠️ Use the `/v7` import path
 >
-> Go's semantic import versioning requires the module path to include the major version suffix for v2+. The current release line is **v5.x**, imported as:
+> Go's semantic import versioning requires the module path to include the major version suffix for v2+. The current release line is **v7.x**, imported as:
 >
 > ```go
 > import "github.com/getaxonflow/axonflow-sdk-go/v7"
@@ -16,7 +18,7 @@
 > go get github.com/getaxonflow/axonflow-sdk-go/v7
 > ```
 >
-> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v5`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is four major release lines behind current. See the [Migration Guide](#migration-guide) below.
+> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v7`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is six major release lines behind current. See the [Migration Guide](#migration-guide) below.
 
 > **Evaluating AxonFlow in production?** We're opening limited Design Partner slots.
 >
