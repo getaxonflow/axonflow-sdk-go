@@ -50,12 +50,20 @@ func TestHeartbeatE2E_FourRunCycle(t *testing.T) {
 
 	t.Setenv("AXONFLOW_TELEMETRY", "")
 
-	// Helper: build a fresh client pointing at the chosen checkpoint URL.
-	// Each call simulates a "new process" — same stamp file location, fresh
-	// in-memory state. This is the cross-run invariant the contract pins.
+	// Save the current process-global heartbeat singleton and restore it on
+	// cleanup so we don't leak test state into subsequent test files.
+	originalHeartbeat := getSharedHeartbeat()
+	t.Cleanup(func() { restoreHeartbeatStateForTest(originalHeartbeat) })
+
+	// Helper: build a fresh client pointing at the chosen checkpoint URL,
+	// AND swap the package-global heartbeat singleton to a fresh state at
+	// the same stamp file location. Each call simulates a "new process" —
+	// stamp file persists across runs (the cross-run invariant the
+	// contract pins), in-memory gate state is fresh.
 	newClient := func(checkpointURL string) *AxonFlowClient {
 		t.Helper()
 		t.Setenv("AXONFLOW_CHECKPOINT_URL", checkpointURL)
+		replaceHeartbeatStateForTest(stampPath)
 		boolPtr := func(v bool) *bool { return &v }
 		return &AxonFlowClient{
 			config: AxonFlowConfig{
@@ -64,7 +72,6 @@ func TestHeartbeatE2E_FourRunCycle(t *testing.T) {
 				ClientSecret:     "sec",
 				TelemetryEnabled: boolPtr(true),
 			},
-			heartbeat: &heartbeatState{stampPath: stampPath},
 		}
 	}
 

@@ -49,17 +49,18 @@ type CacheConfig struct {
 	TTL     time.Duration // Cache TTL (default: 60s)
 }
 
-// AxonFlowClient represents the SDK for connecting to AxonFlow platform
+// AxonFlowClient represents the SDK for connecting to AxonFlow platform.
+//
+// The 7-day telemetry heartbeat is process-global (not per-client) — see
+// the sharedHeartbeat package-level variable in heartbeat.go. That keeps
+// concurrent NewClient calls on the same machine coalescing onto a single
+// ping per heartbeatInterval, which is the contract.
 type AxonFlowClient struct {
 	config        AxonFlowConfig
 	httpClient    *http.Client
 	mapHttpClient *http.Client // Separate client with longer timeout for MAP operations
 	cache         *cache
 	sessionCookie string // Session cookie for Customer Portal authentication
-	// heartbeat gates the 7-day "at most one anonymous heartbeat per
-	// environment per heartbeatInterval during SDK activity" telemetry
-	// contract. Initialized in NewClient. Always non-nil after construction.
-	heartbeat *heartbeatState
 }
 
 // ============================================================================
@@ -663,7 +664,6 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 			Timeout:   config.MapTimeout,
 			Transport: uaTransport,
 		},
-		heartbeat: newHeartbeatState(),
 	}
 
 	if config.Cache.Enabled {

@@ -15,12 +15,17 @@ import (
 // Helpers shared across heartbeat tests --------------------------------------
 
 // newHeartbeatClient builds a minimal *AxonFlowClient suitable for exercising
-// maybeSendHeartbeat in isolation. The caller supplies a stamp directory
-// (typically t.TempDir()) so the test doesn't touch the user's real cache
-// dir. Telemetry is forced ON via TelemetryEnabled=true so the gating
+// maybeSendHeartbeat in isolation, AND swaps the package-global heartbeat
+// singleton for one pointing at a fresh stamp file under stampDir
+// (typically t.TempDir()). Restores the original singleton on test
+// cleanup. Telemetry is forced ON via TelemetryEnabled=true so the gating
 // decision under test is the heartbeat gate, not the mode-default check.
 func newHeartbeatClient(t *testing.T, stampDir string) *AxonFlowClient {
 	t.Helper()
+	stampPath := filepath.Join(stampDir, "go-telemetry-last-sent")
+	previous := replaceHeartbeatStateForTest(stampPath)
+	t.Cleanup(func() { restoreHeartbeatStateForTest(previous) })
+
 	boolPtr := func(v bool) *bool { return &v }
 	return &AxonFlowClient{
 		config: AxonFlowConfig{
@@ -28,9 +33,6 @@ func newHeartbeatClient(t *testing.T, stampDir string) *AxonFlowClient {
 			ClientID:         "id",
 			ClientSecret:     "sec",
 			TelemetryEnabled: boolPtr(true),
-		},
-		heartbeat: &heartbeatState{
-			stampPath: filepath.Join(stampDir, "go-telemetry-last-sent"),
 		},
 	}
 }
@@ -86,8 +88,8 @@ func TestHeartbeat_NoStamp_FiresOnce(t *testing.T) {
 	if got := called.Load(); got != 1 {
 		t.Errorf("expected 1 ping on cold start, got %d", got)
 	}
-	if _, err := os.Stat(client.heartbeat.stampPath); err != nil {
-		t.Errorf("expected stamp file at %s after successful ping, got error: %v", client.heartbeat.stampPath, err)
+	if _, err := os.Stat(getSharedHeartbeat().stampPath); err != nil {
+		t.Errorf("expected stamp file at %s after successful ping, got error: %v", getSharedHeartbeat().stampPath, err)
 	}
 }
 
@@ -98,14 +100,14 @@ func TestHeartbeat_FreshStamp_DoesNotFire(t *testing.T) {
 	client := newHeartbeatClient(t, dir)
 
 	// Pre-create the stamp file with a recent mtime.
-	if err := client.heartbeat.writeStampAtomic(time.Now().Add(-24 * time.Hour)); err != nil {
+	if err := getSharedHeartbeat().writeStampAtomic(time.Now().Add(-24 * time.Hour)); err != nil {
 		t.Fatalf("seed stamp: %v", err)
 	}
 	// writeStampAtomic uses now() for the mtime regardless of the parameter
 	// value (the parameter is for the human-readable contents). Force the
 	// mtime to 1 day ago so the freshness check is deterministic.
 	oneDayAgo := time.Now().Add(-24 * time.Hour)
-	if err := os.Chtimes(client.heartbeat.stampPath, oneDayAgo, oneDayAgo); err != nil {
+	if err := os.Chtimes(getSharedHeartbeat().stampPath, oneDayAgo, oneDayAgo); err != nil {
 		t.Fatalf("chtimes: %v", err)
 	}
 
@@ -123,11 +125,11 @@ func TestHeartbeat_StaleStamp_FiresAndUpdates(t *testing.T) {
 	dir := t.TempDir()
 	client := newHeartbeatClient(t, dir)
 
-	if err := client.heartbeat.writeStampAtomic(time.Now()); err != nil {
+	if err := getSharedHeartbeat().writeStampAtomic(time.Now()); err != nil {
 		t.Fatalf("seed stamp: %v", err)
 	}
 	eightDaysAgo := time.Now().Add(-8 * 24 * time.Hour)
-	if err := os.Chtimes(client.heartbeat.stampPath, eightDaysAgo, eightDaysAgo); err != nil {
+	if err := os.Chtimes(getSharedHeartbeat().stampPath, eightDaysAgo, eightDaysAgo); err != nil {
 		t.Fatalf("chtimes: %v", err)
 	}
 
@@ -136,7 +138,7 @@ func TestHeartbeat_StaleStamp_FiresAndUpdates(t *testing.T) {
 	if got := called.Load(); got != 1 {
 		t.Errorf("expected 1 ping with stale stamp, got %d", got)
 	}
-	mtime := client.heartbeat.readStampMtime()
+	mtime := getSharedHeartbeat().readStampMtime()
 	if time.Since(mtime) > 5*time.Second {
 		t.Errorf("expected stamp mtime to be very recent, got %v ago", time.Since(mtime))
 	}
@@ -174,11 +176,11 @@ func TestHeartbeat_AfterRateLimitExpiry_FiresAgain(t *testing.T) {
 
 	// Backdate both lastChecked (memory) and stamp (file) so the gate lets
 	// the next call through.
-	client.heartbeat.mu.Lock()
-	client.heartbeat.lastChecked = time.Now().Add(-2 * time.Hour)
-	client.heartbeat.mu.Unlock()
+	getSharedHeartbeat().mu.Lock()
+	getSharedHeartbeat().lastChecked = time.Now().Add(-2 * time.Hour)
+	getSharedHeartbeat().mu.Unlock()
 	eightDaysAgo := time.Now().Add(-8 * 24 * time.Hour)
-	if err := os.Chtimes(client.heartbeat.stampPath, eightDaysAgo, eightDaysAgo); err != nil {
+	if err := os.Chtimes(getSharedHeartbeat().stampPath, eightDaysAgo, eightDaysAgo); err != nil {
 		t.Fatalf("chtimes: %v", err)
 	}
 
@@ -204,21 +206,21 @@ func TestHeartbeat_OptOutMidProcess_StopsPings(t *testing.T) {
 
 	// Toggle opt-out, force the cache + stamp gates to be open, call again.
 	t.Setenv("AXONFLOW_TELEMETRY", "off")
-	client.heartbeat.mu.Lock()
-	client.heartbeat.lastChecked = time.Now().Add(-2 * time.Hour)
-	client.heartbeat.mu.Unlock()
+	getSharedHeartbeat().mu.Lock()
+	getSharedHeartbeat().lastChecked = time.Now().Add(-2 * time.Hour)
+	getSharedHeartbeat().mu.Unlock()
 	eightDaysAgo := time.Now().Add(-8 * 24 * time.Hour)
-	_ = os.Chtimes(client.heartbeat.stampPath, eightDaysAgo, eightDaysAgo)
+	_ = os.Chtimes(getSharedHeartbeat().stampPath, eightDaysAgo, eightDaysAgo)
 	// Snapshot stamp mtime AFTER the chtimes manipulation so the assertion
 	// only catches changes the SDK code itself makes.
-	stampMtimeBefore := client.heartbeat.readStampMtime()
+	stampMtimeBefore := getSharedHeartbeat().readStampMtime()
 
 	client.maybeSendHeartbeat()
 
 	if got := called.Load(); got != 1 {
 		t.Errorf("expected opt-out to suppress 2nd ping, got %d total", got)
 	}
-	stampMtimeAfter := client.heartbeat.readStampMtime()
+	stampMtimeAfter := getSharedHeartbeat().readStampMtime()
 	if !stampMtimeAfter.Equal(stampMtimeBefore) {
 		t.Errorf("expected stamp mtime unchanged after opt-out call, before=%v after=%v", stampMtimeBefore, stampMtimeAfter)
 	}
@@ -256,8 +258,14 @@ func TestHeartbeat_ConcurrentCallers_CoalesceToOnePing(t *testing.T) {
 // regression for that runtime.
 func TestHeartbeat_NoCacheDir_PingsButNoStamp(t *testing.T) {
 	_, called := startCheckpointMock(t, http.StatusOK)
-	client := newHeartbeatClient(t, t.TempDir())
-	client.heartbeat.stampPath = "" // simulate UserCacheDir() failure
+	// Override the singleton with an empty stamp path to simulate a runtime
+	// where os.UserCacheDir() returned an error (Lambda-like). newHeartbeatClient
+	// installs a tmp-dir state which we immediately swap; we capture the tmp
+	// state and restore on cleanup.
+	tmpClient := newHeartbeatClient(t, t.TempDir())
+	previous := replaceHeartbeatStateForTest("")
+	t.Cleanup(func() { restoreHeartbeatStateForTest(previous) })
+	client := tmpClient // suppress unused-variable; we still need the *AxonFlowClient
 
 	// First call fires.
 	client.maybeSendHeartbeat()
@@ -273,12 +281,55 @@ func TestHeartbeat_NoCacheDir_PingsButNoStamp(t *testing.T) {
 
 	// Backdate cache, call again — fires again because no stamp exists to
 	// gate the 7-day path.
-	client.heartbeat.mu.Lock()
-	client.heartbeat.lastChecked = time.Now().Add(-2 * time.Hour)
-	client.heartbeat.mu.Unlock()
+	getSharedHeartbeat().mu.Lock()
+	getSharedHeartbeat().lastChecked = time.Now().Add(-2 * time.Hour)
+	getSharedHeartbeat().mu.Unlock()
 	client.maybeSendHeartbeat()
 	if got := called.Load(); got != 2 {
 		t.Errorf("expected 2nd ping when stamp absent and cache expired, got %d", got)
+	}
+}
+
+// Case 7b (regression for P1: per-client → per-process singleton): 50
+// AxonFlow clients constructed concurrently before any stamp exists must
+// coalesce onto exactly 1 ping (per the "at most one heartbeat per
+// environment" contract). Pre-fix this test would observe up to 50
+// pings because each client carried its own heartbeatState.
+func TestHeartbeat_ConcurrentMultiClient_CoalesceToOnePing(t *testing.T) {
+	_, called := startCheckpointMock(t, http.StatusOK)
+	dir := t.TempDir()
+	// Install a single shared heartbeat state pointing at the temp stamp.
+	// All clients constructed below will use this singleton — that's the
+	// invariant the P1 fix enforces.
+	stampPath := filepath.Join(dir, "go-telemetry-last-sent")
+	previous := replaceHeartbeatStateForTest(stampPath)
+	t.Cleanup(func() { restoreHeartbeatStateForTest(previous) })
+
+	const clientCount = 50
+	var wg sync.WaitGroup
+	wg.Add(clientCount)
+	start := make(chan struct{})
+	boolPtr := func(v bool) *bool { return &v }
+	for i := 0; i < clientCount; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			c := &AxonFlowClient{
+				config: AxonFlowConfig{
+					Mode:             "production",
+					ClientID:         "id",
+					ClientSecret:     "sec",
+					TelemetryEnabled: boolPtr(true),
+				},
+			}
+			c.maybeSendHeartbeat()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if got := called.Load(); got != 1 {
+		t.Errorf("expected exactly 1 ping for %d concurrent clients sharing the heartbeat singleton, got %d", clientCount, got)
 	}
 }
 
@@ -295,14 +346,14 @@ func TestHeartbeat_PingFailure_StampNotWritten(t *testing.T) {
 		t.Fatalf("expected 1 attempt, got %d", got)
 	}
 	// Stamp must NOT be written on 5xx.
-	if _, err := os.Stat(client.heartbeat.stampPath); err == nil {
-		t.Errorf("expected NO stamp file after failed ping, but found one at %s", client.heartbeat.stampPath)
+	if _, err := os.Stat(getSharedHeartbeat().stampPath); err == nil {
+		t.Errorf("expected NO stamp file after failed ping, but found one at %s", getSharedHeartbeat().stampPath)
 	}
 
 	// Backdate the in-memory rate limit so the next call passes.
-	client.heartbeat.mu.Lock()
-	client.heartbeat.lastChecked = time.Now().Add(-2 * time.Hour)
-	client.heartbeat.mu.Unlock()
+	getSharedHeartbeat().mu.Lock()
+	getSharedHeartbeat().lastChecked = time.Now().Add(-2 * time.Hour)
+	getSharedHeartbeat().mu.Unlock()
 
 	// Swap mock to success and call again — should retry and now succeed.
 	successHits := atomic.Int32{}
@@ -318,7 +369,7 @@ func TestHeartbeat_PingFailure_StampNotWritten(t *testing.T) {
 	if got := successHits.Load(); got != 1 {
 		t.Errorf("expected retry to land 1 successful ping, got %d", got)
 	}
-	if _, err := os.Stat(client.heartbeat.stampPath); err != nil {
+	if _, err := os.Stat(getSharedHeartbeat().stampPath); err != nil {
 		t.Errorf("expected stamp file after successful retry, got error: %v", err)
 	}
 }

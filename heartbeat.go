@@ -60,6 +60,49 @@ func newHeartbeatState() *heartbeatState {
 	return &heartbeatState{stampPath: resolveStampPath()}
 }
 
+// sharedHeartbeat is the process-global heartbeat singleton. ALL AxonFlow
+// clients in this process consult the same gate, so concurrent NewClient
+// calls before any stamp exists coalesce onto a single ping (per the
+// "at most one anonymous heartbeat per environment" contract). Tests
+// override via replaceHeartbeatStateForTest.
+var (
+	sharedHeartbeat   = newHeartbeatState()
+	sharedHeartbeatMu sync.Mutex // guards swapping the singleton in tests
+)
+
+// getSharedHeartbeat returns the current process-global heartbeat state.
+// Reads are wrapped in the swap-mutex so a test that calls
+// replaceHeartbeatStateForTest concurrently with another test cannot tear
+// the pointer.
+func getSharedHeartbeat() *heartbeatState {
+	sharedHeartbeatMu.Lock()
+	defer sharedHeartbeatMu.Unlock()
+	return sharedHeartbeat
+}
+
+// replaceHeartbeatStateForTest installs a fresh heartbeat state at the
+// given stamp path (or "" for "no persistence"), returning the previous
+// instance so the caller can restore it on cleanup. Production code does
+// NOT call this — use only in tests.
+func replaceHeartbeatStateForTest(stampPath string) *heartbeatState {
+	sharedHeartbeatMu.Lock()
+	defer sharedHeartbeatMu.Unlock()
+	previous := sharedHeartbeat
+	sharedHeartbeat = &heartbeatState{stampPath: stampPath}
+	return previous
+}
+
+// restoreHeartbeatStateForTest restores a previously-saved state. Pair
+// with replaceHeartbeatStateForTest; typical use:
+//
+//	prev := replaceHeartbeatStateForTest(t.TempDir() + "/stamp")
+//	t.Cleanup(func() { restoreHeartbeatStateForTest(prev) })
+func restoreHeartbeatStateForTest(state *heartbeatState) {
+	sharedHeartbeatMu.Lock()
+	defer sharedHeartbeatMu.Unlock()
+	sharedHeartbeat = state
+}
+
 // readStampMtime returns the modification time of the stamp file, or the
 // zero time if the file is absent / unreadable / has no resolvable cache
 // dir. A zero return means "treat as never sent" — the caller should fire
@@ -129,7 +172,10 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 		return
 	}
 
-	h := c.heartbeat
+	// Process-global singleton — concurrent NewClient calls on the same
+	// machine coalesce onto a single ping per heartbeatInterval. See the
+	// sharedHeartbeat declaration above for the rationale.
+	h := getSharedHeartbeat()
 	now := time.Now()
 
 	h.mu.Lock()
