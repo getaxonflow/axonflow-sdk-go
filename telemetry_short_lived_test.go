@@ -131,7 +131,7 @@ func writeShortLivedBinary(dir, modRoot string) error {
 
 go 1.21
 
-require github.com/getaxonflow/axonflow-sdk-go/v7 v6.0.0-00010101000000-000000000000
+require github.com/getaxonflow/axonflow-sdk-go/v7 v7.0.0-00010101000000-000000000000
 
 replace github.com/getaxonflow/axonflow-sdk-go/v7 => ` + modRoot + `
 `
