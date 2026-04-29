@@ -404,7 +404,7 @@ func (c *AxonFlowClient) orchestratorPolicyRequest(method, path string, body int
 		log.Printf("[AxonFlow] Policy request: %s %s", method, path)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -463,7 +463,7 @@ func (c *AxonFlowClient) policyRequest(method, path string, body interface{}, re
 		log.Printf("[AxonFlow] Policy request: %s %s", method, path)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -511,7 +511,7 @@ func (c *AxonFlowClient) policyRequestRaw(method, path string) ([]byte, error) {
 		log.Printf("[AxonFlow] Raw policy request: %s %s", method, path)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

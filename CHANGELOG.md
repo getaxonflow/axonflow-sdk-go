@@ -17,9 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The one-line `[AxonFlow] DO_NOT_TRACK=1 is deprecated...` `log.Printf` warning is no longer emitted. Removing the warning eliminates log noise that previously appeared on every `NewClient` call when `DO_NOT_TRACK=1` was set.
 
+### Changed
+
+- **Telemetry now follows the 7-day delivered-heartbeat contract** instead of firing on every `NewClient` call. The SDK emits at most one anonymous heartbeat per environment every 7 days during SDK activity. A stamp file at the OS-native user cache dir (`os.UserCacheDir() / axonflow / go-telemetry-last-sent`) tracks last successful delivery; the file mtime is the source of truth across process restarts. Failed POSTs do NOT advance the stamp, so a transient network failure does not silence telemetry for 7 days. An in-memory 1-hour cache caps stat() syscalls on hot paths; an in-flight flag coalesces concurrent goroutines so only one ping fires under load. `AXONFLOW_TELEMETRY=off` is re-evaluated on every gate run, so a mid-process opt-out toggle takes effect without restart. Lambda / restricted environments where `os.UserCacheDir()` is unavailable fall back transparently to the previous "one ping per process" behavior — no regression for that runtime.
+
 ### CI / development
 
 - Test harness (`main_test.go` `TestMain`) and CI workflows (`test.yml`, `release.yml`, `integration.yml`) now use `AXONFLOW_TELEMETRY=off` to suppress telemetry during automated runs.
+- Subprocess-based regression test (`telemetry_short_lived_test.go`) now isolates `HOME` / `XDG_CACHE_HOME` so a previous run's stamp file doesn't suppress the next run's expected ping.
 
 
 ## [6.0.0] - 2026-04-28 — ListProviders() + SDKCompatibility wire-shape fix

@@ -89,7 +89,7 @@ func (c *AxonFlowClient) ExplainDecision(ctx context.Context, decisionID string)
 	httpReq.Header.Set("Accept", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("explain request failed: %w", err)
 	}
