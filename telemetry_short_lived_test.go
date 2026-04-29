@@ -131,9 +131,9 @@ func writeShortLivedBinary(dir, modRoot string) error {
 
 go 1.21
 
-require github.com/getaxonflow/axonflow-sdk-go/v6 v6.0.0-00010101000000-000000000000
+require github.com/getaxonflow/axonflow-sdk-go/v7 v6.0.0-00010101000000-000000000000
 
-replace github.com/getaxonflow/axonflow-sdk-go/v6 => ` + modRoot + `
+replace github.com/getaxonflow/axonflow-sdk-go/v7 => ` + modRoot + `
 `
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		return err
@@ -141,7 +141,7 @@ replace github.com/getaxonflow/axonflow-sdk-go/v6 => ` + modRoot + `
 	main := `package main
 
 import (
-	axonflow "github.com/getaxonflow/axonflow-sdk-go/v6"
+	axonflow "github.com/getaxonflow/axonflow-sdk-go/v7"
 )
 
 func main() {

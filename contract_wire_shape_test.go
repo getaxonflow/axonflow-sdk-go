@@ -44,7 +44,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v6/internal/wireshape"
+	"github.com/getaxonflow/axonflow-sdk-go/v7/internal/wireshape"
 )
 
 // ExcludedTypes names struct types that legitimately do not participate

@@ -5,21 +5,18 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [7.0.0] - 2026-04-29 — DO_NOT_TRACK removal
 
-### Removed
+Major release. The single breaking change is the removal of `DO_NOT_TRACK` as an AxonFlow telemetry opt-out — `AXONFLOW_TELEMETRY=off` is now the canonical and only opt-out signal. Companion releases on the same day: TypeScript v7.0.0 / Python v7.0.0 / Java v7.0.0.
 
-- **BREAKING:** `DO_NOT_TRACK` is no longer honored as an AxonFlow telemetry opt-out. Use `AXONFLOW_TELEMETRY=off` instead.
+### BREAKING
 
-  `DO_NOT_TRACK` was deprecated because it is commonly inherited from host tools and developer environments (CLIs like Codex and Claude Code inject it unconditionally), which makes it an unreliable expression of user intent for AxonFlow telemetry.
+- **Module import path is now `github.com/getaxonflow/axonflow-sdk-go/v7`** (was `/v6`). Required by Go's semantic-import versioning rule for any module at v2+. To upgrade: `go get github.com/getaxonflow/axonflow-sdk-go/v7@latest` and update every import statement from `/v6` → `/v7`. No symbol-level changes from the path migration itself.
+- **`DO_NOT_TRACK` is no longer honored as an AxonFlow telemetry opt-out.** Use `AXONFLOW_TELEMETRY=off` instead. `DO_NOT_TRACK` was deprecated because it is commonly inherited from host tools and developer environments (CLIs like Codex and Claude Code inject it unconditionally), which makes it an unreliable expression of user intent for AxonFlow telemetry.
 
 ### Fixed
 
 - The one-line `[AxonFlow] DO_NOT_TRACK=1 is deprecated...` `log.Printf` warning is no longer emitted. Removing the warning eliminates log noise that previously appeared on every `NewClient` call when `DO_NOT_TRACK=1` was set.
-
-### CI / development
-
-- Test harness (`main_test.go` `TestMain`) and CI workflows (`test.yml`, `release.yml`, `integration.yml`) now use `AXONFLOW_TELEMETRY=off` to suppress telemetry during automated runs.
 
 
 ## [6.0.0] - 2026-04-28 — ListProviders() + SDKCompatibility wire-shape fix

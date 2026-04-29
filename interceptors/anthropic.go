@@ -4,8 +4,8 @@
 //
 //	import (
 //		"github.com/anthropics/anthropic-sdk-go"
-//		"github.com/getaxonflow/axonflow-sdk-go/v6"
-//		"github.com/getaxonflow/axonflow-sdk-go/v6/interceptors"
+//		"github.com/getaxonflow/axonflow-sdk-go/v7"
+//		"github.com/getaxonflow/axonflow-sdk-go/v7/interceptors"
 //	)
 //
 //	client := anthropic.NewClient()
@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v6"
+	"github.com/getaxonflow/axonflow-sdk-go/v7"
 )
 
 // AnthropicContentBlock represents a content block in an Anthropic message
