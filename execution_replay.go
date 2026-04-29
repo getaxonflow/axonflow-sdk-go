@@ -162,7 +162,7 @@ func (c *AxonFlowClient) ListExecutions(options *ListExecutionsOptions) (*ListEx
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list executions: %w", err)
 	}
@@ -210,7 +210,7 @@ func (c *AxonFlowClient) GetExecution(executionID string) (*ExecutionDetail, err
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution: %w", err)
 	}
@@ -262,7 +262,7 @@ func (c *AxonFlowClient) GetExecutionSteps(executionID string) ([]ExecutionSnaps
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution steps: %w", err)
 	}
@@ -317,7 +317,7 @@ func (c *AxonFlowClient) GetExecutionTimeline(executionID string) ([]TimelineEnt
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution timeline: %w", err)
 	}
@@ -392,7 +392,7 @@ func (c *AxonFlowClient) ExportExecution(executionID string, options *ExecutionE
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export execution: %w", err)
 	}
@@ -444,7 +444,7 @@ func (c *AxonFlowClient) DeleteExecution(executionID string) error {
 	}
 	c.addAuthHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("failed to delete execution: %w", err)
 	}

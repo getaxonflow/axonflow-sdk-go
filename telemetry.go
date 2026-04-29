@@ -174,24 +174,36 @@ func (c *AxonFlowClient) isTelemetryEnabled() bool {
 	return c.config.Mode != "sandbox"
 }
 
-// sendTelemetryPing sends a synchronous telemetry ping to the checkpoint
-// service under a single shared context deadline covering both the /health
-// probe and the checkpoint POST. Never returns an error — all failures are
-// silently ignored. In debug mode, a version-outdated warning may be logged.
-//
-// Previously invoked as a goroutine (`go client.sendTelemetryPing()`), but
-// short-lived processes (CLI, serverless, quickstart scripts) returned from
-// main() before the goroutine's POST could complete, silently dropping the
-// ping. The function is now called synchronously from NewClient.
-//
-// Worst-case blocking time: telemetryTimeout (3s). Both detectPlatformVersion
-// and the checkpoint POST share the same context, so the individual
-// timeouts no longer stack. See issue #1693.
+// sendTelemetryPing is a thin compatibility wrapper around the gated path
+// used exclusively by older unit tests in this package. It checks
+// isTelemetryEnabled and, if enabled, sends a single ping via
+// sendTelemetryPingNow under a bounded context. It does NOT consult the
+// 7-day stamp file — that's the heartbeat orchestrator's job
+// (maybeSendHeartbeat). Production callers should always go through
+// NewClient → maybeSendHeartbeat instead of calling this directly.
 func (c *AxonFlowClient) sendTelemetryPing() {
 	if !c.isTelemetryEnabled() {
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
+	defer cancel()
+	_ = c.sendTelemetryPingNow(ctx)
+}
 
+// sendTelemetryPingNow sends a single telemetry ping to the checkpoint
+// service under the caller-provided context deadline. Returns nil if the
+// POST landed (HTTP 2xx) or a non-nil error otherwise. The caller is
+// responsible for the gating decision (whether to send at all) — this
+// function does NOT consult AXONFLOW_TELEMETRY, isTelemetryEnabled, the
+// stamp file, or any rate-limit state. That separation lets the heartbeat
+// orchestrator (maybeSendHeartbeat) make the gating decision once and
+// only update the stamp when this returns nil — implementing the
+// "stamp-on-delivery" contract.
+//
+// The /health probe and the checkpoint POST share the caller's context so
+// the total blocking time is bounded by ctx — no stacked sub-timeouts.
+// See issue #1693 for the original short-lived-process delivery fix.
+func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	log.Printf("[AxonFlow] Anonymous telemetry enabled. Opt out: AXONFLOW_TELEMETRY=off | https://docs.getaxonflow.com/docs/telemetry")
 
 	// Determine the checkpoint URL.
@@ -205,14 +217,6 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 	if deploymentMode == "" {
 		deploymentMode = "production"
 	}
-
-	// Single shared deadline covering the ENTIRE telemetry path (health
-	// probe + checkpoint POST). Without this, the /health GET and the
-	// checkpoint POST each had their own timeout (2s + 3s), stacking into
-	// ~5s of potential blocking on NewClient when endpoints are
-	// unreachable — defeating the "bounded at telemetryTimeout" guarantee.
-	ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
-	defer cancel()
 
 	// Detect platform version from health endpoint (uses the shared deadline).
 	platformVersion := detectPlatformVersion(ctx, c.config.Endpoint)
@@ -232,33 +236,35 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return
+		return err
 	}
 
 	// POST uses whatever budget remains after the health probe.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, checkpointURL, bytes.NewReader(body))
 	if err != nil {
-		return
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Timeout: telemetryTimeout,
-	}
-
+	client := &http.Client{Timeout: telemetryTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return
+		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("checkpoint returned HTTP %d", resp.StatusCode)
+	}
 
 	// Parse response for version check (debug mode only).
 	if c.config.Debug {
 		var telResp telemetryResponse
-		if err := json.NewDecoder(resp.Body).Decode(&telResp); err == nil {
+		if decErr := json.NewDecoder(resp.Body).Decode(&telResp); decErr == nil {
 			if telResp.LatestVersion != "" && telResp.LatestVersion != Version {
 				log.Printf("[AxonFlow] A newer SDK version is available: %s (current: %s)", telResp.LatestVersion, Version)
 			}
 		}
 	}
+	return nil
 }

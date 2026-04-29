@@ -84,10 +84,18 @@ func TestTelemetryDeliveryOnShortLivedProcess(t *testing.T) {
 	// Run the binary, no wait, no sleep. Point telemetry at the mock server.
 	// Inherit parent env so the test works on any CI runner / shell, but
 	// scrub the two opt-out vars that might otherwise disable telemetry
-	// (e.g. a developer shell with DO_NOT_TRACK=1 exported globally).
+	// (e.g. a developer shell with DO_NOT_TRACK=1 exported globally) and
+	// pin HOME to a fresh temp dir so the heartbeat stamp file doesn't
+	// inherit any previous run's mtime — the stamp lives under
+	// `os.UserCacheDir() / axonflow /` and a stale stamp from a prior
+	// invocation would silence this run's ping (regression-test for the
+	// 7-day delivered-heartbeat contract).
+	telemetryHome := t.TempDir()
 	runCmd := exec.Command(binPath)
 	runCmd.Env = append(filterOptOutEnv(os.Environ()),
 		"AXONFLOW_CHECKPOINT_URL="+server.URL+"/v1/ping",
+		"HOME="+telemetryHome,
+		"XDG_CACHE_HOME="+filepath.Join(telemetryHome, ".cache"),
 	)
 	if out, err := runCmd.CombinedOutput(); err != nil {
 		t.Fatalf("binary run failed: %v\n%s", err, out)

@@ -56,6 +56,10 @@ type AxonFlowClient struct {
 	mapHttpClient *http.Client // Separate client with longer timeout for MAP operations
 	cache         *cache
 	sessionCookie string // Session cookie for Customer Portal authentication
+	// heartbeat gates the 7-day "at most one anonymous heartbeat per
+	// environment per heartbeatInterval during SDK activity" telemetry
+	// contract. Initialized in NewClient. Always non-nil after construction.
+	heartbeat *heartbeatState
 }
 
 // ============================================================================
@@ -659,6 +663,7 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 			Timeout:   config.MapTimeout,
 			Transport: uaTransport,
 		},
+		heartbeat: newHeartbeatState(),
 	}
 
 	if config.Cache.Enabled {
@@ -669,19 +674,16 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 		log.Printf("[AxonFlow] Client initialized - Mode: %s, Endpoint: %s, MapTimeout: %v", config.Mode, config.Endpoint, config.MapTimeout)
 	}
 
-	// Send telemetry ping synchronously with a bounded timeout.
+	// Telemetry heartbeat: at most one anonymous ping per machine per 7 days,
+	// gated by SDK activity. NewClient runs the gate synchronously so a fresh
+	// install on a short-lived process (CLI, serverless cold-start, quickstart)
+	// still delivers the first ping before main() returns. Subsequent gate runs
+	// (from doHttpRequest) are async. Total NewClient blocking is bounded at
+	// telemetryTimeout (3s) and only fires when the stamp is stale or absent —
+	// typical re-runs are sub-millisecond.
 	//
-	// A goroutine here would be fire-and-forget in theory, but in practice any
-	// short-lived process (CLI binary, serverless handler, quickstart snippet,
-	// cold-start function) returns from main() before the goroutine's HTTP
-	// POST completes, silently dropping the ping. See issue #1693.
-	//
-	// sendTelemetryPing runs the health probe and the checkpoint POST under a
-	// single shared context.WithTimeout(telemetryTimeout) so the total
-	// blocking time on NewClient is bounded at ~telemetryTimeout (3s),
-	// regardless of whether endpoints are reachable. Typical is ~350ms warm
-	// / ~1.3s cold.
-	client.sendTelemetryPing()
+	// See heartbeat.go for the full algorithm and stamp-on-delivery semantics.
+	client.maybeSendHeartbeat()
 
 	return client
 }
@@ -931,7 +933,7 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 	}
 
 	startTime := time.Now()
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -1054,7 +1056,11 @@ func (c *AxonFlowClient) isAxonFlowError(err error) bool {
 
 // HealthCheck checks if AxonFlow Agent is healthy
 func (c *AxonFlowClient) HealthCheck() error {
-	resp, err := c.httpClient.Get(c.config.Endpoint + "/health")
+	req, err := http.NewRequest(http.MethodGet, c.config.Endpoint+"/health", nil)
+	if err != nil {
+		return fmt.Errorf("health check request build failed: %w", err)
+	}
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
 	}
@@ -1155,7 +1161,7 @@ func (c *AxonFlowClient) HealthCheckDetailed() (*HealthResponse, error) {
 		return nil, fmt.Errorf("creating health request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("health check request failed: %w", err)
 	}
@@ -1341,7 +1347,7 @@ func (c *AxonFlowClient) ListProvidersPaged(ctx context.Context, opts *ListProvi
 	}
 	c.addAuthHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("list providers request failed: %w", err)
 	}
@@ -1403,7 +1409,7 @@ func (c *AxonFlowClient) ListConnectors() ([]ConnectorMetadata, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list connectors: %w", err)
 	}
@@ -1438,7 +1444,7 @@ func (c *AxonFlowClient) GetConnector(connectorID string) (*ConnectorMetadata, e
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connector: %w", err)
 	}
@@ -1473,7 +1479,7 @@ func (c *AxonFlowClient) GetConnectorHealth(connectorID string) (*ConnectorHealt
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connector health: %w", err)
 	}
@@ -1517,7 +1523,7 @@ func (c *AxonFlowClient) InstallConnector(req ConnectorInstallRequest) error {
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return fmt.Errorf("install request failed: %w", err)
 	}
@@ -1545,7 +1551,7 @@ func (c *AxonFlowClient) UninstallConnector(connectorName string) error {
 
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return fmt.Errorf("uninstall request failed: %w", err)
 	}
@@ -1830,7 +1836,7 @@ func (c *AxonFlowClient) executeMapRequest(req ClientRequest) (*ClientResponse, 
 	}
 
 	startTime := time.Now()
-	resp, err := c.mapHttpClient.Do(httpReq) // Use mapHttpClient with longer timeout
+	resp, err := c.doHttpRequest(c.mapHttpClient, httpReq) // Use mapHttpClient with longer timeout
 	if err != nil {
 		return nil, fmt.Errorf("MAP request failed: %w", err)
 	}
@@ -2004,7 +2010,7 @@ func (c *AxonFlowClient) GetPlanStatus(planID string) (*PlanExecutionResponse, e
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	c.addAuthHeaders(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan status: %w", err)
 	}
@@ -2055,7 +2061,7 @@ func (c *AxonFlowClient) CancelPlan(planID string, reason ...string) (*CancelPla
 		log.Printf("[AxonFlow] Cancelling plan: %s", planID)
 	}
 
-	resp, err := c.mapHttpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.mapHttpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("cancel plan request failed: %w", err)
 	}
@@ -2104,7 +2110,7 @@ func (c *AxonFlowClient) UpdatePlan(planID string, req UpdatePlanRequest) (*Upda
 		log.Printf("[AxonFlow] Updating plan: %s (expected version: %d)", planID, req.ExpectedVersion)
 	}
 
-	resp, err := c.mapHttpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.mapHttpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("update plan request failed: %w", err)
 	}
@@ -2151,7 +2157,7 @@ func (c *AxonFlowClient) GetPlanVersions(planID string) (*PlanVersionsResponse, 
 		log.Printf("[AxonFlow] Getting plan versions: %s", planID)
 	}
 
-	resp, err := c.mapHttpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.mapHttpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("get plan versions request failed: %w", err)
 	}
@@ -2209,7 +2215,7 @@ func (c *AxonFlowClient) ResumePlan(planID string, approved ...bool) (*ResumePla
 		log.Printf("[AxonFlow] Resuming plan: %s (approved: %v)", planID, isApproved)
 	}
 
-	resp, err := c.mapHttpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.mapHttpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("resume plan request failed: %w", err)
 	}
@@ -2251,7 +2257,7 @@ func (c *AxonFlowClient) RollbackPlan(planID string, targetVersion int) (*Rollba
 		log.Printf("[AxonFlow] Rolling back plan: %s to version %d", planID, targetVersion)
 	}
 
-	resp, err := c.mapHttpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.mapHttpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("rollback plan request failed: %w", err)
 	}
@@ -2433,7 +2439,7 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 		log.Printf("[AxonFlow] Gateway Mode: Pre-check for query: %s", query[:min(50, len(query))])
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("pre-check request failed: %w", err)
 	}
@@ -2578,7 +2584,7 @@ func (c *AxonFlowClient) AuditLLMCall(
 			contextID, provider, model)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("audit request failed: %w", err)
 	}
@@ -2725,7 +2731,7 @@ func (c *AxonFlowClient) LoginToPortal(orgID, password string) (*PortalLoginResp
 		log.Printf("[AxonFlow] Portal login for org: %s", orgID)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("login request failed: %w", err)
 	}
@@ -2788,7 +2794,7 @@ func (c *AxonFlowClient) LogoutFromPortal() error {
 		Value: c.sessionCookie,
 	})
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("logout request failed: %w", err)
 	}
@@ -2828,7 +2834,7 @@ func (c *AxonFlowClient) makePolicyCheckRequest(ctx context.Context, fullURL str
 		log.Printf("[AxonFlow] Policy check request: POST %s", fullURL)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -2877,7 +2883,7 @@ func (c *AxonFlowClient) makeJSONRequest(ctx context.Context, method, fullURL st
 		log.Printf("[AxonFlow] JSON request: %s %s", method, fullURL)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
