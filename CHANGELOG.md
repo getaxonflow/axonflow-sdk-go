@@ -14,15 +14,15 @@ Major release across the AxonFlow SDK family. Companion releases ship the same d
 ### BREAKING
 
 - **Module import path is now `github.com/getaxonflow/axonflow-sdk-go/v7`** (was `/v6`). Required by Go's semantic-import versioning rule for any module at v2+. To upgrade: `go get github.com/getaxonflow/axonflow-sdk-go/v7@latest` and update every import statement from `/v6` → `/v7`. No symbol-level changes from the path migration itself.
-- **`DO_NOT_TRACK` is no longer honored as an AxonFlow telemetry opt-out.** Use `AXONFLOW_TELEMETRY=off` instead. `DO_NOT_TRACK` was deprecated because it is commonly inherited from host tools and developer environments (CLIs like Codex and Claude Code inject it unconditionally), which makes it an unreliable expression of user intent for AxonFlow telemetry.
+- **`DO_NOT_TRACK` is no longer honored as an AxonFlow telemetry opt-out.** Use `AXONFLOW_TELEMETRY=off` instead. Host tools and CLIs commonly inject `DO_NOT_TRACK=1` regardless of user intent, which makes it unreliable as a signal.
 
 ### Changed
 
-- **Telemetry now follows the 7-day delivered-heartbeat contract** instead of firing on every `NewClient` call. The SDK emits at most one anonymous heartbeat per environment every 7 days during SDK activity. A stamp file at the OS-native user cache dir (`os.UserCacheDir() / axonflow / go-telemetry-last-sent`) tracks last successful delivery; the file mtime is the source of truth across process restarts. Failed POSTs do NOT advance the stamp, so a transient network failure does not silence telemetry for 7 days. An in-memory 1-hour cache caps `stat()` syscalls on hot paths; an in-flight flag coalesces concurrent goroutines so only one ping fires under load. `AXONFLOW_TELEMETRY=off` is re-evaluated on every gate run, so a mid-process opt-out toggle takes effect without restart. Lambda / restricted environments where `os.UserCacheDir()` is unavailable fall back transparently to the previous "one ping per process" behavior — no regression for that runtime.
+- **Telemetry switched to a 7-day delivered-heartbeat.** At most one anonymous ping per environment every 7 days, with the stamp advanced only after the POST returns 2xx — a transient network failure doesn't silence telemetry until the next window. Concurrent goroutines are de-duplicated by an in-flight gate. Restricted runtimes where `os.UserCacheDir()` is unavailable (e.g. AWS Lambda) fall back transparently to the previous "one ping per process" behavior.
 
 ### Fixed
 
-- The one-line `[AxonFlow] DO_NOT_TRACK=1 is deprecated...` `log.Printf` warning is no longer emitted. Removing the warning eliminates log noise that previously appeared on every `NewClient` call when `DO_NOT_TRACK=1` was set.
+- The `DO_NOT_TRACK=1 is deprecated...` `log.Printf` warning is no longer emitted on every `NewClient` call when `DO_NOT_TRACK=1` is set.
 
 ## [6.0.0] - 2026-04-28 — ListProviders() + SDKCompatibility wire-shape fix
 
