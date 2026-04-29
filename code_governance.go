@@ -256,7 +256,7 @@ func (c *AxonFlowClient) portalRequest(method, path string, body interface{}, re
 		log.Printf("[AxonFlow] Portal request: %s %s", method, path)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -309,7 +309,7 @@ func (c *AxonFlowClient) portalRequestRaw(method, path string) ([]byte, error) {
 		Value: c.sessionCookie,
 	})
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doHttpRequest(c.httpClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

@@ -285,7 +285,7 @@ func (c *AxonFlowClient) SearchAuditLogs(ctx context.Context, req *AuditSearchRe
 		log.Printf("[AxonFlow] Audit search - Limit: %d, Offset: %d", req.Limit, req.Offset)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("audit search request failed: %w", err)
 	}
@@ -390,7 +390,7 @@ func (c *AxonFlowClient) GetAuditLogsByTenant(ctx context.Context, tenantID stri
 		log.Printf("[AxonFlow] Get audit logs for tenant: %s (limit: %d, offset: %d)", tenantID, limit, offset)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("tenant audit request failed: %w", err)
 	}

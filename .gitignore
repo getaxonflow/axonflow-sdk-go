@@ -59,3 +59,7 @@ CLAUDE.md.backup-*
 .codex/
 .worktrees/
 coverage.txt
+
+# Heartbeat real-stack smoke build artifact
+tests/heartbeat-real-stack/smoke_go
+tests/heartbeat-real-stack/smoke_go.exe

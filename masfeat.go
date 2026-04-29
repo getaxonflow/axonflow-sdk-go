@@ -386,7 +386,7 @@ func (c *AxonFlowClient) MASFEATRegisterSystem(req *RegisterSystemRequest) (*AIS
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("register system request failed: %w", err)
 	}
@@ -423,7 +423,7 @@ func (c *AxonFlowClient) MASFEATGetSystem(systemID string) (*AISystemRegistry, e
 	}
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("get system request failed: %w", err)
 	}
@@ -463,7 +463,7 @@ func (c *AxonFlowClient) MASFEATUpdateSystem(systemID string, req *UpdateSystemR
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("update system request failed: %w", err)
 	}
@@ -517,7 +517,7 @@ func (c *AxonFlowClient) MASFEATListSystems(opts *ListSystemsOptions) ([]AISyste
 	}
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("list systems request failed: %w", err)
 	}
@@ -559,7 +559,7 @@ func (c *AxonFlowClient) MASFEATActivateSystem(systemID string) (*AISystemRegist
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("activate system request failed: %w", err)
 	}
@@ -595,7 +595,7 @@ func (c *AxonFlowClient) MASFEATRetireSystem(systemID string) (*AISystemRegistry
 		return nil, fmt.Errorf("failed to create retire system request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("retire system request failed: %w", err)
 	}
@@ -628,7 +628,7 @@ func (c *AxonFlowClient) MASFEATGetRegistrySummary() (*RegistrySummary, error) {
 	}
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("get registry summary request failed: %w", err)
 	}
@@ -672,7 +672,7 @@ func (c *AxonFlowClient) MASFEATCreateAssessment(req *CreateAssessmentRequest) (
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("create assessment request failed: %w", err)
 	}
@@ -709,7 +709,7 @@ func (c *AxonFlowClient) MASFEATGetAssessment(assessmentID string) (*FEATAssessm
 	}
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("get assessment request failed: %w", err)
 	}
@@ -749,7 +749,7 @@ func (c *AxonFlowClient) MASFEATUpdateAssessment(assessmentID string, req *Updat
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("update assessment request failed: %w", err)
 	}
@@ -800,7 +800,7 @@ func (c *AxonFlowClient) MASFEATListAssessments(opts *ListAssessmentsOptions) ([
 	}
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("list assessments request failed: %w", err)
 	}
@@ -835,7 +835,7 @@ func (c *AxonFlowClient) MASFEATSubmitAssessment(assessmentID string) (*FEATAsse
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("submit assessment request failed: %w", err)
 	}
@@ -879,7 +879,7 @@ func (c *AxonFlowClient) MASFEATApproveAssessment(assessmentID string, req *Appr
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("approve assessment request failed: %w", err)
 	}
@@ -923,7 +923,7 @@ func (c *AxonFlowClient) MASFEATRejectAssessment(assessmentID string, req *Rejec
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("reject assessment request failed: %w", err)
 	}
@@ -960,7 +960,7 @@ func (c *AxonFlowClient) MASFEATGetKillSwitch(systemID string) (*KillSwitch, err
 	}
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("get kill switch request failed: %w", err)
 	}
@@ -1000,7 +1000,7 @@ func (c *AxonFlowClient) MASFEATConfigureKillSwitch(systemID string, req *Config
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("configure kill switch request failed: %w", err)
 	}
@@ -1044,7 +1044,7 @@ func (c *AxonFlowClient) MASFEATCheckKillSwitch(systemID string, req *CheckKillS
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("check kill switch request failed: %w", err)
 	}
@@ -1088,7 +1088,7 @@ func (c *AxonFlowClient) MASFEATTriggerKillSwitch(systemID string, req *TriggerK
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("trigger kill switch request failed: %w", err)
 	}
@@ -1143,7 +1143,7 @@ func (c *AxonFlowClient) MASFEATRestoreKillSwitch(systemID string, req *RestoreK
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("restore kill switch request failed: %w", err)
 	}
@@ -1193,7 +1193,7 @@ func (c *AxonFlowClient) MASFEATEnableKillSwitch(systemID string) (*KillSwitch, 
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("enable kill switch request failed: %w", err)
 	}
@@ -1231,7 +1231,7 @@ func (c *AxonFlowClient) MASFEATDisableKillSwitch(systemID string, reason string
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("disable kill switch request failed: %w", err)
 	}
@@ -1267,7 +1267,7 @@ func (c *AxonFlowClient) MASFEATGetKillSwitchHistory(systemID string, limit int)
 	}
 	c.addAuthHeaders(httpReq)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("get kill switch history request failed: %w", err)
 	}
