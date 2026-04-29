@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING:** `DO_NOT_TRACK` is no longer honored as an AxonFlow telemetry opt-out. Use `AXONFLOW_TELEMETRY=off` instead.
+
+  `DO_NOT_TRACK` was deprecated because it is commonly inherited from host tools and developer environments (CLIs like Codex and Claude Code inject it unconditionally), which makes it an unreliable expression of user intent for AxonFlow telemetry.
+
+### Fixed
+
+- The one-line `[AxonFlow] DO_NOT_TRACK=1 is deprecated...` `log.Printf` warning is no longer emitted. Removing the warning eliminates log noise that previously appeared on every `NewClient` call when `DO_NOT_TRACK=1` was set.
+
+### CI / development
+
+- Test harness (`main_test.go` `TestMain`) and CI workflows (`test.yml`, `release.yml`, `integration.yml`) now use `AXONFLOW_TELEMETRY=off` to suppress telemetry during automated runs.
+
+
 ## [6.0.0] - 2026-04-28 — ListProviders() + SDKCompatibility wire-shape fix
 
 Major release. The breaking change is `SDKCompatibility.MinSDKVersion` and `RecommendedSDKVersion` moving from `string` to `map[string]string` to match the real on-the-wire shape the platform has been returning since v4.8.0. Coordinated cycle: TypeScript v6.2.0 / Python v6.9.0 / Java v6.2.0 ship same day as minors.
