@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -37,10 +38,11 @@ var (
 // Concurrent goroutines crossing the boundary are coalesced via inFlight
 // so we send at most one POST, not one per goroutine.
 type heartbeatState struct {
-	mu          sync.Mutex
-	lastChecked time.Time // last wall-clock instant the gate ran
-	inFlight    bool      // true while a ping POST is in progress
-	stampPath   string    // empty when no user cache dir is available
+	mu               sync.Mutex
+	lastChecked      time.Time // last wall-clock instant the gate ran (read under mu)
+	lastCheckedNanos atomic.Int64 // mirror of lastChecked.UnixNano(), for lock-free pre-check on the request hot path
+	inFlight         bool      // true while a ping POST is in progress
+	stampPath        string    // empty when no user cache dir is available
 }
 
 // resolveStampPath returns the OS-native path to the SDK's heartbeat stamp
@@ -188,6 +190,7 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 		return
 	}
 	h.lastChecked = now
+	h.lastCheckedNanos.Store(now.UnixNano())
 
 	if mtime := h.readStampMtime(); !mtime.IsZero() && now.Sub(mtime) < heartbeatInterval {
 		h.mu.Unlock()
@@ -201,21 +204,40 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 	defer cancel()
 	err := c.sendTelemetryPingNow(ctx)
 
+	// Clear inFlight first so other callers can fast-path through, then do
+	// the stamp write OUTSIDE the lock — os.Rename + tmp file IO are
+	// blocking and would otherwise serialize concurrent gate runs through
+	// disk syscalls.
 	h.mu.Lock()
 	h.inFlight = false
+	h.mu.Unlock()
 	if err == nil {
 		if writeErr := h.writeStampAtomic(time.Now()); writeErr != nil && c.config.Debug {
 			log.Printf("[AxonFlow] heartbeat stamp write failed: %v", writeErr)
 		}
 	}
-	h.mu.Unlock()
 }
 
 // maybeSendHeartbeatAsync schedules maybeSendHeartbeat on a goroutine so
 // it never blocks the caller. Used by the doHttpRequest middleware to
 // keep user API calls latency-free; NewClient still calls maybeSendHeartbeat
 // synchronously to preserve issue #1693 short-lived-process delivery.
+//
+// Hot-path pre-check: on a service handling 10k req/s with a fresh stamp,
+// every request would otherwise spawn a goroutine that does a single
+// mutex acquire + cache compare + return. The atomic load of
+// lastCheckedNanos lets us skip the spawn entirely when we know the
+// 1-hour cache is still warm — bringing per-request overhead from
+// "goroutine + mutex" to "single atomic load".
 func (c *AxonFlowClient) maybeSendHeartbeatAsync() {
+	if !c.isTelemetryEnabled() {
+		return
+	}
+	h := getSharedHeartbeat()
+	if last := h.lastCheckedNanos.Load(); last != 0 &&
+		time.Since(time.Unix(0, last)) < heartbeatGuardInterval {
+		return
+	}
 	go c.maybeSendHeartbeat()
 }
 

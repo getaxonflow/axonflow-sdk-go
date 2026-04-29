@@ -1,0 +1,48 @@
+name: heartbeat-real-stack
+
+# Real-stack heartbeat E2E across Linux + Windows + macOS. Stands up a
+# localhost fake checkpoint server, constructs the SDK through its
+# public API, verifies (a) the OS-native stamp file appears, (b) the
+# checkpoint endpoint received exactly one ping, (c) a second
+# invocation does NOT re-fire (warm-cache regression).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AXONFLOW_TELEMETRY: 'off'
+
+jobs:
+  real-stack:
+    name: real-stack ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Python (for harness driver)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build smoke binary
+        working-directory: tests/heartbeat-real-stack
+        run: |
+          go mod tidy
+          go build -o smoke_go ./smoke_go.go
+        shell: bash
+
+      - name: Run real-stack heartbeat E2E (cold + warm)
+        run: python tests/heartbeat-real-stack/run_real_stack.py tests/heartbeat-real-stack/smoke_go${{ runner.os == 'Windows' && '.exe' || '' }}
