@@ -650,8 +650,9 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	}
 
 	uaTransport := &userAgentRoundTripper{
-		inner:     transport,
-		userAgent: "axonflow-sdk-go/" + Version,
+		inner:        transport,
+		userAgent:    "axonflow-sdk-go/" + Version,
+		clientHeader: "sdk-go/" + Version,
 	}
 
 	client := &AxonFlowClient{
