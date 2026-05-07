@@ -5,10 +5,12 @@ package axonflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -112,4 +114,174 @@ func (c *AxonFlowClient) ExplainDecision(ctx context.Context, decisionID string)
 		return nil, fmt.Errorf("failed to decode explain response: %w", err)
 	}
 	return &out, nil
+}
+
+// ============================================================================
+// list_decisions — Session γ (#1982)
+// ============================================================================
+
+// DecisionSummary is the slim 5-field row returned by ListDecisions.
+// PolicyID and ToolSignature are omitempty because pre-α1 audit rows
+// + dynamic-only blocks may not populate them. Additive new fields
+// land via omitempty per ADR-043 §"Versioning" (non-breaking).
+//
+// Cross-SDK parity:
+//
+//	Python: axonflow-sdk-python/axonflow/decisions.py (DecisionSummary)
+//	TS:     axonflow-sdk-typescript/src/types/decisions.ts (DecisionSummary)
+//	Java:   .../sdk/types/DecisionSummary.java
+//	Rust:   axonflow-sdk-rust/src/types/decisions.rs (DecisionSummary)
+type DecisionSummary struct {
+	DecisionID    string    `json:"decision_id"`
+	Timestamp     time.Time `json:"timestamp"`
+	Decision      string    `json:"decision"` // "allow"|"deny"|"require_approval"
+	PolicyID      string    `json:"policy_id,omitempty"`
+	ToolSignature string    `json:"tool_signature,omitempty"`
+}
+
+// ListDecisionsOptions carries the 5 optional filters for ListDecisions.
+// Zero / empty values are omitted from the URL so the platform applies
+// its tier-default page. Limit=0 means "use the tier default"; pass
+// the value you want explicitly.
+type ListDecisionsOptions struct {
+	Since         time.Time
+	Decision      string // allow|deny|require_approval
+	PolicyID      string
+	ToolSignature string
+	Limit         int
+}
+
+// UpgradeInfo is the V1 upgrade context inside a 429 envelope.
+// Mirrors the platform-side
+// feedback_429_no_upgrade_hint_is_conversion_gap.md contract.
+type UpgradeInfo struct {
+	Tier       string `json:"tier"`
+	Wording    string `json:"wording"`
+	CompareURL string `json:"compare_url"`
+	BuyURL     string `json:"buy_url"`
+}
+
+// RateLimitEnvelope is the parsed 429 body when ListDecisions hits a
+// tier cap. Surface via *RateLimitError so callers can branch on the
+// upgrade fields without re-parsing the body.
+type RateLimitEnvelope struct {
+	Error     string      `json:"error"`
+	LimitType string      `json:"limit_type"`
+	Tier      string      `json:"tier"`
+	Limit     int         `json:"limit"`
+	Remaining int         `json:"remaining"`
+	Upgrade   UpgradeInfo `json:"upgrade"`
+}
+
+// RateLimitError is the typed 429 surfaced when ListDecisions hits a
+// tier cap. Implements error and exposes the parsed RateLimitEnvelope
+// so callers can branch on Upgrade.{Tier,CompareURL,BuyURL} cleanly.
+//
+// Use errors.As(err, &rle) to extract from a wrapped error chain.
+type RateLimitError struct {
+	Envelope RateLimitEnvelope
+}
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("HTTP 429 (tier=%s, limit_type=%s): %s",
+		e.Envelope.Tier, e.Envelope.LimitType, e.Envelope.Error)
+}
+
+// ListDecisions returns recent policy decisions for the caller's tenant
+// (slim 5-field DecisionSummary rows). The platform applies a tier-gated
+// cap; passing a Limit above the cap yields *RateLimitError carrying the
+// V1 upgrade envelope. Filters compose; zero-valued fields are omitted
+// from the URL.
+//
+// Example:
+//
+//	decisions, err := client.ListDecisions(ctx, ListDecisionsOptions{
+//	    Decision: "deny",
+//	    Limit:    10,
+//	})
+//	var rle *RateLimitError
+//	if errors.As(err, &rle) {
+//	    fmt.Println("upgrade to:", rle.Envelope.Upgrade.BuyURL)
+//	}
+func (c *AxonFlowClient) ListDecisions(ctx context.Context, opts ListDecisionsOptions) ([]DecisionSummary, error) {
+	fullURL := c.config.Endpoint + "/api/v1/decisions"
+	if qs := buildListDecisionsQuery(opts); qs != "" {
+		fullURL += "?" + qs
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build list_decisions request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	c.addAuthHeaders(httpReq)
+
+	resp, err := c.doHttpRequest(c.httpClient, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("list_decisions request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read list_decisions response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		// Try to parse the V1 upgrade envelope. If the body changed
+		// shape we still surface the 429 — never silently succeed.
+		var env RateLimitEnvelope
+		if jerr := json.Unmarshal(body, &env); jerr == nil && env.LimitType != "" {
+			return nil, &RateLimitError{Envelope: env}
+		}
+		return nil, &httpError{statusCode: resp.StatusCode, message: string(body)}
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, &httpError{statusCode: resp.StatusCode, message: string(body)}
+	}
+
+	var envelope struct {
+		Decisions []DecisionSummary `json:"decisions"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("failed to decode list_decisions response: %w", err)
+	}
+	return envelope.Decisions, nil
+}
+
+// buildListDecisionsQuery serializes ListDecisionsOptions into a URL
+// query string. Zero-valued fields are omitted; field order is stable
+// so test mocks can match the URL exactly.
+func buildListDecisionsQuery(opts ListDecisionsOptions) string {
+	q := url.Values{}
+	if !opts.Since.IsZero() {
+		// Use UTC + RFC3339 — same wire format the explain endpoint
+		// emits on the server side.
+		q.Set("since", opts.Since.UTC().Format(time.RFC3339))
+	}
+	if opts.Decision != "" {
+		q.Set("decision", opts.Decision)
+	}
+	if opts.PolicyID != "" {
+		q.Set("policy_id", opts.PolicyID)
+	}
+	if opts.ToolSignature != "" {
+		q.Set("tool_signature", opts.ToolSignature)
+	}
+	if opts.Limit > 0 {
+		q.Set("limit", strconv.Itoa(opts.Limit))
+	}
+	return q.Encode()
+}
+
+// AsRateLimitError unwraps err and returns the typed RateLimitError if
+// present. Convenience for callers that don't want to import errors and
+// declare the local pointer.
+func AsRateLimitError(err error) (*RateLimitError, bool) {
+	var rle *RateLimitError
+	if errors.As(err, &rle) {
+		return rle, true
+	}
+	return nil, false
 }

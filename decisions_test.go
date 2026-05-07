@@ -187,3 +187,244 @@ func TestAuditSearchRequest_NewFiltersSerialize(t *testing.T) {
 		}
 	}
 }
+
+// ============================================================================
+// list_decisions — Session γ contract tests (#1982)
+// ============================================================================
+
+func TestListDecisions_HappyPath(t *testing.T) {
+	want := []DecisionSummary{
+		{
+			DecisionID:    "dec-1",
+			Timestamp:     time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC),
+			Decision:      "deny",
+			PolicyID:      "pol-sqli",
+			ToolSignature: "postgres.query",
+		},
+		{
+			DecisionID:    "dec-2",
+			Timestamp:     time.Date(2026, 5, 7, 11, 0, 0, 0, time.UTC),
+			Decision:      "allow",
+			PolicyID:      "pol-default",
+			ToolSignature: "github.status",
+		},
+		{
+			DecisionID:    "dec-3",
+			Timestamp:     time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC),
+			Decision:      "require_approval",
+			PolicyID:      "pol-amount",
+			ToolSignature: "stripe.charge",
+		},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/decisions" {
+			t.Errorf("Path = %q, want /api/v1/decisions", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"decisions": want})
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
+	got, err := c.ListDecisions(context.Background(), ListDecisionsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
+	if got[0].DecisionID != "dec-1" || got[0].Decision != "deny" {
+		t.Errorf("got[0] = %+v", got[0])
+	}
+	if got[2].Decision != "require_approval" {
+		t.Errorf("got[2].Decision = %q", got[2].Decision)
+	}
+}
+
+// TestListDecisions_FilterSerialization asserts every option field
+// lands in the URL with stable field order. Easiest miss the brief
+// flagged: forgetting to register a new field in the URL builder.
+func TestListDecisions_FilterSerialization(t *testing.T) {
+	var capturedQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"decisions": []}`))
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
+	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{
+		Since:         time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC),
+		Decision:      "deny",
+		PolicyID:      "pol-sqli",
+		ToolSignature: "postgres.query",
+		Limit:         25,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"since=2026-05-07T00%3A00%3A00Z",
+		"decision=deny",
+		"policy_id=pol-sqli",
+		"tool_signature=postgres.query",
+		"limit=25",
+	} {
+		if !strings.Contains(capturedQuery, want) {
+			t.Errorf("query %q missing %q", capturedQuery, want)
+		}
+	}
+}
+
+func TestListDecisions_OmitsUnsetFilters(t *testing.T) {
+	var capturedQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"decisions": []}`))
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
+	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{Decision: "deny"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capturedQuery != "decision=deny" {
+		t.Errorf("zero-valued fields must be omitted; got %q", capturedQuery)
+	}
+}
+
+// TestListDecisions_429UpgradeEnvelope asserts the typed RateLimitError
+// surfaces with the V1 upgrade fields populated.
+func TestListDecisions_429UpgradeEnvelope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Axonflow-Tier-Limit", "decision_list_size")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"Free tier shows the last 5 decisions in 24h. Pro raises this to 100 decisions in the last 30 days.","limit_type":"decision_list_size","tier":"Community","limit":5,"remaining":0,"upgrade":{"tier":"Pro","wording":"Free tier shows the last 5 decisions in 24h. Pro raises this to 100 decisions in the last 30 days.","compare_url":"https://getaxonflow.com/pricing/","buy_url":"https://buy.stripe.com/bJe28qbztcdVchjdkw8k800"}}`))
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
+	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{Limit: 10})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	rle, ok := AsRateLimitError(err)
+	if !ok {
+		t.Fatalf("err = %T, want *RateLimitError; chain = %v", err, err)
+	}
+	if rle.Envelope.Tier != "Community" {
+		t.Errorf("Tier = %q, want Community", rle.Envelope.Tier)
+	}
+	if rle.Envelope.LimitType != "decision_list_size" {
+		t.Errorf("LimitType = %q", rle.Envelope.LimitType)
+	}
+	if rle.Envelope.Limit != 5 {
+		t.Errorf("Limit = %d, want 5", rle.Envelope.Limit)
+	}
+	if rle.Envelope.Upgrade.Tier != "Pro" || rle.Envelope.Upgrade.CompareURL == "" || rle.Envelope.Upgrade.BuyURL == "" {
+		t.Errorf("Upgrade = %+v", rle.Envelope.Upgrade)
+	}
+}
+
+// TestListDecisions_429MalformedBody — when the platform changes the
+// 429 shape and we can't parse the envelope, fall back to *httpError
+// rather than silently succeed.
+func TestListDecisions_429MalformedBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte("not a json envelope"))
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
+	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if _, ok := AsRateLimitError(err); ok {
+		t.Errorf("malformed body must not parse as RateLimitError")
+	}
+	httpErr, ok := err.(*httpError)
+	if !ok {
+		t.Fatalf("err = %T, want *httpError", err)
+	}
+	if httpErr.statusCode != 429 {
+		t.Errorf("statusCode = %d, want 429", httpErr.statusCode)
+	}
+}
+
+func TestListDecisions_401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"X-Tenant-ID header is required"}`))
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
+	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	httpErr, ok := err.(*httpError)
+	if !ok {
+		t.Fatalf("err = %T, want *httpError", err)
+	}
+	if httpErr.statusCode != 401 {
+		t.Errorf("statusCode = %d, want 401", httpErr.statusCode)
+	}
+}
+
+// TestListDecisions_ForwardCompat — additive unknown fields in both
+// the outer envelope AND inner DecisionSummary parse cleanly.
+func TestListDecisions_ForwardCompat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"decisions": [{
+				"decision_id": "dec-fwd",
+				"timestamp": "2026-05-07T12:00:00Z",
+				"decision": "deny",
+				"policy_id": "pol-x",
+				"tool_signature": "tool-x",
+				"policy_version": 7,
+				"latest_policy_version": 9,
+				"arbitrary_unknown": "ignored"
+			}],
+			"next_cursor": "future_cursor_pagination"
+		}`))
+	}))
+	defer srv.Close()
+
+	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
+	got, err := c.ListDecisions(context.Background(), ListDecisionsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].DecisionID != "dec-fwd" {
+		t.Errorf("forward-compat parse failed: %+v", got)
+	}
+}
+
+// TestDecisionSummary_OptionalFieldsRoundTrip — pre-α1 audit rows /
+// dynamic-only blocks may not populate policy_id + tool_signature;
+// the DecisionSummary type must accept them as zero strings on parse
+// AND drop them on re-serialize via omitempty.
+func TestDecisionSummary_OptionalFieldsRoundTrip(t *testing.T) {
+	raw := []byte(`{"decision_id":"dec-min","timestamp":"2026-05-07T12:00:00Z","decision":"deny"}`)
+	var d DecisionSummary
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.PolicyID != "" || d.ToolSignature != "" {
+		t.Errorf("expected zero values; got %+v", d)
+	}
+	out, err := json.Marshal(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if strings.Contains(s, "policy_id") || strings.Contains(s, "tool_signature") {
+		t.Errorf("omitempty must drop unset optionals: %s", s)
+	}
+}
