@@ -36,6 +36,12 @@ type telemetryPayload struct {
 	EndpointType string   `json:"endpoint_type"`
 	Features     []string `json:"features"`
 	InstanceID   string   `json:"instance_id"`
+	// Stream classifies the heartbeat sub-stream. Sandbox-mode clients emit
+	// "sandbox" so analytics can distinguish dev/test pings from production
+	// pings without conflating them; production-mode clients omit the field
+	// and the server defaults to "heartbeat". The wire-allowlist is enforced
+	// server-side — see checkpoint-service IsValidIncomingStream.
+	Stream string `json:"stream,omitempty"`
 }
 
 // EndpointType classifications for telemetry.
@@ -150,28 +156,25 @@ func generateInstanceID() string {
 
 // isTelemetryEnabled determines whether telemetry should be sent for this client.
 //
-// Priority order:
-//  1. AXONFLOW_TELEMETRY=off in the environment disables telemetry (always wins).
-//  2. Config override (TelemetryEnabled *bool) — if non-nil, use its value.
-//  3. Default — ON for all modes except sandbox.
+// `AXONFLOW_TELEMETRY=off` in the environment is the SOLE opt-out path.
+// Telemetry is otherwise ON by default, regardless of mode (sandbox / production
+// / anything else). Sandbox-mode pings are tagged Stream="sandbox" in the
+// payload so analytics can still distinguish them — see telemetryPayload.Stream.
+//
+// Historical context: v7.x supported a `TelemetryEnabled *bool` config field
+// and a `mode != "sandbox"` default-suppression rule. Both were removed in v8.0
+// to leave a single, ops-controlled opt-out lever and avoid silent
+// suppression that masks real adoption signal. See CHANGELOG v8.0.0.
 //
 // DO_NOT_TRACK is intentionally NOT honored. It is commonly inherited from
 // host tools and developer environments (CLIs like Codex and Claude Code
 // inject it unconditionally), which makes it an unreliable expression of
 // user intent for AxonFlow telemetry.
 func (c *AxonFlowClient) isTelemetryEnabled() bool {
-	// 1. Environment-level opt-out always wins (cannot be overridden by config).
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("AXONFLOW_TELEMETRY")), "off") {
 		return false
 	}
-
-	// 2. Explicit config override.
-	if c.config.TelemetryEnabled != nil {
-		return *c.config.TelemetryEnabled
-	}
-
-	// 3. Default: ON everywhere except sandbox mode.
-	return c.config.Mode != "sandbox"
+	return true
 }
 
 // sendTelemetryPing is a thin compatibility wrapper around the gated path
@@ -221,6 +224,16 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	// Detect platform version from health endpoint (uses the shared deadline).
 	platformVersion := detectPlatformVersion(ctx, c.config.Endpoint)
 
+	// Stream classifier: sandbox-mode clients self-tag so analytics can
+	// distinguish dev/test pings from production. Production-mode clients
+	// omit the field and the server defaults to "heartbeat". The empty
+	// default + omitempty preserves byte-identical wire shape for the
+	// production-mode case relative to v7.x.
+	stream := ""
+	if c.config.Mode == "sandbox" {
+		stream = "sandbox"
+	}
+
 	payload := telemetryPayload{
 		SDK:             "go",
 		SDKVersion:      Version,
@@ -232,6 +245,7 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		EndpointType:    ClassifyEndpoint(c.config.Endpoint),
 		Features:        []string{},
 		InstanceID:      generateInstanceID(),
+		Stream:          stream,
 	}
 
 	body, err := json.Marshal(payload)

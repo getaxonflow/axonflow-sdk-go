@@ -32,7 +32,6 @@ type AxonFlowConfig struct {
 	MapTimeout            time.Duration // Timeout for MAP operations (default: 120s) - MAP involves multiple LLM calls
 	Retry                 RetryConfig   // Retry configuration
 	Cache                 CacheConfig   // Cache configuration
-	TelemetryEnabled      *bool         // Override telemetry default: nil=auto, true=on, false=off
 	InsecureSkipTLSVerify bool          // Disable TLS cert verification (dev/testing only). Also settable via NODE_TLS_REJECT_UNAUTHORIZED=0.
 }
 

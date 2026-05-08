@@ -5,6 +5,53 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2026-05-08 — Decision history API + telemetry simplification
+
+**Major release.** The headline feature is the new decision-history client API:
+`ListDecisions` for paging through recorded decisions, plus a runnable example
+showing the full record → list → explain audit flow. Bundled into a major
+because the v8 line also tightens the telemetry contract — see `Removed` at
+the bottom of this entry for that.
+
+### Added
+
+- **`ListDecisions(opts ListDecisionsOptions)` client method.** Pages over
+  recorded decision history from the orchestrator, mirroring `GET
+  /api/v1/decisions`. Companion to the v7.4.0 `GetDecisionExplain` method —
+  callers can now both list and drill in. See `examples/list_decisions/`.
+- **`examples/explain-decision/`** end-to-end runnable example covering
+  the full decision audit flow: record → list → explain.
+
+### Migration guide (v7 → v8)
+
+- **Module import path: `/v7` → `/v8`.** Required by Go's semantic-import
+  versioning rule. To upgrade:
+  ```bash
+  go get github.com/getaxonflow/axonflow-sdk-go/v8@latest
+  ```
+  Then update every `import "github.com/getaxonflow/axonflow-sdk-go/v7"`
+  in your code to `/v8`. No symbol-level changes from the path migration
+  itself.
+- **`AxonFlowConfig.TelemetryEnabled` field removed.** Code referencing
+  this field will fail to compile. Migration: remove the field from your
+  `AxonFlowConfig{}` literal. If you were using it to disable telemetry,
+  set `AXONFLOW_TELEMETRY=off` in the environment instead — that's the
+  sole opt-out lever as of v8. If you were using it to force-enable, the
+  default is now ON for every mode so the field is no longer needed.
+
+### Removed
+
+- **`AxonFlowConfig.TelemetryEnabled` field** (was `*bool`).
+  `AXONFLOW_TELEMETRY=off` is now the sole opt-out path. Tests that need
+  to defend against contaminated dev environments should clear the env
+  var with `t.Setenv("AXONFLOW_TELEMETRY", "")`.
+- **Sandbox-mode silent telemetry suppression.** Sandbox-mode clients
+  (constructed via `axonflow.Sandbox(...)` or `Mode: "sandbox"`) now fire
+  telemetry on the same heartbeat schedule as production-mode clients.
+  Pings are tagged `stream="sandbox"` so analytics can distinguish dev
+  pings from production heartbeat — see the checkpoint-service
+  `IsValidIncomingStream` allowlist for the wire-side gate.
+
 ## [7.1.0] - 2026-05-06 — X-Axonflow-Client header + scope-aware license validation
 
 **Companion release to platform v7.7.0.** The Go SDK now sends an

@@ -63,14 +63,16 @@ func TestHeartbeatE2E_FourRunCycle(t *testing.T) {
 	newClient := func(checkpointURL string) *AxonFlowClient {
 		t.Helper()
 		t.Setenv("AXONFLOW_CHECKPOINT_URL", checkpointURL)
+		// Defend against the dev machine having AXONFLOW_TELEMETRY=off in
+		// the shell env — clear it for this test process so telemetry
+		// actually fires per the gate (env-var is the SOLE off path in v8).
+		t.Setenv("AXONFLOW_TELEMETRY", "")
 		replaceHeartbeatStateForTest(stampPath)
-		boolPtr := func(v bool) *bool { return &v }
 		return &AxonFlowClient{
 			config: AxonFlowConfig{
-				Mode:             "production",
-				ClientID:         "id",
-				ClientSecret:     "sec",
-				TelemetryEnabled: boolPtr(true),
+				Mode:         "production",
+				ClientID:     "id",
+				ClientSecret: "sec",
 			},
 		}
 	}
