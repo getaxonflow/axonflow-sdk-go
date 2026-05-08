@@ -23,57 +23,31 @@ func TestIsTelemetryEnabled_Default(t *testing.T) {
 	// TestMain sets AXONFLOW_TELEMETRY=off to prevent telemetry pings.
 	t.Setenv("AXONFLOW_TELEMETRY", "")
 
-	t.Run("off for sandbox mode", func(t *testing.T) {
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{
-				Mode:     "sandbox",
-				ClientID: "id", ClientSecret: "sec",
-			},
-		}
-		if client.isTelemetryEnabled() {
-			t.Error("expected telemetry disabled for sandbox mode")
-		}
-	})
+	// v8: telemetry is ON by default for every mode. The mode-based
+	// suppression that used to disable sandbox-mode pings was removed —
+	// sandbox-mode pings now fire and are tagged Stream="sandbox" in the
+	// payload so analytics can distinguish them server-side.
+	cases := []struct {
+		name string
+		cfg  AxonFlowConfig
+	}{
+		{"on for sandbox mode (was suppressed in v7.x)", AxonFlowConfig{Mode: "sandbox", ClientID: "id", ClientSecret: "sec"}},
+		{"on for production without credentials", AxonFlowConfig{Mode: "production"}},
+		{"on for production with only client ID", AxonFlowConfig{Mode: "production", ClientID: "id"}},
+		{"on for production with only client secret", AxonFlowConfig{Mode: "production", ClientSecret: "sec"}},
+		{"on for production with credentials", AxonFlowConfig{Mode: "production", ClientID: "id", ClientSecret: "sec"}},
+		{"on for empty mode (legacy default)", AxonFlowConfig{ClientID: "id", ClientSecret: "sec"}},
+		{"on for unknown custom mode", AxonFlowConfig{Mode: "staging", ClientID: "id", ClientSecret: "sec"}},
+	}
 
-	t.Run("on for production without credentials", func(t *testing.T) {
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{Mode: "production"},
-		}
-		if !client.isTelemetryEnabled() {
-			t.Error("expected telemetry enabled for production mode even without credentials")
-		}
-	})
-
-	t.Run("on for production with only client ID", func(t *testing.T) {
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{Mode: "production", ClientID: "id"},
-		}
-		if !client.isTelemetryEnabled() {
-			t.Error("expected telemetry enabled for production mode even with only ClientID set")
-		}
-	})
-
-	t.Run("on for production with only client secret", func(t *testing.T) {
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{Mode: "production", ClientSecret: "sec"},
-		}
-		if !client.isTelemetryEnabled() {
-			t.Error("expected telemetry enabled for production mode even with only ClientSecret set")
-		}
-	})
-
-	t.Run("on for production with credentials", func(t *testing.T) {
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{
-				Mode:         "production",
-				ClientID:     "id",
-				ClientSecret: "sec",
-			},
-		}
-		if !client.isTelemetryEnabled() {
-			t.Error("expected telemetry enabled for production mode with credentials")
-		}
-	})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &AxonFlowClient{config: tc.cfg}
+			if !client.isTelemetryEnabled() {
+				t.Errorf("expected telemetry enabled, got disabled (config=%+v)", tc.cfg)
+			}
+		})
+	}
 }
 
 func TestIsTelemetryEnabled_EnvVarOverride(t *testing.T) {
@@ -118,67 +92,9 @@ func TestIsTelemetryEnabled_EnvVarOverride(t *testing.T) {
 	})
 }
 
-func TestIsTelemetryEnabled_ConfigOverride(t *testing.T) {
-	t.Setenv("AXONFLOW_TELEMETRY", "")
-	boolPtr := func(v bool) *bool { return &v }
-
-	t.Run("config true overrides sandbox default", func(t *testing.T) {
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{
-				Mode:             "sandbox",
-				TelemetryEnabled: boolPtr(true),
-			},
-		}
-		if !client.isTelemetryEnabled() {
-			t.Error("expected config override to enable telemetry in sandbox")
-		}
-	})
-
-	t.Run("config false overrides production default", func(t *testing.T) {
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{
-				Mode:             "production",
-				ClientID:         "id",
-				ClientSecret:     "sec",
-				TelemetryEnabled: boolPtr(false),
-			},
-		}
-		if client.isTelemetryEnabled() {
-			t.Error("expected config override to disable telemetry in production")
-		}
-	})
-
-	t.Run("DO_NOT_TRACK=1 alone does NOT beat config true (DNT no longer honored)", func(t *testing.T) {
-		t.Setenv("DO_NOT_TRACK", "1")
-		t.Setenv("AXONFLOW_TELEMETRY", "")
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{
-				Mode:             "production",
-				ClientID:         "id",
-				ClientSecret:     "sec",
-				TelemetryEnabled: boolPtr(true),
-			},
-		}
-		if !client.isTelemetryEnabled() {
-			t.Error("expected telemetry enabled — DNT is no longer honored, config true wins")
-		}
-	})
-
-	t.Run("AXONFLOW_TELEMETRY=off beats config true", func(t *testing.T) {
-		t.Setenv("AXONFLOW_TELEMETRY", "off")
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{
-				Mode:             "production",
-				ClientID:         "id",
-				ClientSecret:     "sec",
-				TelemetryEnabled: boolPtr(true),
-			},
-		}
-		if client.isTelemetryEnabled() {
-			t.Error("expected AXONFLOW_TELEMETRY=off to disable telemetry even with config override")
-		}
-	})
-}
+// TestIsTelemetryEnabled_ConfigOverride was removed in v8.0 along with the
+// TelemetryEnabled config field. AXONFLOW_TELEMETRY=off is the SOLE opt-out
+// path; programmatic suppression is no longer supported. See CHANGELOG.
 
 // ---------------------------------------------------------------------------
 // generateInstanceID tests
@@ -427,13 +343,11 @@ func TestBuildPayload(t *testing.T) {
 
 				t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
 
-				boolPtr := func(v bool) *bool { return &v }
 				client := &AxonFlowClient{
 					config: AxonFlowConfig{
-						Mode:             mode,
-						ClientID:         "id",
-						ClientSecret:     "sec",
-						TelemetryEnabled: boolPtr(true), // force enable for non-prod modes
+						Mode:         mode,
+						ClientID:     "id",
+						ClientSecret: "sec",
 					},
 				}
 
@@ -457,12 +371,10 @@ func TestBuildPayload(t *testing.T) {
 
 		t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
 
-		boolPtr := func(v bool) *bool { return &v }
 		client := &AxonFlowClient{
 			config: AxonFlowConfig{
-				ClientID:         "id",
-				ClientSecret:     "sec",
-				TelemetryEnabled: boolPtr(true),
+				ClientID:     "id",
+				ClientSecret: "sec",
 			},
 		}
 
@@ -472,18 +384,60 @@ func TestBuildPayload(t *testing.T) {
 			t.Errorf("expected deployment_mode=production when mode is empty, got %q", received.DeploymentMode)
 		}
 	})
+
+	t.Run("stream=sandbox tag emitted only for sandbox mode", func(t *testing.T) {
+		// New v8 contract: sandbox-mode pings carry stream="sandbox" so
+		// analytics can distinguish them. Production and other modes omit
+		// the field — the server defaults empty to "heartbeat". This is the
+		// payload-side companion to the server-side wire-allowlist gate.
+		cases := []struct {
+			mode       string
+			wantStream string
+		}{
+			{"production", ""},
+			{"sandbox", "sandbox"},
+			{"staging", ""},
+			{"", ""},
+		}
+		for _, tc := range cases {
+			t.Run(tc.mode, func(t *testing.T) {
+				var received telemetryPayload
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					json.NewDecoder(r.Body).Decode(&received)
+					json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+				}))
+				defer srv.Close()
+				t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+				client := &AxonFlowClient{
+					config: AxonFlowConfig{Mode: tc.mode, ClientID: "id", ClientSecret: "sec"},
+				}
+				client.sendTelemetryPing()
+				if received.Stream != tc.wantStream {
+					t.Errorf("Stream = %q, want %q (mode=%q)", received.Stream, tc.wantStream, tc.mode)
+				}
+			})
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
-// Additional sendTelemetryPing tests for parity with Python SDK (24-test matrix)
+// Sandbox-mode + stream classification tests (v8)
 // ---------------------------------------------------------------------------
 
-func TestSendTelemetryPing_SandboxDefaultOff(t *testing.T) {
+// TestSendTelemetryPing_SandboxFiresWithStreamTag verifies the new v8 contract:
+// sandbox-mode clients fire telemetry (no longer suppressed) and tag their
+// payload with stream="sandbox" so analytics can distinguish dev/test pings
+// from production heartbeat. Pre-v8 this test would have asserted no ping was
+// sent — see CHANGELOG v8.0.0 for the rationale of the behavior flip.
+func TestSendTelemetryPing_SandboxFiresWithStreamTag(t *testing.T) {
+	t.Setenv("AXONFLOW_TELEMETRY", "")
 	var called atomic.Int32
+	var received telemetryPayload
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called.Add(1)
-		w.WriteHeader(http.StatusOK)
+		json.NewDecoder(r.Body).Decode(&received)
+		json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
 	}))
 	defer srv.Close()
 
@@ -499,65 +453,14 @@ func TestSendTelemetryPing_SandboxDefaultOff(t *testing.T) {
 
 	client.sendTelemetryPing()
 
-	if called.Load() != 0 {
-		t.Error("expected no HTTP request for sandbox mode (telemetry default off)")
-	}
-}
-
-func TestSendTelemetryPing_SandboxExplicitEnable(t *testing.T) {
-	t.Setenv("AXONFLOW_TELEMETRY", "")
-	var called atomic.Int32
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called.Add(1)
-		json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
-	}))
-	defer srv.Close()
-
-	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
-
-	boolPtr := func(v bool) *bool { return &v }
-	client := &AxonFlowClient{
-		config: AxonFlowConfig{
-			Mode:             "sandbox",
-			ClientID:         "id",
-			ClientSecret:     "sec",
-			TelemetryEnabled: boolPtr(true),
-		},
-	}
-
-	client.sendTelemetryPing()
-
 	if called.Load() != 1 {
-		t.Errorf("expected exactly 1 request when sandbox + config true, got %d", called.Load())
+		t.Errorf("expected exactly 1 HTTP request for sandbox mode (v8: no longer suppressed), got %d", called.Load())
 	}
-}
-
-func TestSendTelemetryPing_ConfigDisableInProduction(t *testing.T) {
-	var called atomic.Int32
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called.Add(1)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
-
-	boolPtr := func(v bool) *bool { return &v }
-	client := &AxonFlowClient{
-		config: AxonFlowConfig{
-			Mode:             "production",
-			ClientID:         "id",
-			ClientSecret:     "sec",
-			TelemetryEnabled: boolPtr(false),
-		},
+	if received.Stream != "sandbox" {
+		t.Errorf("expected payload Stream=%q, got %q", "sandbox", received.Stream)
 	}
-
-	client.sendTelemetryPing()
-
-	if called.Load() != 0 {
-		t.Error("expected no HTTP request when production + config false")
+	if received.DeploymentMode != "sandbox" {
+		t.Errorf("expected payload DeploymentMode=%q, got %q", "sandbox", received.DeploymentMode)
 	}
 }
 

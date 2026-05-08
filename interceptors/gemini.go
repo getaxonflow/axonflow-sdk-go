@@ -6,8 +6,8 @@
 //
 //	import (
 //		"github.com/google/generative-ai-go/genai"
-//		"github.com/getaxonflow/axonflow-sdk-go/v7"
-//		"github.com/getaxonflow/axonflow-sdk-go/v7/interceptors"
+//		"github.com/getaxonflow/axonflow-sdk-go/v8"
+//		"github.com/getaxonflow/axonflow-sdk-go/v8/interceptors"
 //	)
 //
 //	client, _ := genai.NewClient(ctx, option.WithAPIKey(apiKey))
@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v7"
+	"github.com/getaxonflow/axonflow-sdk-go/v8"
 )
 
 // GeminiPart represents a part of Gemini content

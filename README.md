@@ -1,24 +1,24 @@
 # AxonFlow SDK for Go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v7.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v7)
+[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v8.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v8)
 [![Go Report Card](https://goreportcard.com/badge/github.com/getaxonflow/axonflow-sdk-go)](https://goreportcard.com/report/github.com/getaxonflow/axonflow-sdk-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **Upgrade strongly recommended.** AxonFlow ships substantial monthly security and quality hardening; staying on the latest major is the security-supported release line. [Latest release](https://github.com/getaxonflow/axonflow-sdk-go/releases/latest) · [Security advisories](https://github.com/getaxonflow/axonflow-sdk-go/security/advisories)
 
-> ## ⚠️ Use the `/v7` import path
+> ## ⚠️ Use the `/v8` import path
 >
-> Go's semantic import versioning requires the module path to include the major version suffix for v2+. The current release line is **v7.x**, imported as:
+> Go's semantic import versioning requires the module path to include the major version suffix for v2+. The current release line is **v8.x**, imported as:
 >
 > ```go
-> import "github.com/getaxonflow/axonflow-sdk-go/v7"
+> import "github.com/getaxonflow/axonflow-sdk-go/v8"
 > ```
 >
 > ```bash
-> go get github.com/getaxonflow/axonflow-sdk-go/v7
+> go get github.com/getaxonflow/axonflow-sdk-go/v8
 > ```
 >
-> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v7`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is six major release lines behind current. See the [Migration Guide](#migration-guide) below.
+> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v8`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is seven major release lines behind current. See the [Migration Guide](#migration-guide) below.
 
 > **Evaluating AxonFlow in production?** We're opening limited Design Partner slots.
 >
@@ -51,7 +51,7 @@ Three short videos covering different angles of the platform:
 ## Installation
 
 ```bash
-go get github.com/getaxonflow/axonflow-sdk-go/v7
+go get github.com/getaxonflow/axonflow-sdk-go/v8
 ```
 
 ## Evaluation Tier (Free License)
@@ -103,7 +103,7 @@ import (
     "log"
     "os"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v7"
+    "github.com/getaxonflow/axonflow-sdk-go/v8"
 )
 
 func main() {
@@ -141,7 +141,7 @@ func main() {
 import (
     "time"
     "os"
-    "github.com/getaxonflow/axonflow-sdk-go/v7"
+    "github.com/getaxonflow/axonflow-sdk-go/v8"
 )
 
 // Full configuration with all features
@@ -179,7 +179,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v7"
+    "github.com/getaxonflow/axonflow-sdk-go/v8"
 )
 
 func main() {
@@ -222,10 +222,10 @@ docker-compose up
 - ✅ Same API as production
 - ✅ Automatically detects localhost and skips authentication
 
-### Sandbox Mode (Testing)
+### Sandbox Mode (Local Testing)
 
 ```go
-// Quick sandbox client for testing
+// Quick sandbox client for local testing — defaults to http://localhost:8080.
 client := axonflow.Sandbox("demo-client", "demo-secret")
 
 resp, err := client.ProxyLLMCall(
@@ -235,11 +235,15 @@ resp, err := client.ProxyLLMCall(
     map[string]interface{}{},
 )
 
-// In sandbox, this will be blocked/redacted
 if resp.Blocked {
     fmt.Printf("Blocked: %s\n", resp.BlockReason)
 }
 ```
+
+> Sandbox-mode clients fire telemetry like every other client — anonymous SDK
+> heartbeat, classification-only payload, opt-out via `AXONFLOW_TELEMETRY=off`.
+> Pings are tagged `stream="sandbox"` server-side so dev/test usage is
+> distinguishable from production heartbeat.
 
 ## Features
 
@@ -313,8 +317,8 @@ Wrap your LLM clients with automatic AxonFlow governance using the interceptors 
 import (
     "context"
     "github.com/sashabaranov/go-openai"
-    "github.com/getaxonflow/axonflow-sdk-go/v7"
-    "github.com/getaxonflow/axonflow-sdk-go/v7/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v8"
+    "github.com/getaxonflow/axonflow-sdk-go/v8/interceptors"
 )
 
 // Initialize AxonFlow client
@@ -366,8 +370,8 @@ if err != nil {
 ```go
 import (
     "context"
-    "github.com/getaxonflow/axonflow-sdk-go/v7"
-    "github.com/getaxonflow/axonflow-sdk-go/v7/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v8"
+    "github.com/getaxonflow/axonflow-sdk-go/v8/interceptors"
 )
 
 // Create Anthropic interceptor
@@ -798,8 +802,8 @@ If `go get github.com/getaxonflow/axonflow-sdk-go@latest` resolved to **v1.17.0*
 
 ```bash
 # In go.mod, remove the old entry and replace with the v5 path:
-#   github.com/getaxonflow/axonflow-sdk-go → github.com/getaxonflow/axonflow-sdk-go/v7
-go get github.com/getaxonflow/axonflow-sdk-go/v7
+#   github.com/getaxonflow/axonflow-sdk-go → github.com/getaxonflow/axonflow-sdk-go/v8
+go get github.com/getaxonflow/axonflow-sdk-go/v8
 ```
 
 Update all imports in your `.go` files to include `/v5`:
@@ -809,7 +813,7 @@ Update all imports in your `.go` files to include `/v5`:
 import "github.com/getaxonflow/axonflow-sdk-go"
 
 // After:
-import "github.com/getaxonflow/axonflow-sdk-go/v7"
+import "github.com/getaxonflow/axonflow-sdk-go/v8"
 ```
 
 The API surface between v1 and v5 is substantially different. Check the release notes for v2, v3, v4, and v5 for the breaking changes you'll need to adopt. If you're coming from v1.x directly, the fastest path is usually to re-read the [Quick Start](#quick-start) section rather than trying to incrementally migrate.
@@ -820,8 +824,8 @@ The API surface between v1 and v5 is substantially different. Check the release 
 
 ```bash
 # In go.mod, change:
-#   github.com/getaxonflow/axonflow-sdk-go/v4 → github.com/getaxonflow/axonflow-sdk-go/v7
-go get github.com/getaxonflow/axonflow-sdk-go/v7
+#   github.com/getaxonflow/axonflow-sdk-go/v4 → github.com/getaxonflow/axonflow-sdk-go/v8
+go get github.com/getaxonflow/axonflow-sdk-go/v8
 ```
 
 Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface changes are required for the v4 → v5 bump itself — the major version increment reflects a policy break in how plan-scoped HITL responses are returned. See the [v5.0.0 release notes](https://github.com/getaxonflow/axonflow-sdk-go/releases/tag/v5.0.0) for the specifics.
@@ -971,6 +975,12 @@ No email required. Optional contact if you want a response.
 
 This SDK sends anonymous usage telemetry (SDK version, OS, enabled features) to help improve AxonFlow.
 No prompts, payloads, or PII are ever collected. Opt out: `AXONFLOW_TELEMETRY=off`.
+
+`AXONFLOW_TELEMETRY=off` is the **sole opt-out lever** as of v8.0. The
+v7.x `TelemetryEnabled` config field has been removed; the previous
+silent suppression of sandbox-mode pings has also been removed
+(sandbox-mode pings now fire and are tagged `stream="sandbox"` so
+they're distinguishable from production heartbeat).
 
 ### Scope of `AXONFLOW_TELEMETRY=off`
 

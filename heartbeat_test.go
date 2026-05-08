@@ -18,21 +18,21 @@ import (
 // maybeSendHeartbeat in isolation, AND swaps the package-global heartbeat
 // singleton for one pointing at a fresh stamp file under stampDir
 // (typically t.TempDir()). Restores the original singleton on test
-// cleanup. Telemetry is forced ON via TelemetryEnabled=true so the gating
-// decision under test is the heartbeat gate, not the mode-default check.
+// cleanup. The dev machine env var (AXONFLOW_TELEMETRY=off) is cleared
+// here so the heartbeat gate is the assertion under test, not env-var
+// contamination — defends against developer shell rcfiles that opt out.
 func newHeartbeatClient(t *testing.T, stampDir string) *AxonFlowClient {
 	t.Helper()
 	stampPath := filepath.Join(stampDir, "go-telemetry-last-sent")
 	previous := replaceHeartbeatStateForTest(stampPath)
 	t.Cleanup(func() { restoreHeartbeatStateForTest(previous) })
+	t.Setenv("AXONFLOW_TELEMETRY", "")
 
-	boolPtr := func(v bool) *bool { return &v }
 	return &AxonFlowClient{
 		config: AxonFlowConfig{
-			Mode:             "production",
-			ClientID:         "id",
-			ClientSecret:     "sec",
-			TelemetryEnabled: boolPtr(true),
+			Mode:         "production",
+			ClientID:     "id",
+			ClientSecret: "sec",
 		},
 	}
 }
@@ -309,17 +309,15 @@ func TestHeartbeat_ConcurrentMultiClient_CoalesceToOnePing(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(clientCount)
 	start := make(chan struct{})
-	boolPtr := func(v bool) *bool { return &v }
 	for i := 0; i < clientCount; i++ {
 		go func() {
 			defer wg.Done()
 			<-start
 			c := &AxonFlowClient{
 				config: AxonFlowConfig{
-					Mode:             "production",
-					ClientID:         "id",
-					ClientSecret:     "sec",
-					TelemetryEnabled: boolPtr(true),
+					Mode:         "production",
+					ClientID:     "id",
+					ClientSecret: "sec",
 				},
 			}
 			c.maybeSendHeartbeat()
