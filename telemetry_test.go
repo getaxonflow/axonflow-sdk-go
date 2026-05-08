@@ -179,8 +179,16 @@ func TestSendTelemetryPing_Success(t *testing.T) {
 	if strings.HasPrefix(received.RuntimeVersion, "go") {
 		t.Errorf("runtime_version should not have 'go' prefix, got %q", received.RuntimeVersion)
 	}
-	if received.DeploymentMode != "production" {
-		t.Errorf("expected deployment_mode=production, got %q", received.DeploymentMode)
+	// v1 telemetry-schema: deployment_mode now derives from endpoint host
+	// (not config.Mode). Empty endpoint resolves to "unknown".
+	if received.DeploymentMode != "unknown" {
+		t.Errorf("expected deployment_mode=unknown (empty endpoint), got %q", received.DeploymentMode)
+	}
+	if received.TelemetryType != "sdk" {
+		t.Errorf("expected telemetry_type=sdk, got %q", received.TelemetryType)
+	}
+	if received.Profile != "unknown" {
+		t.Errorf("expected profile=unknown (AXONFLOW_PROFILE unset), got %q", received.Profile)
 	}
 	if received.Features == nil {
 		t.Error("expected features to be non-nil (empty array)")
@@ -324,15 +332,26 @@ func TestSendTelemetryPing_InvalidURL(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// buildPayload tests (test #12: mode propagated)
+// buildPayload tests
 // ---------------------------------------------------------------------------
 
 func TestBuildPayload(t *testing.T) {
 	t.Setenv("AXONFLOW_TELEMETRY", "")
-	t.Run("mode propagated to deployment_mode", func(t *testing.T) {
-		modes := []string{"production", "sandbox", "staging", "development"}
-		for _, mode := range modes {
-			t.Run(mode, func(t *testing.T) {
+	t.Run("deployment_mode classifies from endpoint host (v1 schema)", func(t *testing.T) {
+		cases := []struct {
+			name     string
+			endpoint string
+			tryFlag  string
+			want     string
+		}{
+			{"try.getaxonflow.com", "https://try.getaxonflow.com", "", "community_saas"},
+			{"AXONFLOW_TRY=1 wins on remote host", "https://my-proxy.example.com", "1", "community_saas"},
+			{"public host -> self_hosted", "https://api.example.com", "", "self_hosted"},
+			{"unparseable -> unknown", "not a url", "", "unknown"},
+			{"empty -> unknown", "", "", "unknown"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
 				var received telemetryPayload
 
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -342,10 +361,12 @@ func TestBuildPayload(t *testing.T) {
 				defer srv.Close()
 
 				t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+				t.Setenv("AXONFLOW_TRY", tc.tryFlag)
 
 				client := &AxonFlowClient{
 					config: AxonFlowConfig{
-						Mode:         mode,
+						Endpoint:     tc.endpoint,
+						Mode:         "production",
 						ClientID:     "id",
 						ClientSecret: "sec",
 					},
@@ -353,35 +374,46 @@ func TestBuildPayload(t *testing.T) {
 
 				client.sendTelemetryPing()
 
-				if received.DeploymentMode != mode {
-					t.Errorf("expected deployment_mode=%q, got %q", mode, received.DeploymentMode)
+				if received.DeploymentMode != tc.want {
+					t.Errorf("expected deployment_mode=%q, got %q", tc.want, received.DeploymentMode)
+				}
+				if received.TelemetryType != "sdk" {
+					t.Errorf("expected telemetry_type=sdk, got %q", received.TelemetryType)
 				}
 			})
 		}
 	})
 
-	t.Run("empty mode defaults to production", func(t *testing.T) {
-		var received telemetryPayload
-
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			json.NewDecoder(r.Body).Decode(&received)
-			json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
-		}))
-		defer srv.Close()
-
-		t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
-
-		client := &AxonFlowClient{
-			config: AxonFlowConfig{
-				ClientID:     "id",
-				ClientSecret: "sec",
-			},
+	t.Run("profile from AXONFLOW_PROFILE; unknown when unset", func(t *testing.T) {
+		cases := []struct {
+			env  string
+			want string
+		}{
+			{"", "unknown"},
+			{"production", "production"},
+			{"staging", "staging"},
 		}
+		for _, tc := range cases {
+			t.Run(tc.want, func(t *testing.T) {
+				var received telemetryPayload
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					json.NewDecoder(r.Body).Decode(&received)
+					json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+				}))
+				defer srv.Close()
 
-		client.sendTelemetryPing()
+				t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+				t.Setenv("AXONFLOW_PROFILE", tc.env)
 
-		if received.DeploymentMode != "production" {
-			t.Errorf("expected deployment_mode=production when mode is empty, got %q", received.DeploymentMode)
+				client := &AxonFlowClient{
+					config: AxonFlowConfig{Mode: "production", ClientID: "id", ClientSecret: "sec"},
+				}
+				client.sendTelemetryPing()
+
+				if received.Profile != tc.want {
+					t.Errorf("expected profile=%q, got %q", tc.want, received.Profile)
+				}
+			})
 		}
 	})
 
@@ -459,8 +491,10 @@ func TestSendTelemetryPing_SandboxFiresWithStreamTag(t *testing.T) {
 	if received.Stream != "sandbox" {
 		t.Errorf("expected payload Stream=%q, got %q", "sandbox", received.Stream)
 	}
-	if received.DeploymentMode != "sandbox" {
-		t.Errorf("expected payload DeploymentMode=%q, got %q", "sandbox", received.DeploymentMode)
+	// v1 schema: deployment_mode classifies from endpoint host, not config.Mode.
+	// The empty endpoint here resolves to "unknown".
+	if received.DeploymentMode != "unknown" {
+		t.Errorf("expected payload DeploymentMode=%q (empty endpoint), got %q", "unknown", received.DeploymentMode)
 	}
 }
 
