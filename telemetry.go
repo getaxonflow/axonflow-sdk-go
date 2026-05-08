@@ -23,25 +23,67 @@ const (
 
 // telemetryPayload is the JSON body sent to the checkpoint endpoint.
 type telemetryPayload struct {
+	// TelemetryType discriminates this ping for the v1 schema receiver
+	// (axonflow-enterprise#2008). Always "sdk" for clients of this package.
+	TelemetryType   string  `json:"telemetry_type"`
 	SDK             string  `json:"sdk"`
 	SDKVersion      string  `json:"sdk_version"`
 	PlatformVersion *string `json:"platform_version"`
 	OS              string  `json:"os"`
 	Arch            string  `json:"arch"`
 	RuntimeVersion  string  `json:"runtime_version"`
-	DeploymentMode  string  `json:"deployment_mode"`
+	// DeploymentMode is the v1 schema topology dimension:
+	// "self_hosted" | "community_saas" | "unknown". Derived from the
+	// configured endpoint host plus the explicit AXONFLOW_TRY=1
+	// override; see ClassifyDeploymentMode.
+	DeploymentMode string `json:"deployment_mode"`
 	// EndpointType: SDK-derived classification of the configured endpoint.
 	// One of: "localhost", "private_network", "remote", "unknown". See
 	// ClassifyEndpoint. The raw URL is never sent. Issue #1525.
 	EndpointType string   `json:"endpoint_type"`
 	Features     []string `json:"features"`
 	InstanceID   string   `json:"instance_id"`
+	// Profile is the free-form deployment profile from AXONFLOW_PROFILE
+	// (e.g. "production", "staging", "dev"); reports "unknown" when
+	// unset. Analytics dimension only; no behavioural effect.
+	Profile string `json:"profile"`
 	// Stream classifies the heartbeat sub-stream. Sandbox-mode clients emit
 	// "sandbox" so analytics can distinguish dev/test pings from production
 	// pings without conflating them; production-mode clients omit the field
 	// and the server defaults to "heartbeat". The wire-allowlist is enforced
 	// server-side — see checkpoint-service IsValidIncomingStream.
 	Stream string `json:"stream,omitempty"`
+}
+
+// DeploymentMode classifications for telemetry (v1 schema, axonflow-enterprise#2008).
+const (
+	DeploymentModeSelfHosted    = "self_hosted"
+	DeploymentModeCommunitySaaS = "community_saas"
+	DeploymentModeUnknown       = "unknown"
+)
+
+// ClassifyDeploymentMode classifies the configured AxonFlow endpoint into
+// the v1 deployment-mode allowlist (self_hosted | community_saas | unknown).
+// Community-SaaS is detected from either an *.try.getaxonflow.com host or
+// AXONFLOW_TRY=1 (the explicit override path for tenants behind a custom
+// hostname proxying try.getaxonflow.com). Empty/unparseable endpoint
+// resolves to "unknown" rather than defaulting to "self_hosted".
+func ClassifyDeploymentMode(endpoint string) string {
+	if os.Getenv("AXONFLOW_TRY") == "1" {
+		return DeploymentModeCommunitySaaS
+	}
+	if endpoint == "" {
+		return DeploymentModeUnknown
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Hostname() == "" {
+		return DeploymentModeUnknown
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "try.getaxonflow.com" || strings.HasSuffix(host, ".try.getaxonflow.com") {
+		return DeploymentModeCommunitySaaS
+	}
+	return DeploymentModeSelfHosted
 }
 
 // EndpointType classifications for telemetry.
@@ -63,10 +105,11 @@ const (
 //     and the suffixes .local, .internal, .lan, .intranet
 //   - "remote": everything else
 //   - "unknown": on parse failure
+//
+// As of v8.0 the legacy "community-saas" return value is removed —
+// deployment topology lives on `deployment_mode` (see ClassifyDeploymentMode)
+// per the v1 schema (axonflow-enterprise#2008).
 func ClassifyEndpoint(endpoint string) string {
-	if os.Getenv("AXONFLOW_TRY") == "1" {
-		return "community-saas"
-	}
 	if endpoint == "" {
 		return EndpointTypeUnknown
 	}
@@ -215,10 +258,18 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		checkpointURL = defaultCheckpointURL
 	}
 
-	// Determine deployment mode.
-	deploymentMode := c.config.Mode
-	if deploymentMode == "" {
-		deploymentMode = "production"
+	// v1 telemetry-schema (axonflow-enterprise#2008) deployment_mode classifier.
+	// The prior config.Mode-based "production"/"development" split is removed —
+	// the dimension now reflects deployment topology only: self_hosted |
+	// community_saas | unknown.
+	deploymentMode := ClassifyDeploymentMode(c.config.Endpoint)
+
+	// v1 telemetry-schema profile dimension. Free-form deployment classifier
+	// (e.g. "production", "staging", "dev") sourced from AXONFLOW_PROFILE;
+	// reports "unknown" when unset. Analytics dimension only.
+	profile := strings.TrimSpace(os.Getenv("AXONFLOW_PROFILE"))
+	if profile == "" {
+		profile = "unknown"
 	}
 
 	// Detect platform version from health endpoint (uses the shared deadline).
@@ -235,6 +286,7 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	}
 
 	payload := telemetryPayload{
+		TelemetryType:   "sdk",
 		SDK:             "go",
 		SDKVersion:      Version,
 		PlatformVersion: platformVersion,
@@ -245,6 +297,7 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		EndpointType:    ClassifyEndpoint(c.config.Endpoint),
 		Features:        []string{},
 		InstanceID:      generateInstanceID(),
+		Profile:         profile,
 		Stream:          stream,
 	}
 
