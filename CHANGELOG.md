@@ -5,17 +5,6 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [8.0.1] - 2026-05-08 — Drop telemetry profile field
-
-### Removed
-
-- **`profile` field from telemetry payload** (was added in v8.0.0). The `AXONFLOW_PROFILE` env var collides with the existing governance enforcement env var (allowlist `dev|default|strict|compliance` per ADR-036), so emitting telemetry from a customer's correctly-configured governance profile (e.g. `strict`) would have produced HTTP 400 silent drops on the heartbeat path. The field had no analytics consumers in production yet — removing it is the cleanest fix. `deployment_mode` (`self_hosted | community_saas | unknown`) covers the topology dimension that `profile` was intended to add.
-
-### Migration
-
-- Customers who set `AXONFLOW_PROFILE` for governance enforcement on the agent: no change. The env var continues to be read by the agent for its original purpose.
-- Customers who set `AXONFLOW_PROFILE` solely to influence telemetry: no longer needed. The SDK no longer reads it for telemetry purposes.
-
 ## [8.0.0] - 2026-05-08 — Decision history API + telemetry simplification
 
 **Major release.** The headline feature is the new decision-history client API:
@@ -65,7 +54,7 @@ the bottom of this entry for that.
 
 ### Telemetry payload (v1 schema, axonflow-enterprise#2008)
 
-- New heartbeat fields: `telemetry_type: "sdk"`, `profile` (from `AXONFLOW_PROFILE`, `unknown` when unset), `deployment_mode` aligned to `self_hosted | community_saas | unknown` via `ClassifyDeploymentMode` (host + `AXONFLOW_TRY=1` override).
+- New heartbeat fields: `telemetry_type: "sdk"`, `deployment_mode` aligned to `self_hosted | community_saas | unknown` via `ClassifyDeploymentMode` (host + `AXONFLOW_TRY=1` override).
 - `ClassifyEndpoint` no longer returns `community-saas` — that value moved off endpoint_type onto deployment_mode; analytics queries on the legacy value must update.
 
 ## [7.1.0] - 2026-05-06 — X-Axonflow-Client header + scope-aware license validation
