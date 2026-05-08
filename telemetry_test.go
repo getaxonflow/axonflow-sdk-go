@@ -187,9 +187,6 @@ func TestSendTelemetryPing_Success(t *testing.T) {
 	if received.TelemetryType != "sdk" {
 		t.Errorf("expected telemetry_type=sdk, got %q", received.TelemetryType)
 	}
-	if received.Profile != "unknown" {
-		t.Errorf("expected profile=unknown (AXONFLOW_PROFILE unset), got %q", received.Profile)
-	}
 	if received.Features == nil {
 		t.Error("expected features to be non-nil (empty array)")
 	}
@@ -379,39 +376,6 @@ func TestBuildPayload(t *testing.T) {
 				}
 				if received.TelemetryType != "sdk" {
 					t.Errorf("expected telemetry_type=sdk, got %q", received.TelemetryType)
-				}
-			})
-		}
-	})
-
-	t.Run("profile from AXONFLOW_PROFILE; unknown when unset", func(t *testing.T) {
-		cases := []struct {
-			env  string
-			want string
-		}{
-			{"", "unknown"},
-			{"production", "production"},
-			{"staging", "staging"},
-		}
-		for _, tc := range cases {
-			t.Run(tc.want, func(t *testing.T) {
-				var received telemetryPayload
-				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					json.NewDecoder(r.Body).Decode(&received)
-					json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
-				}))
-				defer srv.Close()
-
-				t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
-				t.Setenv("AXONFLOW_PROFILE", tc.env)
-
-				client := &AxonFlowClient{
-					config: AxonFlowConfig{Mode: "production", ClientID: "id", ClientSecret: "sec"},
-				}
-				client.sendTelemetryPing()
-
-				if received.Profile != tc.want {
-					t.Errorf("expected profile=%q, got %q", tc.want, received.Profile)
 				}
 			})
 		}

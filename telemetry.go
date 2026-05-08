@@ -43,10 +43,6 @@ type telemetryPayload struct {
 	EndpointType string   `json:"endpoint_type"`
 	Features     []string `json:"features"`
 	InstanceID   string   `json:"instance_id"`
-	// Profile is the free-form deployment profile from AXONFLOW_PROFILE
-	// (e.g. "production", "staging", "dev"); reports "unknown" when
-	// unset. Analytics dimension only; no behavioural effect.
-	Profile string `json:"profile"`
 	// Stream classifies the heartbeat sub-stream. Sandbox-mode clients emit
 	// "sandbox" so analytics can distinguish dev/test pings from production
 	// pings without conflating them; production-mode clients omit the field
@@ -264,14 +260,6 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	// community_saas | unknown.
 	deploymentMode := ClassifyDeploymentMode(c.config.Endpoint)
 
-	// v1 telemetry-schema profile dimension. Free-form deployment classifier
-	// (e.g. "production", "staging", "dev") sourced from AXONFLOW_PROFILE;
-	// reports "unknown" when unset. Analytics dimension only.
-	profile := strings.TrimSpace(os.Getenv("AXONFLOW_PROFILE"))
-	if profile == "" {
-		profile = "unknown"
-	}
-
 	// Detect platform version from health endpoint (uses the shared deadline).
 	platformVersion := detectPlatformVersion(ctx, c.config.Endpoint)
 
@@ -297,7 +285,6 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		EndpointType:    ClassifyEndpoint(c.config.Endpoint),
 		Features:        []string{},
 		InstanceID:      generateInstanceID(),
-		Profile:         profile,
 		Stream:          stream,
 	}
 
