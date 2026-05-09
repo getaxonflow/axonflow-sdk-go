@@ -5,7 +5,7 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [8.0.0] - 2026-05-08 — Decision history API + telemetry simplification
+## [8.0.0] - 2026-05-09 — Decision history API + telemetry simplification
 
 **Major release.** The headline feature is the new decision-history client API:
 `ListDecisions` for paging through recorded decisions, plus a runnable example
@@ -16,84 +16,71 @@ the bottom of this entry for that.
 ### Added
 
 - **`ListDecisions(opts ListDecisionsOptions)` client method.** Pages over
-  recorded decision history from the orchestrator, mirroring `GET
-  /api/v1/decisions`. Companion to the v7.4.0 `GetDecisionExplain` method —
-  callers can now both list and drill in. See `examples/list_decisions/`.
+ recorded decision history from the orchestrator, mirroring `GET
+ /api/v1/decisions`. Companion to the v7.4.0 `GetDecisionExplain` method —
+ callers can now both list and drill in. See `examples/list_decisions/`.
 - **`examples/explain-decision/`** end-to-end runnable example covering
-  the full decision audit flow: record → list → explain.
+ the full decision audit flow: record → list → explain.
 
 ### Migration guide (v7 → v8)
 
 - **Module import path: `/v7` → `/v8`.** Required by Go's semantic-import
-  versioning rule. To upgrade:
-  ```bash
-  go get github.com/getaxonflow/axonflow-sdk-go/v8@latest
-  ```
-  Then update every `import "github.com/getaxonflow/axonflow-sdk-go/v7"`
-  in your code to `/v8`. No symbol-level changes from the path migration
-  itself.
+ versioning rule. To upgrade:
+ ```bash
+ go get github.com/getaxonflow/axonflow-sdk-go/v8@latest
+ ```
+ Then update every `import "github.com/getaxonflow/axonflow-sdk-go/v7"`
+ in your code to `/v8`. No symbol-level changes from the path migration
+ itself.
 - **`AxonFlowConfig.TelemetryEnabled` field removed.** Code referencing
-  this field will fail to compile. Migration: remove the field from your
-  `AxonFlowConfig{}` literal. If you were using it to disable telemetry,
-  set `AXONFLOW_TELEMETRY=off` in the environment instead — that's the
-  sole opt-out lever as of v8. If you were using it to force-enable, the
-  default is now ON for every mode so the field is no longer needed.
+ this field will fail to compile. Migration: remove the field from your
+ `AxonFlowConfig{}` literal. If you were using it to disable telemetry,
+ set `AXONFLOW_TELEMETRY=off` in the environment instead — that's the
+ sole opt-out lever as of v8. If you were using it to force-enable, the
+ default is now ON for every mode so the field is no longer needed.
 
-### Removed
+### Telemetry
 
-- **`AxonFlowConfig.TelemetryEnabled` field** (was `*bool`).
-  `AXONFLOW_TELEMETRY=off` is now the sole opt-out path. Tests that need
-  to defend against contaminated dev environments should clear the env
-  var with `t.Setenv("AXONFLOW_TELEMETRY", "")`.
-- **Sandbox-mode silent telemetry suppression.** Sandbox-mode clients
-  (constructed via `axonflow.Sandbox(...)` or `Mode: "sandbox"`) now fire
-  telemetry on the same heartbeat schedule as production-mode clients.
-  Pings are tagged `stream="sandbox"` so analytics can distinguish dev
-  pings from production heartbeat — see the checkpoint-service
-  `IsValidIncomingStream` allowlist for the wire-side gate.
-
-### Telemetry payload (v1 schema, axonflow-enterprise#2008)
-
-- New heartbeat fields: `telemetry_type: "sdk"`, `deployment_mode` aligned to `self_hosted | community_saas | unknown` via `ClassifyDeploymentMode` (host + `AXONFLOW_TRY=1` override).
-- `ClassifyEndpoint` no longer returns `community-saas` — that value moved off endpoint_type onto deployment_mode; analytics queries on the legacy value must update.
+- **`AXONFLOW_TELEMETRY=off` is the sole opt-out.** `AxonFlowConfig.TelemetryEnabled` field removed; sandbox-mode clients now fire on the same 7-day heartbeat schedule as production (was suppressed pre-v8), tagged `stream="sandbox"` so dev pings stay distinguishable.
+- **Heartbeat payload v1 schema additions** on the wire: new `telemetry_type` and `deployment_mode` fields. Existing receivers continue working unchanged — strictly additive.
 
 ## [7.1.0] - 2026-05-06 — X-Axonflow-Client header + scope-aware license validation
 
 **Companion release to platform v7.7.0.** The Go SDK now sends an
 `X-Axonflow-Client` identification header on every governed request, which
 the agent uses to derive the SDK request scope and validate it against any
-license token's audience claim per the ADR-050 license matrix.
+license token's audience claim per the license matrix.
 
 ### Added
 
 - **`X-Axonflow-Client: sdk-go/<version>` header** on every governed
-  outbound request. Set automatically by the SDK transport; not
-  configurable. Agents at v7.7.0+ derive request scope from this header
-  and reject cross-quadrant token misuse (e.g. a SaaS Plugin Pro token
-  paired with an SDK request) at the validator boundary. Older agents
-  (pre-v7.7.0) ignore the header and continue to work unchanged.
+ outbound request. Set automatically by the SDK transport; not
+ configurable. Agents at v7.7.0+ derive request scope from this header
+ and reject cross-quadrant token misuse (e.g. a SaaS Plugin Pro token
+ paired with an SDK request) at the validator boundary. Older agents
+ (pre-v7.7.0) ignore the header and continue to work unchanged.
 
 ### Compatibility
 
 - **Go module path stays `github.com/getaxonflow/axonflow-sdk-go/v7`** —
-  no major bump, no import-path migration. Existing v7.0.x callers
-  rebuild against v7.1.0 with no source changes.
+ no major bump, no import-path migration. Existing v7.0.x callers
+ rebuild against v7.1.0 with no source changes.
 - **Backward-compatible against pre-v7.7.0 agents.** The header is
-  silently dropped by older agents; the SDK behaves identically against
-  v7.0.x / v7.1.x / v7.6.x agents as before.
+ silently dropped by older agents; the SDK behaves identically against
+ v7.0.x / v7.1.x / v7.6.x agents as before.
 - **Forward-compatible.** Future agent releases that require the header
-  on specific governed surfaces will work with this SDK without further
-  client changes.
+ on specific governed surfaces will work with this SDK without further
+ client changes.
 
 ### Companion releases (same day)
 
 - **Platform v7.7.0** — V1 SaaS Plugin Pro launch, license matrix,
-  per-tenant tier resolution, GDPR right-to-erasure
-  ([CHANGELOG](https://github.com/getaxonflow/axonflow/blob/main/CHANGELOG.md))
+ per-tenant tier resolution, GDPR right-to-erasure
+ ([CHANGELOG](https://github.com/getaxonflow/axonflow/blob/main/CHANGELOG.md))
 - **Python SDK v7.1.0** / **TypeScript SDK v7.1.0** /
-  **Java SDK v7.1.0** — same `X-Axonflow-Client` injection
+ **Java SDK v7.1.0** — same `X-Axonflow-Client` injection
 - **Plugins** — Claude Code / Cursor / Codex v1.2.0; OpenClaw v2.2.0
-  with Pro license token paste activating Pro features
+ with Pro license token paste activating Pro features
 
 axonflow-sdk-rust remains at v0.1.0 (preview); SDK-Rust will gain the
 header in a future preview release.
@@ -125,7 +112,7 @@ Major release across the AxonFlow SDK family. Companion releases ship the same d
 
 ### Fixed
 
-- The `DO_NOT_TRACK=1 is deprecated...` `log.Printf` warning is no longer emitted on every `NewClient` call when `DO_NOT_TRACK=1` is set.
+- The `DO_NOT_TRACK=1 is deprecated.` `log.Printf` warning is no longer emitted on every `NewClient` call when `DO_NOT_TRACK=1` is set.
 
 ## [6.0.0] - 2026-04-28 — ListProviders() + SDKCompatibility wire-shape fix
 
@@ -157,15 +144,15 @@ Coordinated cycle: TypeScript v6.1.0 / Python v6.8.0 / Java v6.1.0 ship same day
 ### Added
 
 - **`MCPCheckInputResponse`** gains 5 optional Plugin Batch 1 fields:
-  - `DecisionID string` — audit correlator
-  - `RiskLevel string` — `low` | `medium` | `high` | `critical`
-  - `PolicyMatches []ExplainPolicy` — per-policy explainability records
-  - `OverrideAvailable *bool` — whether session override is permitted for the matched policies
-  - `OverrideExistingID string` — already-active override consumed by this decision (if any)
+ - `DecisionID string` — audit correlator
+ - `RiskLevel string` — `low` | `medium` | `high` | `critical`
+ - `PolicyMatches []ExplainPolicy` — per-policy explainability records
+ - `OverrideAvailable *bool` — whether session override is permitted for the matched policies
+ - `OverrideExistingID string` — already-active override consumed by this decision (if any)
 - **`MCPCheckOutputResponse`** gains 3 optional fields:
-  - `DecisionID`
-  - `PolicyMatches []ExplainPolicy`
-  - `RedactedMessage string` — text-redaction counterpart to `RedactedData` (used when the connector returned a string message rather than tabular rows; e.g. execute-style responses)
+ - `DecisionID`
+ - `PolicyMatches []ExplainPolicy`
+ - `RedactedMessage string` — text-redaction counterpart to `RedactedData` (used when the connector returned a string message rather than tabular rows; e.g. execute-style responses)
 
 `ExplainPolicy` already shipped (in `decisions.go`) — same struct now reused on MCP responses. Pre-v7.1.0 platforms return zero values; callers should treat absence as "context not available" rather than an error.
 
@@ -229,41 +216,41 @@ Two platform-side spec corrections filed alongside this work, for issues the aud
 ### Added
 
 - **Rich `ApproveStepResponse` / `RejectStepResponse`** — both types now carry the
-  same shape as the step-gate response. `Decision` resolves to `"allow"` on a
-  successful approval or `"block"` on rejection; `RetryContext` mirrors the gate
-  response retry state; `ApprovedBy` / `ApprovedAt` / `RejectedBy` / `RejectedAt`
-  carry the reviewer identity; `ApprovalID` is the deterministic HITL queue
-  entry UUID; `PoliciesMatched` reconstructs the governance trail. Legacy fields
-  (`WorkflowID`, `StepID`, `Status`) remain for back-compat.
+ same shape as the step-gate response. `Decision` resolves to `"allow"` on a
+ successful approval or `"block"` on rejection; `RetryContext` mirrors the gate
+ response retry state; `ApprovedBy` / `ApprovedAt` / `RejectedBy` / `RejectedAt`
+ carry the reviewer identity; `ApprovalID` is the deterministic HITL queue
+ entry UUID; `PoliciesMatched` reconstructs the governance trail. Legacy fields
+ (`WorkflowID`, `StepID`, `Status`) remain for back-compat.
 - **`ApproveStepResponse.PlanID` / `RejectStepResponse.PlanID`** — populated when
-  the response comes from the MAP plan-scoped endpoint; empty on WCP responses.
-  The server projects both planes through a single helper, so the same SDK types
-  work across both endpoints.
+ the response comes from the MAP plan-scoped endpoint; empty on WCP responses.
+ The server projects both planes through a single helper, so the same SDK types
+ work across both endpoints.
 - **`GetPendingPlanApprovals`** — new client method that lists MAP-plane pending
-  approvals (`GET /api/v1/plans/approvals/pending`), the counterpart of the
-  existing `GetPendingApprovals` for the WCP plane. Accepts an optional
-  `PlanID` filter via `PendingApprovalsOptions{PlanID: "plan-abc"}` so reviewer
-  tools can scope the listing to one plan. Available on Evaluation+ licenses
-  (same tier gate as the MAP step approve/reject endpoints).
+ approvals (`GET /api/v1/plans/approvals/pending`), the counterpart of the
+ existing `GetPendingApprovals` for the WCP plane. Accepts an optional
+ `PlanID` filter via `PendingApprovalsOptions{PlanID: "plan-abc"}` so reviewer
+ tools can scope the listing to one plan. Available on Evaluation+ licenses
+ (same tier gate as the MAP step approve/reject endpoints).
 - **`PendingApproval.PlanID`** — populated on MAP-plane entries, empty on WCP
-  entries. Mirrors the approve/reject asymmetry. `PendingApproval` also gains
-  `StepIndex`, `Decision`, `DecisionReason`, `PoliciesMatched`, `StepInput`,
-  and `ApprovalStatus` so reviewer tools can render the full approval context
-  without a second request.
+ entries. Mirrors the approve/reject asymmetry. `PendingApproval` also gains
+ `StepIndex`, `Decision`, `DecisionReason`, `PoliciesMatched`, `StepInput`,
+ and `ApprovalStatus` so reviewer tools can render the full approval context
+ without a second request.
 
 ### Fixed
 
 - **`ApproveStep` / `RejectStep` / `GetPendingApprovals` endpoint URLs** — all
-  three previously targeted non-existent paths under `/api/v1/workflow-control/`
-  and would fail against a real AxonFlow server. Corrected to the canonical
-  `/api/v1/workflows/{id}/steps/{step_id}/(approve|reject)` and
-  `/api/v1/workflows/approvals/pending` routes. Customers using these methods
-  against a live deployment were receiving 404s; this release makes them work.
+ three previously targeted non-existent paths under `/api/v1/workflow-control/`
+ and would fail against a real AxonFlow server. Corrected to the canonical
+ `/api/v1/workflows/{id}/steps/{step_id}/(approve|reject)` and
+ `/api/v1/workflows/approvals/pending` routes. Customers using these methods
+ against a live deployment were receiving 404s; this release makes them work.
 - **`PendingApprovalsResponse` JSON tags** — the struct previously decoded
-  `approvals` / `total`, which never matched the server wire format
-  (`pending_approvals` / `count`). Fields are now `PendingApprovals` and
-  `Count` with the correct JSON tags. Callers that ranged over `Approvals` or
-  read `Total` need to update to the new names.
+ `approvals` / `total`, which never matched the server wire format
+ (`pending_approvals` / `count`). Fields are now `PendingApprovals` and
+ `Count` with the correct JSON tags. Callers that ranged over `Approvals` or
+ read `Total` need to update to the new names.
 
 ### Deprecated
 
@@ -272,42 +259,42 @@ Two platform-side spec corrections filed alongside this work, for issues the aud
 ### Unchanged
 
 - The `ApproveStep(workflowID, stepID)` and `RejectStep(workflowID, stepID)`
-  method signatures are unchanged — only the response fields grew. Callers that
-  only read `WorkflowID` / `StepID` / `Status` keep working.
+ method signatures are unchanged — only the response fields grew. Callers that
+ only read `WorkflowID` / `StepID` / `Status` keep working.
 
 ## [5.5.0] - 2026-04-21
 
 ### Added
 
 - **`retry_context` and `idempotency_key` support on the step gate** — `StepGateResponse`
-  now carries a non-nullable `RetryContext` object on every gate call with the true
-  `(workflow_id, step_id)` lifecycle: `GateCount`, `CompletionCount`,
-  `PriorCompletionStatus` (`"none"` / `"completed"` / `"gated_not_completed"`),
-  `PriorOutputAvailable`, `PriorOutput`, `PriorCompletionAt`, `FirstAttemptAt`,
-  `LastAttemptAt`, `LastDecision`, and `IdempotencyKey`. Prefer these to the legacy
-  `Cached` / `DecisionSource` fields.
+ now carries a non-nullable `RetryContext` object on every gate call with the true
+ `(workflow_id, step_id)` lifecycle: `GateCount`, `CompletionCount`,
+ `PriorCompletionStatus` (`"none"` / `"completed"` / `"gated_not_completed"`),
+ `PriorOutputAvailable`, `PriorOutput`, `PriorCompletionAt`, `FirstAttemptAt`,
+ `LastAttemptAt`, `LastDecision`, and `IdempotencyKey`. Prefer these to the legacy
+ `Cached` / `DecisionSource` fields.
 - **`StepGateWithOptions`** — new method taking `StepGateOptions{IncludePriorOutput: bool}`
-  (default `false`). When `true`, the SDK sends `?include_prior_output=true` and
-  `RetryContext.PriorOutput` is populated when a prior `/complete` has landed. Existing
-  `StepGate(workflowID, stepID, req)` is unchanged and calls `StepGateWithOptions` with
-  zero options, so existing callers keep working.
+ (default `false`). When `true`, the SDK sends `?include_prior_output=true` and
+ `RetryContext.PriorOutput` is populated when a prior `/complete` has landed. Existing
+ `StepGate(workflowID, stepID, req)` is unchanged and calls `StepGateWithOptions` with
+ zero options, so existing callers keep working.
 - **`StepGateRequest.IdempotencyKey`** — caller-supplied opaque business-level key
-  (max 255 chars). Immutable once recorded on the first gate call for a
-  `(workflow_id, step_id)`; subsequent gate/complete calls must pass the same key.
+ (max 255 chars). Immutable once recorded on the first gate call for a
+ `(workflow_id, step_id)`; subsequent gate/complete calls must pass the same key.
 - **`MarkStepCompletedRequest.IdempotencyKey`** — must match the key set on the
-  corresponding gate call, if any. Mismatch (including missing-vs-set on either side)
-  surfaces as a typed `*IdempotencyKeyMismatchError`.
+ corresponding gate call, if any. Mismatch (including missing-vs-set on either side)
+ surfaces as a typed `*IdempotencyKeyMismatchError`.
 - **`IdempotencyKeyMismatchError`** — typed error returned by `StepGate`,
-  `StepGateWithOptions`, and `MarkStepCompleted` when the platform returns HTTP 409
-  with `error.code == "IDEMPOTENCY_KEY_MISMATCH"`. Surfaces `WorkflowID`, `StepID`,
-  `ExpectedIdempotencyKey`, `ReceivedIdempotencyKey`, and `Message`. Use
-  `errors.As(err, &idemErr)` to unwrap.
+ `StepGateWithOptions`, and `MarkStepCompleted` when the platform returns HTTP 409
+ with `error.code == "IDEMPOTENCY_KEY_MISMATCH"`. Surfaces `WorkflowID`, `StepID`,
+ `ExpectedIdempotencyKey`, `ReceivedIdempotencyKey`, and `Message`. Use
+ `errors.As(err, &idemErr)` to unwrap.
 
 ### Deprecated
 
 - **`StepGateResponse.Cached`** and **`StepGateResponse.DecisionSource`** — still populated
-  but deprecated in favor of `RetryContext.GateCount > 1` and
-  `RetryContext.PriorCompletionStatus`. Planned for removal in a future major version.
+ but deprecated in favor of `RetryContext.GateCount > 1` and
+ `RetryContext.PriorCompletionStatus`. Planned for removal in a future major version.
 
 ### Compatibility
 
@@ -320,28 +307,28 @@ callers that never set `IdempotencyKey` or `IncludePriorOutput` see no behavior 
 ### Added
 
 - **Execution boundary semantics** — `RetryPolicy` type with `RetryPolicyIdempotent`
-  (default) and `RetryPolicyReevaluate` constants. Step gate requests now accept
-  `retry_policy` to control whether repeated calls for the same step return the
-  cached decision or force a fresh policy evaluation.
+ (default) and `RetryPolicyReevaluate` constants. Step gate requests now accept
+ `retry_policy` to control whether repeated calls for the same step return the
+ cached decision or force a fresh policy evaluation.
 - **Step gate response metadata** — `Cached` (bool) and `DecisionSource` (string)
-  fields on `StepGateResponse` indicate whether the response came from a cached
-  decision ("cached") or a fresh policy evaluation ("fresh").
+ fields on `StepGateResponse` indicate whether the response came from a cached
+ decision ("cached") or a fresh policy evaluation ("fresh").
 - **Workflow checkpoints** — `GetCheckpoints(workflowID)` lists step-gate
-  checkpoints for a workflow. `ResumeFromCheckpoint(workflowID, checkpointID)`
-  resumes from a specific checkpoint with fresh policy evaluation (Enterprise).
+ checkpoints for a workflow. `ResumeFromCheckpoint(workflowID, checkpointID)`
+ resumes from a specific checkpoint with fresh policy evaluation (Enterprise).
 - **Checkpoint types** — `Checkpoint`, `CheckpointListResponse`, and
-  `ResumeFromCheckpointResponse` types for checkpoint operations.
+ `ResumeFromCheckpointResponse` types for checkpoint operations.
 - **`ExplainDecision(ctx, decisionID)`** — fetches the full explanation for a
-  previously-made policy decision via `GET /api/v1/decisions/:id/explain`.
-  Returns a `DecisionExplanation` containing matched policies, risk level,
-  reason, override availability, existing override ID (if any), and a
-  rolling-24h session hit count for the matched rule. Shape is frozen;
-  additive-only fields ensure forward compatibility.
+ previously-made policy decision via `GET /api/v1/decisions/:id/explain`.
+ Returns a `DecisionExplanation` containing matched policies, risk level,
+ reason, override availability, existing override ID (if any), and a
+ rolling-24h session hit count for the matched rule. Shape is frozen;
+ additive-only fields ensure forward compatibility.
 - **`AuditSearchRequest.DecisionID`, `PolicyName`, `OverrideID`** — three new
-  optional filter fields on `SearchAuditLogs`. Use `DecisionID` to gather every
-  record tied to one decision; `PolicyName` to find everything matched by a
-  specific policy; `OverrideID` to reconstruct an override's full lifecycle
-  (`override_created` → `override_used` → `override_expired | override_revoked`).
+ optional filter fields on `SearchAuditLogs`. Use `DecisionID` to gather every
+ record tied to one decision; `PolicyName` to find everything matched by a
+ specific policy; `OverrideID` to reconstruct an override's full lifecycle
+ (`override_created` → `override_used` → `override_expired | override_revoked`).
 
 ### Compatibility
 
@@ -355,12 +342,12 @@ unset; server-side filtering only activates on v7.1.0+ platforms.
 ### Fixed
 
 - `ListConnectors`, `GetConnector`, `GetConnectorHealth` now send Basic auth
-  credentials. Previously bypassed the centralized auth mechanism by using
-  `httpClient.Get()` directly, causing 401 errors on authenticated servers.
+ credentials. Previously bypassed the centralized auth mechanism by using
+ `httpClient.Get()` directly, causing 401 errors on authenticated servers.
 - `GetPlanStatus` now sends Basic auth credentials (same fix).
 - All execution replay methods (`ListExecutions`, `GetExecution`,
-  `GetExecutionSteps`, `GetExecutionTimeline`, `ExportExecution`,
-  `DeleteExecution`) now send Basic auth credentials.
+ `GetExecutionSteps`, `GetExecutionTimeline`, `ExportExecution`,
+ `DeleteExecution`) now send Basic auth credentials.
 
 ---
 
@@ -442,11 +429,11 @@ unset; server-side filtering only activates on v7.1.0+ platforms.
 ### Added
 
 - `LangGraphAdapter` — wraps LangGraph workflows with AxonFlow governance gates and per-tool policy enforcement. Includes:
-  - `CheckGate()` / `StepCompleted()` — step-level governance at LangGraph node boundaries
-  - `CheckToolGate()` / `ToolCompleted()` — per-tool governance within tool_call nodes (each tool gets its own gate check)
-  - `NewMCPToolInterceptor()` — creates an interceptor enforcing `MCPCheckInput → handler → MCPCheckOutput` around every MCP tool call
-  - `WaitForApproval()` — poll until a step is approved or rejected, with context cancellation support
-  - `StartWorkflow()` / `CompleteWorkflow()` / `AbortWorkflow()` / `FailWorkflow()` — workflow lifecycle management
+ - `CheckGate()` / `StepCompleted()` — step-level governance at LangGraph node boundaries
+ - `CheckToolGate()` / `ToolCompleted()` — per-tool governance within tool_call nodes (each tool gets its own gate check)
+ - `NewMCPToolInterceptor()` — creates an interceptor enforcing `MCPCheckInput → handler → MCPCheckOutput` around every MCP tool call
+ - `WaitForApproval()` — poll until a step is approved or rejected, with context cancellation support
+ - `StartWorkflow()` / `CompleteWorkflow()` / `AbortWorkflow()` / `FailWorkflow()` — workflow lifecycle management
 - `WorkflowBlockedError` and `WorkflowApprovalRequiredError` error types
 - `NewLangGraphAdapter()` constructor with functional options (`WithSource()`, `WithAutoBlock()`)
 - Option structs: `CheckGateOptions`, `StepCompletedOptions`, `CheckToolGateOptions`, `ToolCompletedOptions`
@@ -477,12 +464,12 @@ unset; server-side filtering only activates on v7.1.0+ platforms.
 ### Breaking Changes
 
 - **Module path changed from `v3` to `v4`**: Update imports from
-  `github.com/getaxonflow/axonflow-sdk-go/v3` to `github.com/getaxonflow/axonflow-sdk-go/v4`.
+ `github.com/getaxonflow/axonflow-sdk-go/v3` to `github.com/getaxonflow/axonflow-sdk-go/v4`.
 - **Removed `TotalSteps` from `CreateWorkflowRequest`**. Requires Platform v4.5.0+ (recommended v5.0.0+).
-  Total steps are auto-computed when the workflow reaches a terminal state.
+ Total steps are auto-computed when the workflow reaches a terminal state.
 - **`MCPCheckInput()` default `Operation` changed from `"query"` to `"execute"`**: Aligns Go SDK with
-  Python/Java behavior. Callers relying on the implicit `"query"` default must now pass
-  `Operation: "query"` explicitly.
+ Python/Java behavior. Callers relying on the implicit `"query"` default must now pass
+ `Operation: "query"` explicitly.
 
 ### Added
 
@@ -519,10 +506,10 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 ### Added
 
 - **MCP Policy-Check Endpoints** (Platform v4.6.0+): Standalone policy validation for external orchestrators (LangGraph, CrewAI) to enforce AxonFlow policies without executing connector queries
-  - `MCPCheckInput(ctx, req)`: Validate SQL/commands against input policies (SQLi detection, dangerous query blocking, PII in queries, dynamic policies). Returns `Allowed: true` or `BlockReason` with details
-  - `MCPCheckOutput(ctx, req)`: Validate MCP response data against output policies (PII redaction, exfiltration limits, dynamic policies). Returns original or redacted data with `PolicyInfo`
-  - New types: `MCPCheckInputRequest`, `MCPCheckInputResponse`, `MCPCheckOutputRequest`, `MCPCheckOutputResponse`
-  - Supports both query-style (`ResponseData`) and execute-style (`Message` + `Metadata`) output validation
+ - `MCPCheckInput(ctx, req)`: Validate SQL/commands against input policies (SQLi detection, dangerous query blocking, PII in queries, dynamic policies). Returns `Allowed: true` or `BlockReason` with details
+ - `MCPCheckOutput(ctx, req)`: Validate MCP response data against output policies (PII redaction, exfiltration limits, dynamic policies). Returns original or redacted data with `PolicyInfo`
+ - New types: `MCPCheckInputRequest`, `MCPCheckInputResponse`, `MCPCheckOutputRequest`, `MCPCheckOutputResponse`
+ - Supports both query-style (`ResponseData`) and execute-style (`Message` + `Metadata`) output validation
 
 ---
 
@@ -559,16 +546,16 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
-- **FailWorkflow** (#1187): Fail a workflow with optional reason
-  - `FailWorkflow(workflowID, reason string) error`: sends `POST /api/v1/workflows/{id}/fail`
-  - Follows same pattern as `AbortWorkflow()`
+- **FailWorkflow**: Fail a workflow with optional reason
+ - `FailWorkflow(workflowID, reason string) error`: sends `POST /api/v1/workflows/{id}/fail`
+ - Follows same pattern as `AbortWorkflow()`
 - **HITL Queue API** (Enterprise): Human-in-the-loop approval queue management
-  - `ListHITLQueue(opts HITLQueueListOptions) (*HITLQueueListResponse, error)`: list pending approvals
-  - `GetHITLRequest(requestID string) (*HITLApprovalRequest, error)`: get approval details
-  - `ApproveHITLRequest(requestID string, review HITLReviewInput) error`: approve a request
-  - `RejectHITLRequest(requestID string, review HITLReviewInput) error`: reject a request
-  - `GetHITLStats() (*HITLStats, error)`: dashboard statistics
-  - New types: `HITLApprovalRequest`, `HITLQueueListOptions`, `HITLQueueListResponse`, `HITLReviewInput`, `HITLStats`
+ - `ListHITLQueue(opts HITLQueueListOptions) (*HITLQueueListResponse, error)`: list pending approvals
+ - `GetHITLRequest(requestID string) (*HITLApprovalRequest, error)`: get approval details
+ - `ApproveHITLRequest(requestID string, review HITLReviewInput) error`: approve a request
+ - `RejectHITLRequest(requestID string, review HITLReviewInput) error`: reject a request
+ - `GetHITLStats() (*HITLStats, error)`: dashboard statistics
+ - New types: `HITLApprovalRequest`, `HITLQueueListOptions`, `HITLQueueListResponse`, `HITLReviewInput`, `HITLStats`
 
 ## [3.3.1] - 2026-02-12
 
@@ -580,39 +567,39 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
-- **WCP Approval Gates** (Issue #1169): HITL approval and rejection for workflow steps
-  - `ApproveStep(workflowID, stepID)` - Approve a pending workflow step
-  - `RejectStep(workflowID, stepID, reason)` - Reject a step with reason
-  - `GetPendingApprovals(opts)` - List steps awaiting human approval
+- **WCP Approval Gates**: HITL approval and rejection for workflow steps
+ - `ApproveStep(workflowID, stepID)` - Approve a pending workflow step
+ - `RejectStep(workflowID, stepID, reason)` - Reject a step with reason
+ - `GetPendingApprovals(opts)` - List steps awaiting human approval
 
-- **MAP Plan Cancellation** (Issue #1072): Cancel running multi-agent plans
-  - `CancelPlan(planID, reason)` - Cancel a plan with optional reason (omits reason from body when empty)
+- **MAP Plan Cancellation**: Cancel running multi-agent plans
+ - `CancelPlan(planID, reason)` - Cancel a plan with optional reason (omits reason from body when empty)
 
-- **MAP Plan Update** (Issue #1072): Modify plan configuration before or during execution
-  - `UpdatePlan(planID, request)` - Update execution mode, domain, or version
+- **MAP Plan Update**: Modify plan configuration before or during execution
+ - `UpdatePlan(planID, request)` - Update execution mode, domain, or version
 
-- **MAP Plan Versioning and Rollback** (Issue #1072): Version history and rollback support
-  - `GetPlanVersions(planID)` - List plan version history
-  - `RollbackPlan(planID, version)` - Rollback to a previous version (returns `ErrVersionConflict` on 409)
-  - New types: `RollbackPlanResponse`, `PlanVersion`
+- **MAP Plan Versioning and Rollback**: Version history and rollback support
+ - `GetPlanVersions(planID)` - List plan version history
+ - `RollbackPlan(planID, version)` - Rollback to a previous version (returns `ErrVersionConflict` on 409)
+ - New types: `RollbackPlanResponse`, `PlanVersion`
 
-- **Webhook Subscriptions** (Issue #1169): Event notification management
-  - `CreateWebhook(request)` - Create a webhook subscription
-  - `ListWebhooks()` - List active webhook subscriptions
-  - `GetWebhook(webhookID)` - Get webhook details
-  - `UpdateWebhook(webhookID, request)` - Update webhook configuration
-  - `DeleteWebhook(webhookID)` - Delete a webhook subscription
-  - New type: `WebhookSubscription`
+- **Webhook Subscriptions**: Event notification management
+ - `CreateWebhook(request)` - Create a webhook subscription
+ - `ListWebhooks()` - List active webhook subscriptions
+ - `GetWebhook(webhookID)` - Get webhook details
+ - `UpdateWebhook(webhookID, request)` - Update webhook configuration
+ - `DeleteWebhook(webhookID)` - Delete a webhook subscription
+ - New type: `WebhookSubscription`
 
-- **Unified Execution Cancellation** (EPIC #1074): Cancel running executions across both MAP and WCP subsystems
-  - `CancelExecution(executionID, reason)` - Cancel a unified execution via `POST /api/v1/unified/executions/{id}/cancel`
-  - Propagates to MAP `CancelPlan()` or WCP `AbortWorkflow()` based on execution type
-  - Reason is optional: pass empty string to cancel without a reason
+- **Unified Execution Cancellation**: Cancel running executions across both MAP and WCP subsystems
+ - `CancelExecution(executionID, reason)` - Cancel a unified execution via `POST /api/v1/unified/executions/{id}/cancel`
+ - Propagates to MAP `CancelPlan()` or WCP `AbortWorkflow()` based on execution type
+ - Reason is optional: pass empty string to cancel without a reason
 
 ### Fixed
 
 - **`ExecutePlan` status hardcoded**: `ExecutePlan()` always returned `Status: "completed"` regardless of actual server response. Now reads status from response (`data.status` > `metadata.status` > default), correctly surfacing `"awaiting_approval"` for WCP confirm mode.
-- **Unified execution API URLs** (EPIC #1074): `GetExecutionStatus()` and `ListUnifiedExecutions()` now use correct `/api/v1/unified/executions` path (was incorrectly pointing to `/api/v1/executions` which is the Execution Replay API)
+- **Unified execution API URLs**: `GetExecutionStatus()` and `ListUnifiedExecutions()` now use correct `/api/v1/unified/executions` path (was incorrectly pointing to `/api/v1/executions` which is the Execution Replay API)
 - **`RollbackPlan` request body**: Removed redundant version from request body (version is already in URL path)
 - **`CancelPlan` empty reason**: No longer sends `"reason": ""` when reason is empty
 
@@ -667,41 +654,41 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
-- **Unified Execution Tracking** (Issue #1075 - EPIC #1074): Consistent status tracking for MAP plans and WCP workflows
-  - `GetExecutionStatus(executionID)` - Get unified execution status by ID
-  - `ListUnifiedExecutions(opts)` - List executions with type/status filters
-  - `ExecutionStatus` struct with unified fields for both MAP and WCP executions
-  - `ExecutionType` constants: `ExecutionTypeMAP`, `ExecutionTypeWCP`
-  - `ExecutionStatusValue` constants: `ExecutionStatusPending`, `ExecutionStatusRunning`, `ExecutionStatusCompleted`, `ExecutionStatusFailed`, `ExecutionStatusCancelled`, `ExecutionStatusAborted`, `ExecutionStatusExpired`
-  - `StepStatusValue` constants: `StepStatusPending`, `StepStatusRunning`, `StepStatusCompleted`, `StepStatusFailed`, `StepStatusSkipped`, `StepStatusBlocked`, `StepStatusApproval`
-  - `UnifiedStepType` constants: `StepTypeLLMCall`, `StepTypeToolCall`, `StepTypeConnectorCall`, `StepTypeHumanTask`, `StepTypeSynthesis`, `StepTypeAction`, `StepTypeGate`
-  - `UnifiedStepStatus` struct with step-level details (duration, cost, policy decisions)
-  - Helper methods: `IsTerminal()`, `IsStepTerminal()`, `IsStepBlocking()`, `CalculateProgress()`, `GetCurrentStep()`, `CalculateTotalCost()`
-  - Consistent response format across MAP Multi-Agent Planning and WCP Workflow Control Plane
+- **Unified Execution Tracking**: Consistent status tracking for MAP plans and WCP workflows
+ - `GetExecutionStatus(executionID)` - Get unified execution status by ID
+ - `ListUnifiedExecutions(opts)` - List executions with type/status filters
+ - `ExecutionStatus` struct with unified fields for both MAP and WCP executions
+ - `ExecutionType` constants: `ExecutionTypeMAP`, `ExecutionTypeWCP`
+ - `ExecutionStatusValue` constants: `ExecutionStatusPending`, `ExecutionStatusRunning`, `ExecutionStatusCompleted`, `ExecutionStatusFailed`, `ExecutionStatusCancelled`, `ExecutionStatusAborted`, `ExecutionStatusExpired`
+ - `StepStatusValue` constants: `StepStatusPending`, `StepStatusRunning`, `StepStatusCompleted`, `StepStatusFailed`, `StepStatusSkipped`, `StepStatusBlocked`, `StepStatusApproval`
+ - `UnifiedStepType` constants: `StepTypeLLMCall`, `StepTypeToolCall`, `StepTypeConnectorCall`, `StepTypeHumanTask`, `StepTypeSynthesis`, `StepTypeAction`, `StepTypeGate`
+ - `UnifiedStepStatus` struct with step-level details (duration, cost, policy decisions)
+ - Helper methods: `IsTerminal()`, `IsStepTerminal()`, `IsStepBlocking()`, `CalculateProgress()`, `GetCurrentStep()`, `CalculateTotalCost()`
+ - Consistent response format across MAP Multi-Agent Planning and WCP Workflow Control Plane
 
 - **MAS FEAT Compliance Module** (Enterprise): Singapore financial services AI governance
-  - AI System Registry: `MASFEATRegisterSystem()`, `MASFEATGetSystem()`, `MASFEATUpdateSystem()`, `MASFEATListSystems()`, `MASFEATActivateSystem()`, `MASFEATRetireSystem()`, `MASFEATGetRegistrySummary()`
-  - 3-Dimensional Risk Rating: Customer Impact × Model Complexity × Human Reliance
-  - Materiality Classification: High (sum≥12), Medium (sum≥8), Low (sum<8)
-  - FEAT Assessments: `MASFEATCreateAssessment()`, `MASFEATGetAssessment()`, `MASFEATUpdateAssessment()`, `MASFEATListAssessments()`, `MASFEATSubmitAssessment()`, `MASFEATApproveAssessment()`, `MASFEATRejectAssessment()`
-  - Assessment Lifecycle: pending → in_progress → completed → approved/rejected
-  - Kill Switch: `MASFEATGetKillSwitch()`, `MASFEATConfigureKillSwitch()`, `MASFEATCheckKillSwitch()`, `MASFEATTriggerKillSwitch()`, `MASFEATRestoreKillSwitch()`, `MASFEATEnableKillSwitch()`, `MASFEATDisableKillSwitch()`, `MASFEATGetKillSwitchHistory()`
-  - Automatic model shutdown based on accuracy, bias, and error rate thresholds
-  - New types: `AISystemRegistry`, `AISystemUseCase`, `MaterialityClassification`, `SystemStatus`, `FEATAssessment`, `FEATAssessmentStatus`, `FEATPillar`, `KillSwitch`, `KillSwitchStatus`, `KillSwitchEvent`, `KillSwitchEventType`, `RegistrySummary`
+ - AI System Registry: `MASFEATRegisterSystem()`, `MASFEATGetSystem()`, `MASFEATUpdateSystem()`, `MASFEATListSystems()`, `MASFEATActivateSystem()`, `MASFEATRetireSystem()`, `MASFEATGetRegistrySummary()`
+ - 3-Dimensional Risk Rating: Customer Impact × Model Complexity × Human Reliance
+ - Materiality Classification: High (sum≥12), Medium (sum≥8), Low (sum<8)
+ - FEAT Assessments: `MASFEATCreateAssessment()`, `MASFEATGetAssessment()`, `MASFEATUpdateAssessment()`, `MASFEATListAssessments()`, `MASFEATSubmitAssessment()`, `MASFEATApproveAssessment()`, `MASFEATRejectAssessment()`
+ - Assessment Lifecycle: pending → in_progress → completed → approved/rejected
+ - Kill Switch: `MASFEATGetKillSwitch()`, `MASFEATConfigureKillSwitch()`, `MASFEATCheckKillSwitch()`, `MASFEATTriggerKillSwitch()`, `MASFEATRestoreKillSwitch()`, `MASFEATEnableKillSwitch()`, `MASFEATDisableKillSwitch()`, `MASFEATGetKillSwitchHistory()`
+ - Automatic model shutdown based on accuracy, bias, and error rate thresholds
+ - New types: `AISystemRegistry`, `AISystemUseCase`, `MaterialityClassification`, `SystemStatus`, `FEATAssessment`, `FEATAssessmentStatus`, `FEATPillar`, `KillSwitch`, `KillSwitchStatus`, `KillSwitchEvent`, `KillSwitchEventType`, `RegistrySummary`
 
 - **ProxyLLMCall()**: New primary method for Proxy Mode with improved documentation
-  - Clearly describes Proxy Mode behavior (AxonFlow makes the LLM call on your behalf)
-  - Documents when to use Proxy Mode vs Gateway Mode
-  - Same functionality as ExecuteQuery, but with clearer naming
+ - Clearly describes Proxy Mode behavior (AxonFlow makes the LLM call on your behalf)
+ - Documents when to use Proxy Mode vs Gateway Mode
+ - Same functionality as ExecuteQuery, but with clearer naming
 
 - **BudgetInfo**: `QueryResponse.BudgetInfo` for budget enforcement (HTTP 402)
 
 ### Deprecated
 
 - **ExecuteQuery()**: Deprecated in favor of ProxyLLMCall()
-  - Will be removed in v3.0.0
-  - Emits deprecation warning in debug mode
-  - Remains functional as a wrapper around ProxyLLMCall()
+ - Will be removed in v3.0.0
+ - Emits deprecation warning in debug mode
+ - Remains functional as a wrapper around ProxyLLMCall()
 
 ---
 
@@ -709,11 +696,11 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
-- **Workflow Policy Enforcement** (Issues #1019, #1020, #1021): Policy transparency for workflow operations
-  - `StepGateResponse` now includes `PoliciesEvaluated` and `PoliciesMatched` fields with `PolicyMatch` type
-  - `PolicyMatch` type with `PolicyID`, `PolicyName`, `Action`, `Reason` for policy transparency
-  - `PolicyEvaluationResult` type for MAP execution with `Allowed`, `AppliedPolicies`, `RiskScore`
-  - Workflow operations (`workflow_created`, `workflow_step_gate`, `workflow_completed`) logged to audit trail
+- **Workflow Policy Enforcement**: Policy transparency for workflow operations
+ - `StepGateResponse` now includes `PoliciesEvaluated` and `PoliciesMatched` fields with `PolicyMatch` type
+ - `PolicyMatch` type with `PolicyID`, `PolicyName`, `Action`, `Reason` for policy transparency
+ - `PolicyEvaluationResult` type for MAP execution with `Allowed`, `AppliedPolicies`, `RiskScore`
+ - Workflow operations (`workflow_created`, `workflow_step_gate`, `workflow_completed`) logged to audit trail
 
 ---
 
@@ -721,19 +708,19 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
-- **Workflow Control Plane** (Issue #834): Governance gates for external orchestrators
-  - "LangChain runs the workflow. AxonFlow decides when it's allowed to move forward."
-  - `CreateWorkflow()` - Register workflows from LangChain/LangGraph/CrewAI/external
-  - `StepGate()` - Check if step is allowed to proceed (allow/block/require_approval)
-  - `MarkStepCompleted()` - Mark a step as completed with optional output data
-  - `GetWorkflow()` - Get workflow status and step history
-  - `ListWorkflows()` - List workflows with filters (status, source, pagination)
-  - `CompleteWorkflow()` - Mark workflow as completed
-  - `AbortWorkflow()` - Abort workflow with reason
-  - `ResumeWorkflow()` - Resume after approval
-  - New types: `WorkflowStatus`, `WorkflowSource`, `GateDecision`, `StepType`, `ApprovalStatus`, `MarkStepCompletedRequest`
-  - Helper methods on `StepGateResponse`: `IsAllowed()`, `IsBlocked()`, `RequiresApproval()`
-  - Helper methods on `WorkflowStatus` and `WorkflowStatusResponse`: `IsTerminal()`
+- **Workflow Control Plane**: Governance gates for external orchestrators
+ - "LangChain runs the workflow. AxonFlow decides when it's allowed to move forward."
+ - `CreateWorkflow()` - Register workflows from LangChain/LangGraph/CrewAI/external
+ - `StepGate()` - Check if step is allowed to proceed (allow/block/require_approval)
+ - `MarkStepCompleted()` - Mark a step as completed with optional output data
+ - `GetWorkflow()` - Get workflow status and step history
+ - `ListWorkflows()` - List workflows with filters (status, source, pagination)
+ - `CompleteWorkflow()` - Mark workflow as completed
+ - `AbortWorkflow()` - Abort workflow with reason
+ - `ResumeWorkflow()` - Resume after approval
+ - New types: `WorkflowStatus`, `WorkflowSource`, `GateDecision`, `StepType`, `ApprovalStatus`, `MarkStepCompletedRequest`
+ - Helper methods on `StepGateResponse`: `IsAllowed()`, `IsBlocked()`, `RequiresApproval()`
+ - Helper methods on `WorkflowStatus` and `WorkflowStatusResponse`: `IsTerminal()`
 
 ---
 
@@ -741,16 +728,16 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ### Added
 
-- **MCP Exfiltration Detection** (Issue #966): `PolicyInfo` now includes `ExfiltrationCheck` with row/volume limit information
-  - `ExfiltrationCheckInfo` type with `RowsReturned`, `RowLimit`, `BytesReturned`, `ByteLimit`, `WithinLimits` fields
-  - Prevents large-scale data extraction via MCP queries
-  - Configurable via `MCP_MAX_ROWS_PER_QUERY` and `MCP_MAX_BYTES_PER_QUERY` environment variables
+- **MCP Exfiltration Detection**: `PolicyInfo` now includes `ExfiltrationCheck` with row/volume limit information
+ - `ExfiltrationCheckInfo` type with `RowsReturned`, `RowLimit`, `BytesReturned`, `ByteLimit`, `WithinLimits` fields
+ - Prevents large-scale data extraction via MCP queries
+ - Configurable via `MCP_MAX_ROWS_PER_QUERY` and `MCP_MAX_BYTES_PER_QUERY` environment variables
 
-- **MCP Dynamic Policies** (Issue #968): `PolicyInfo` now includes `DynamicPolicyInfo` for Orchestrator-evaluated policies
-  - `DynamicPolicyInfo` type with `PoliciesEvaluated`, `MatchedPolicies`, `OrchestratorReachable`, `ProcessingTimeMs`
-  - `DynamicPolicyMatch` type with `PolicyID`, `PolicyName`, `PolicyType`, `Action`, `Reason`
-  - Supports rate limiting, budget controls, time-based access, and role-based access policies
-  - Optional feature - enable via `MCP_DYNAMIC_POLICIES_ENABLED=true`
+- **MCP Dynamic Policies**: `PolicyInfo` now includes `DynamicPolicyInfo` for Orchestrator-evaluated policies
+ - `DynamicPolicyInfo` type with `PoliciesEvaluated`, `MatchedPolicies`, `OrchestratorReachable`, `ProcessingTimeMs`
+ - `DynamicPolicyMatch` type with `PolicyID`, `PolicyName`, `PolicyType`, `Action`, `Reason`
+ - Supports rate limiting, budget controls, time-based access, and role-based access policies
+ - Optional feature - enable via `MCP_DYNAMIC_POLICIES_ENABLED=true`
 
 ---
 
@@ -759,13 +746,13 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 ### Added
 
 - **MCP Policy Enforcement Response Fields**: `MCPQuery()` and `MCPExecute()` now return policy enforcement metadata
-  - `Redacted bool` - Whether any fields were redacted by PII policies
-  - `RedactedFields []string` - JSON paths of redacted fields (e.g., `rows[0].ssn`)
-  - `PolicyInfo *PolicyInfo` - Full policy evaluation metadata
+ - `Redacted bool` - Whether any fields were redacted by PII policies
+ - `RedactedFields []string` - JSON paths of redacted fields (e.g., `rows[0].ssn`)
+ - `PolicyInfo *PolicyInfo` - Full policy evaluation metadata
 
 - **PolicyInfo types**: New types for policy enforcement metadata
-  - `PolicyInfo` - Contains `PoliciesEvaluated`, `Blocked`, `BlockReason`, `RedactionsApplied`, `ProcessingTimeMs`, `MatchedPolicies`
-  - `PolicyMatchInfo` - Details of matched policies including `PolicyID`, `PolicyName`, `Category`, `Severity`, `Action`
+ - `PolicyInfo` - Contains `PoliciesEvaluated`, `Blocked`, `BlockReason`, `RedactionsApplied`, `ProcessingTimeMs`, `MatchedPolicies`
+ - `PolicyMatchInfo` - Details of matched policies including `PolicyID`, `PolicyName`, `Category`, `Severity`, `Action`
 
 ---
 
@@ -774,13 +761,13 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 ### Added
 
 - **OAuth2-style client credentials**: New `ClientID` and `ClientSecret` configuration fields following OAuth2 client credentials pattern.
-  - `ClientID` is used for request identification (required for most API calls)
-  - `ClientSecret` is optional - community/self-hosted deployments work without it
+ - `ClientID` is used for request identification (required for most API calls)
+ - `ClientSecret` is optional - community/self-hosted deployments work without it
 
 - **Enterprise: Close PR** (`ClosePR`): Close a PR without merging and optionally delete the branch
-  - Useful for cleaning up test/demo PRs created by code governance examples
-  - Supports all Git providers: GitHub, GitLab, Bitbucket
-  - Requires enterprise portal authentication
+ - Useful for cleaning up test/demo PRs created by code governance examples
+ - Supports all Git providers: GitHub, GitLab, Bitbucket
+ - Requires enterprise portal authentication
 
 ### Changed
 
@@ -788,9 +775,9 @@ in v3.5.0. This major version formally acknowledges that breaking change.
 
 ```go
 // Community mode - no secret needed
-client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint: "http://localhost:8080",
-    ClientID: "my-app",  // Used for request identification
+client:= axonflow.NewClient(axonflow.AxonFlowConfig{
+ Endpoint: "http://localhost:8080",
+ ClientID: "my-app", // Used for request identification
 })
 ```
 
@@ -809,9 +796,9 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 
 - **Sensitive Data Category**: Added `CategorySensitiveData` to `PolicyCategory` enum for policies that return `sensitive-data` category
 - **Provider Restrictions for Compliance**: Support for `allowed_providers` in dynamic policy action config
-  - Specify allowed providers via `DynamicPolicyAction.Config["allowed_providers"]`
-  - Enables GDPR, HIPAA, and RBI compliance by restricting LLM routing to specific providers
-  - Example: `Actions: []DynamicPolicyAction{{Type: "route", Config: map[string]interface{}{"allowed_providers": []string{"ollama", "azure-eu"}}}}`
+ - Specify allowed providers via `DynamicPolicyAction.Config["allowed_providers"]`
+ - Enables GDPR, HIPAA, and RBI compliance by restricting LLM routing to specific providers
+ - Example: `Actions: []DynamicPolicyAction{{Type: "route", Config: map[string]interface{}{"allowed_providers": []string{"ollama", "azure-eu"}}}}`
 - **Category field**: Added `Category` field to `CreateDynamicPolicyRequest` and `UpdateDynamicPolicyRequest`
 - **DynamicPolicy fields**: Added `Category`, `Tier`, `Version`, `TenantID` fields to `DynamicPolicy` struct
 
@@ -819,8 +806,8 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 
 - **ToggleDynamicPolicy HTTP Method**: Changed from PATCH to PUT to match API specification
 - **Dynamic Policy Response Parsing**: Fixed `ListDynamicPolicies`, `GetDynamicPolicy`, `CreateDynamicPolicy`, `UpdateDynamicPolicy`, `ToggleDynamicPolicy`, and `GetEffectiveDynamicPolicies` to correctly parse wrapped API responses
-  - API returns `{"policies": [...]}` and `{"policy": {...}}` wrappers
-  - Added `dynamicPoliciesResponse` and `dynamicPolicyResponse` wrapper structs
+ - API returns `{"policies": [.]}` and `{"policy": {.}}` wrappers
+ - Added `dynamicPoliciesResponse` and `dynamicPolicyResponse` wrapper structs
 
 ## [2.0.0] - 2026-01-05
 
@@ -835,9 +822,9 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 - **Audit Log Reading**: Added `SearchAuditLogs()` for searching audit logs with filters (user email, client ID, time range, request type)
 - **Tenant Audit Logs**: Added `GetAuditLogsByTenant()` for retrieving audit logs scoped to a specific tenant
 - **Audit Types**: Added `AuditLogEntry`, `AuditSearchRequest`, `AuditQueryOptions`, and `AuditSearchResponse` types
-- **PII Redaction Support**: Added `RequiresRedaction` field to `PolicyApprovalResult` (Issue #891)
-  - When `true`, PII was detected with redact action and response should be processed for redaction
-  - Supports new detection defaults: PII defaults to redact instead of block
+- **PII Redaction Support**: Added `RequiresRedaction` field to `PolicyApprovalResult`
+ - When `true`, PII was detected with redact action and response should be processed for redaction
+ - Supports new detection defaults: PII defaults to redact instead of block
 
 ### Changed
 
@@ -849,21 +836,21 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 
 **Before (v1.x):**
 ```go
-client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    AgentURL:        "http://localhost:8080",
-    OrchestratorURL: "http://localhost:8081",
-    PortalURL:       "http://localhost:8082",
-    ClientID:        "my-client",
-    ClientSecret:    "my-secret",
+client:= axonflow.NewClient(axonflow.AxonFlowConfig{
+ AgentURL: "http://localhost:8080",
+ OrchestratorURL: "http://localhost:8081",
+ PortalURL: "http://localhost:8082",
+ ClientID: "my-client",
+ ClientSecret: "my-secret",
 })
 ```
 
 **After (v2.x):**
 ```go
-client := axonflow.NewClient(axonflow.AxonFlowConfig{
-    Endpoint:     "http://localhost:8080",
-    ClientID:     "my-client",
-    ClientSecret: "my-secret",
+client:= axonflow.NewClient(axonflow.AxonFlowConfig{
+ Endpoint: "http://localhost:8080",
+ ClientID: "my-client",
+ ClientSecret: "my-secret",
 })
 ```
 
@@ -896,8 +883,8 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Fixed
 
 - **Connector API Endpoints**: Fixed endpoints to use Orchestrator (port 8081) instead of Agent
-  - `ListConnectors()` - Changed from Agent `/api/connectors` to Orchestrator `/api/v1/connectors`
-  - `InstallConnector()` - Fixed path to `/api/v1/connectors/{id}/install`
+ - `ListConnectors()` - Changed from Agent `/api/connectors` to Orchestrator `/api/v1/connectors`
+ - `InstallConnector()` - Fixed path to `/api/v1/connectors/{id}/install`
 - **Dynamic Policies Endpoint**: Changed from Agent `/api/v1/policies` to Orchestrator `/api/v1/policies/dynamic`
 
 ---
@@ -907,20 +894,20 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Added
 
 - **Execution Replay API**: Debug governed workflows with step-by-step state capture
-  - `ListExecutions()` - List executions with filtering (status, time range)
-  - `GetExecution()` - Get execution with all step snapshots
-  - `GetExecutionSteps()` - Get individual step snapshots
-  - `GetExecutionTimeline()` - Timeline view for visualization
-  - `ExportExecution()` - Export for compliance/archival
-  - `DeleteExecution()` - Delete execution records
+ - `ListExecutions()` - List executions with filtering (status, time range)
+ - `GetExecution()` - Get execution with all step snapshots
+ - `GetExecutionSteps()` - Get individual step snapshots
+ - `GetExecutionTimeline()` - Timeline view for visualization
+ - `ExportExecution()` - Export for compliance/archival
+ - `DeleteExecution()` - Delete execution records
 
 - **Cost Controls**: Budget management and LLM usage tracking
-  - `CreateBudget()` / `GetBudget()` / `ListBudgets()` - Budget CRUD
-  - `UpdateBudget()` / `DeleteBudget()` - Budget management
-  - `GetBudgetStatus()` - Check current budget usage
-  - `CheckBudget()` - Pre-request budget validation
-  - `RecordUsage()` - Record LLM token usage
-  - `GetUsageSummary()` - Usage analytics and reporting
+ - `CreateBudget()` / `GetBudget()` / `ListBudgets()` - Budget CRUD
+ - `UpdateBudget()` / `DeleteBudget()` - Budget management
+ - `GetBudgetStatus()` - Check current budget usage
+ - `CheckBudget()` - Pre-request budget validation
+ - `RecordUsage()` - Record LLM token usage
+ - `GetUsageSummary()` - Usage analytics and reporting
 
 ---
 
@@ -929,9 +916,9 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Fixed
 
 - **403 Forbidden Handling**: Properly handle HTTP 403 responses for blocked requests
-  - Agent returns 403 when requests are blocked by policy
-  - Previously this triggered retry logic and fail-open, causing blocked requests to appear allowed
-  - Now correctly parses 403 response body and returns `Blocked=true` with proper `BlockReason`
+ - Agent returns 403 when requests are blocked by policy
+ - Previously this triggered retry logic and fail-open, causing blocked requests to appear allowed
+ - Now correctly parses 403 response body and returns `Blocked=true` with proper `BlockReason`
 
 ---
 
@@ -940,9 +927,9 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Changed
 
 - **Community Mode**: Credentials are now optional for self-hosted/community deployments
-  - SDK can be initialized without `ClientSecret` or `LicenseKey` for community features
-  - `ExecuteQuery()` and `HealthCheck()` work without credentials
-  - Auth headers are only sent when credentials are configured
+ - SDK can be initialized without `ClientSecret` or `LicenseKey` for community features
+ - `ExecuteQuery()` and `HealthCheck()` work without credentials
+ - Auth headers are only sent when credentials are configured
 
 ### Added
 
@@ -972,18 +959,18 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Added
 
 - **Enterprise Policy Features**:
-  - `OrganizationID` field in `CreateStaticPolicyRequest` for organization-tier policies
-  - `OrganizationID` field in `ListStaticPoliciesOptions` for filtering by organization
-  - `ListPolicyOverrides()` method to list all active policy overrides
+ - `OrganizationID` field in `CreateStaticPolicyRequest` for organization-tier policies
+ - `OrganizationID` field in `ListStaticPoliciesOptions` for filtering by organization
+ - `ListPolicyOverrides()` method to list all active policy overrides
 
 - **Type Aliases** (for backward compatibility with existing code):
-  - `ListStaticPoliciesRequest` = `ListStaticPoliciesOptions`
-  - `CreateOverrideRequest` = `CreatePolicyOverrideRequest`
-  - `GetEffectiveRequest` = `EffectivePoliciesOptions`
+ - `ListStaticPoliciesRequest` = `ListStaticPoliciesOptions`
+ - `CreateOverrideRequest` = `CreatePolicyOverrideRequest`
+ - `GetEffectiveRequest` = `EffectivePoliciesOptions`
 
 - **TestPatternResult Improvements**:
-  - `Results` field as alias for `Matches`
-  - `GetResults()` method for convenience
+ - `Results` field as alias for `Matches`
+ - `GetResults()` method for convenience
 
 ---
 
@@ -992,9 +979,9 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Added
 
 - **Code Governance Metrics & Export APIs** (Enterprise): Compliance reporting for AI-generated code
-  - `GetCodeGovernanceMetrics()` - Returns aggregated statistics (PR counts, file totals, security findings)
-  - `ExportCodeGovernanceData()` - Exports PR records as JSON for auditors
-  - `ExportCodeGovernanceDataCSV()` - Exports PR records as CSV
+ - `GetCodeGovernanceMetrics()` - Returns aggregated statistics (PR counts, file totals, security findings)
+ - `ExportCodeGovernanceData()` - Exports PR records as JSON for auditors
+ - `ExportCodeGovernanceDataCSV()` - Exports PR records as CSV
 
 - **New Types**: `CodeGovernanceMetrics`, `ExportOptions`, `ExportResponse`
 
@@ -1005,21 +992,21 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Added
 
 - **Code Governance Git Provider APIs** (Enterprise): Create PRs from LLM-generated code
-  - `ValidateGitProvider()` - Validate credentials before saving
-  - `ConfigureGitProvider()` - Configure GitHub, GitLab, or Bitbucket
-  - `ListGitProviders()` - List configured providers
-  - `DeleteGitProvider()` - Remove a provider
-  - `CreatePR()` - Create PR from generated code with audit trail
-  - `ListPRs()` - List PRs with filtering
-  - `GetPR()` - Get PR details
-  - `SyncPRStatus()` - Sync status from Git provider
+ - `ValidateGitProvider()` - Validate credentials before saving
+ - `ConfigureGitProvider()` - Configure GitHub, GitLab, or Bitbucket
+ - `ListGitProviders()` - List configured providers
+ - `DeleteGitProvider()` - Remove a provider
+ - `CreatePR()` - Create PR from generated code with audit trail
+ - `ListPRs()` - List PRs with filtering
+ - `GetPR()` - Get PR details
+ - `SyncPRStatus()` - Sync status from Git provider
 
 - **New Types**: `GitProviderType`, `FileAction`, `CodeFile`, `CreatePRRequest`, `CreatePRResponse`, `PRRecord`, `ListPRsOptions`, `ListPRsResponse`
 
 - **Supported Git Providers**:
-  - GitHub (Cloud and Enterprise Server)
-  - GitLab (Cloud and Self-Managed)
-  - Bitbucket (Cloud and Server/Data Center)
+ - GitHub (Cloud and Enterprise Server)
+ - GitLab (Cloud and Self-Managed)
+ - Bitbucket (Cloud and Server/Data Center)
 
 ---
 
@@ -1028,9 +1015,9 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Added
 
 - **HITL Support**: `ActionRequireApproval` for human oversight policies
-  - Use with `CreateStaticPolicy()` to trigger approval workflows
-  - Enterprise: Full HITL queue integration
-  - Community: Auto-approves immediately
+ - Use with `CreateStaticPolicy()` to trigger approval workflows
+ - Enterprise: Full HITL queue integration
+ - Community: Auto-approves immediately
 
 ---
 
@@ -1038,31 +1025,31 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 
 ### Added
 
-- **Code Governance Support** - `CodeArtifact` type for detecting and auditing LLM-generated code (#16)
-  - `CodeArtifact` struct in `PolicyEvaluationInfo` with fields:
-    - `IsCodeOutput` - Whether response contains code
-    - `Language` - Detected programming language (14 supported)
-    - `CodeType` - Code category (function, class, script, config, snippet, module)
-    - `SizeBytes` - Size of detected code in bytes
-    - `LineCount` - Number of lines of code
-    - `SecretsDetected` - Count of potential secrets found
-    - `UnsafePatterns` - Count of unsafe code patterns
-  - Automatic code detection in LLM responses
-  - Supports Python, Go, TypeScript, JavaScript, Java, SQL, Ruby, Rust, C/C++, Bash, YAML, JSON, Dockerfile, Terraform
+- **Code Governance Support** - `CodeArtifact` type for detecting and auditing LLM-generated code
+ - `CodeArtifact` struct in `PolicyEvaluationInfo` with fields:
+ - `IsCodeOutput` - Whether response contains code
+ - `Language` - Detected programming language (14 supported)
+ - `CodeType` - Code category (function, class, script, config, snippet, module)
+ - `SizeBytes` - Size of detected code in bytes
+ - `LineCount` - Number of lines of code
+ - `SecretsDetected` - Count of potential secrets found
+ - `UnsafePatterns` - Count of unsafe code patterns
+ - Automatic code detection in LLM responses
+ - Supports Python, Go, TypeScript, JavaScript, Java, SQL, Ruby, Rust, C/C++, Bash, YAML, JSON, Dockerfile, Terraform
 
 ## [1.6.0] - 2025-12-25
 
 ### Added
 
 - **Policy CRUD Methods**: Full policy management support for Unified Policy Architecture v2.0.0
-  - `ListStaticPolicies()` - List policies with filtering
-  - `GetStaticPolicy()` - Get single policy by ID
-  - `CreateStaticPolicy()` - Create custom policy
-  - `UpdateStaticPolicy()` - Update existing policy
-  - `DeleteStaticPolicy()` - Delete policy
-  - `ToggleStaticPolicy()` - Enable/disable policy
-  - `GetEffectiveStaticPolicies()` - Get merged hierarchy
-  - `TestPattern()` - Test regex pattern
+ - `ListStaticPolicies()` - List policies with filtering
+ - `GetStaticPolicy()` - Get single policy by ID
+ - `CreateStaticPolicy()` - Create custom policy
+ - `UpdateStaticPolicy()` - Update existing policy
+ - `DeleteStaticPolicy()` - Delete policy
+ - `ToggleStaticPolicy()` - Enable/disable policy
+ - `GetEffectiveStaticPolicies()` - Get merged hierarchy
+ - `TestPattern()` - Test regex pattern
 
 - **Policy Override Methods** (Enterprise)
 - **Dynamic Policy Methods**
@@ -1073,34 +1060,34 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 ### Added
 
 - **MAP Timeout Configuration** - New `MapTimeout` config option (default: 120s) for Multi-Agent Planning operations
-  - MAP operations involve multiple LLM calls and can take 30-60+ seconds
-  - Separate `mapHttpClient` with longer timeout
-  - `GeneratePlan()` and `ExecutePlan()` now use the longer MAP timeout
+ - MAP operations involve multiple LLM calls and can take 30-60+ seconds
+ - Separate `mapHttpClient` with longer timeout
+ - `GeneratePlan()` and `ExecutePlan()` now use the longer MAP timeout
 
 ## [1.5.0] - 2025-12-19
 
 ### Added
 
-- **LLM Interceptors** - Transparent governance for LLM API calls (#8)
-  - `WrapOpenAIClient()` for OpenAI API interception
-  - `WrapAnthropicClient()` for Anthropic API interception
-  - `WrapGeminiModel()` for Google Generative AI interception
-  - Policy enforcement and audit logging for all providers
+- **LLM Interceptors** - Transparent governance for LLM API calls
+ - `WrapOpenAIClient()` for OpenAI API interception
+ - `WrapAnthropicClient()` for Anthropic API interception
+ - `WrapGeminiModel()` for Google Generative AI interception
+ - Policy enforcement and audit logging for all providers
 - Full feature parity with other SDKs for LLM interceptors
 
 ## [1.4.1] - 2025-12-15
 
 ### Added
 
-- **Contract Testing Suite** - Validates SDK models against real API responses (#7)
-  - JSON fixtures for all response types
-  - Integration test workflow with GitHub Actions
-- Unit tests for `parseTimeWithFallback` helper (#5)
+- **Contract Testing Suite** - Validates SDK models against real API responses
+ - JSON fixtures for all response types
+ - Integration test workflow with GitHub Actions
+- Unit tests for `parseTimeWithFallback` helper
 
 ### Fixed
 
-- Datetime parsing with nanosecond precision (#4)
-- `GeneratePlan()` and `ExecutePlan()` authentication with explicit user token (#4)
+- Datetime parsing with nanosecond precision
+- `GeneratePlan()` and `ExecutePlan()` authentication with explicit user token
 
 ## [1.4.0] - 2025-12-10
 
@@ -1113,12 +1100,12 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 
 ### Added
 
-- **Gateway Mode API** - Support for direct LLM calls with policy enforcement (#1)
-  - `GetPolicyApprovedContext()` for pre-checks
-  - `AuditLLMCall()` for compliance logging
+- **Gateway Mode API** - Support for direct LLM calls with policy enforcement
+ - `GetPolicyApprovedContext()` for pre-checks
+ - `AuditLLMCall()` for compliance logging
 - Self-hosted mode for localhost deployments
-  - Skip auth headers for localhost endpoints
-  - License key optional for self-hosted
+ - Skip auth headers for localhost endpoints
+ - License key optional for self-hosted
 - User token parameter to `QueryConnector()` method
 
 ### Fixed
