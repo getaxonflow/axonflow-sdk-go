@@ -17,10 +17,11 @@ permissions:
   contents: read
 
 # Avoid spawning parallel docker-compose stacks on back-to-back pushes;
-# also cancels stale PR runs when a new commit lands.
+# also cancels stale PR runs when a new commit lands. Push to main keys on SHA
+# so main runs never queue or cancel each other.
 concurrency:
-  group: integration-${{ github.ref }}
-  cancel-in-progress: true
+  group: integration-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   AXONFLOW_TELEMETRY: 'off'
