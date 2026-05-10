@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   AXONFLOW_TELEMETRY: 'off'
 
@@ -17,25 +21,21 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     strategy:
+      # PR runs only Go 1.22 (current release toolchain). Push to main and
+      # workflow_dispatch run the full matrix to catch version-specific drift.
       matrix:
-        go-version: ['1.21', '1.22', '1.23']
+        go-version: ${{ fromJson(github.event_name == 'pull_request' && '["1.22"]' || '["1.21", "1.22", "1.23"]') }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # setup-go@v5 caches the module + build cache by default when go.sum
+    # exists at the repo root — no manual `actions/cache@v4` step needed.
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
 
     - name: Download dependencies
       run: go mod download
@@ -82,6 +82,26 @@ jobs:
         name: codecov-umbrella
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # Aggregator that always reports a single check name regardless of the
+  # matrix shape (PR-time matrix is `['1.22']`; push/dispatch is full).
+  # Branch protection requires `Test Summary`, not the per-version names,
+  # so matrix changes don't strand required checks.
+  test-summary:
+    name: Test Summary
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Aggregate test matrix result
+      run: |
+        result="${{ needs.test.result }}"
+        echo "test matrix result: $result"
+        if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+          echo "::error::test matrix did not all pass (result: $result)"
+          exit 1
+        fi
+        echo "Test matrix OK"
 
   build:
     name: Build
