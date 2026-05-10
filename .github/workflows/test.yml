@@ -83,6 +83,26 @@ jobs:
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  # Aggregator that always reports a single check name regardless of the
+  # matrix shape (PR-time matrix is `['1.22']`; push/dispatch is full).
+  # Branch protection requires `Test Summary`, not the per-version names,
+  # so matrix changes don't strand required checks.
+  test-summary:
+    name: Test Summary
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Aggregate test matrix result
+      run: |
+        result="${{ needs.test.result }}"
+        echo "test matrix result: $result"
+        if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+          echo "::error::test matrix did not all pass (result: $result)"
+          exit 1
+        fi
+        echo "Test matrix OK"
+
   build:
     name: Build
     runs-on: ubuntu-latest
