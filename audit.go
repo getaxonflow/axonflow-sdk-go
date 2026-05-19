@@ -438,16 +438,20 @@ func (c *AxonFlowClient) GetAuditLogsByTenant(ctx context.Context, tenantID stri
 
 // addAuthHeaders adds OAuth2-style Basic auth header to the request.
 // The server derives tenant context from the authenticated clientId.
+//
+// X-Client-ID (v9): every governed request also carries the effective
+// client_id as a separate header so server-side identity decisions
+// don't have to re-decode Basic auth. The agent's apiAuthMiddleware
+// overwrites the header with its auth-derived value, so any caller-
+// supplied X-Client-ID is harmless (no spoofing surface).
 func (c *AxonFlowClient) addAuthHeaders(req *http.Request) {
 	effectiveClientID := c.config.ClientID
 	if effectiveClientID == "" {
 		effectiveClientID = "community"
 	}
-	// Always send Basic auth — server derives tenant from clientId
 	credentials := base64.StdEncoding.EncodeToString(
 		[]byte(effectiveClientID + ":" + c.config.ClientSecret),
 	)
 	req.Header.Set("Authorization", "Basic "+credentials)
-	if effectiveClientID != "" {
-	}
+	req.Header.Set("X-Client-ID", effectiveClientID)
 }
