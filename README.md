@@ -20,13 +20,13 @@
 >
 > `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v8`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is seven major release lines behind current. See the [Migration Guide](#migration-guide) below.
 
-> **Evaluating AxonFlow in production?** We're opening limited Design Partner slots.
+> **Evaluating AxonFlow for a real deployment?**
 >
-> Free 30-minute architecture and incident-readiness review, priority issue triage, roadmap input, and early feature access.
+> Choose the path that fits:
+> - **Self-serve:** free 90-day [Evaluation License](https://getaxonflow.com/evaluation-license?utm_source=readme_sdk_go_eval)
+> - **Hands-on:** [Design Partner Program](https://getaxonflow.com/design-partner?utm_source=readme_sdk_go) with either **6 months of self-hosted / in-VPC Enterprise** at no cost or **3 months of AxonFlow-managed Enterprise SaaS** with SLO-backed support, up to **50,000 write requests / 1,000,000 total requests per month**
 >
-> [Apply here](https://getaxonflow.com/design-partner?utm_source=readme_sdk_go) or email [design-partners@getaxonflow.com](mailto:design-partners@getaxonflow.com).
->
-> No commitment required. We reply within 48 hours.
+> Priority support, architecture review, incident-readiness review, and roadmap input are included for selected partners. We reply within 48 hours.
 
 > **Questions or feedback?**
 >
@@ -72,7 +72,7 @@ Concurrent executions applies to MAP and WCP executions per tenant. Pending exec
 
 > **Note:** Evidence export and policy simulation are licensed AxonFlow platform capabilities available alongside the SDK on your deployed platform — not language-specific SDK helpers. Access them via the platform API or customer portal. The SDK row is included to show what your licensed deployment unlocks at each tier.
 
-[Get a free Evaluation license](https://getaxonflow.com/evaluation-license?utm_source=readme_sdk_go_eval) · [Full feature matrix](https://docs.getaxonflow.com/docs/features/community-vs-enterprise?utm_source=readme_sdk_go_eval)
+[Get a free Evaluation license](https://getaxonflow.com/evaluation-license?utm_source=readme_sdk_go_eval) · [Apply for Design Partner](https://getaxonflow.com/design-partner?utm_source=readme_sdk_go_eval) · [Full feature matrix](https://docs.getaxonflow.com/docs/features/community-vs-enterprise?utm_source=readme_sdk_go_eval)
 
 ## Try Without Installing
 
