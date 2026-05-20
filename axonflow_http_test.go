@@ -1174,6 +1174,48 @@ func TestRetryWith4xxError(t *testing.T) {
 	}
 }
 
+// Regression test for issue #2275: 401 must be terminal. The SDK MUST
+// NOT retry an auth failure — retrying with the same invalid token
+// just compounds the storm on the agent. Backstops the cross-SDK
+// audit done in axonflow-enterprise#2275 where a customer's
+// misconfigured deployment caused a tight 401 retry loop against
+// community-saas (~30 401/hour from a single source IP).
+//
+// Go SDK is already safe: executeWithRetry treats all 4xx (including
+// 401) as terminal at axonflow.go:894-900. This test makes the
+// contract explicit for 401 specifically, separate from the generic
+// 4xx coverage in TestRetryWith4xxError above.
+func TestRetryWith401_Issue2275(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+		Mode:     "sandbox", // sandbox disables fail-open so 401 surfaces
+		Retry: RetryConfig{
+			Enabled:      true,
+			MaxAttempts:  3,
+			InitialDelay: 1 * time.Millisecond,
+		},
+		Cache: CacheConfig{Enabled: false},
+	})
+
+	_, err := client.ProxyLLMCall("user", "query", "chat", nil)
+	if err == nil {
+		t.Error("Expected error on 401")
+	}
+
+	if callCount != 1 {
+		t.Errorf("Expected 1 call (no retry on 401), got %d", callCount)
+	}
+}
+
 func TestAuthHeadersSentWithCredentials(t *testing.T) {
 	receivedAuthHeader := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
