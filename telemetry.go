@@ -49,6 +49,13 @@ type telemetryPayload struct {
 	// and the server defaults to "heartbeat". The wire-allowlist is enforced
 	// server-side — see checkpoint-service IsValidIncomingStream.
 	Stream string `json:"stream,omitempty"`
+	// OrgID identifies the deployment's organization (#2277). Two sources,
+	// in precedence order: the ORG_ID env var when set (the operator's
+	// explicit configuration on self-hosted deployments, or the cs_<uuid>
+	// tenant identifier on Community SaaS); otherwise the "local-dev-org"
+	// sentinel. Always emitted. See axonflow-landing/content/privacy.html
+	// for the customer-facing commitment that covers this field.
+	OrgID string `json:"org_id"`
 }
 
 // DeploymentMode classifications for telemetry (v1 schema, axonflow-enterprise#2008).
@@ -80,6 +87,22 @@ func ClassifyDeploymentMode(endpoint string) string {
 		return DeploymentModeCommunitySaaS
 	}
 	return DeploymentModeSelfHosted
+}
+
+// OrgIDLocalDevSentinel is emitted on the telemetry wire when ORG_ID is
+// unset — the default-config Community-mode developer case. See #2277.
+const OrgIDLocalDevSentinel = "local-dev-org"
+
+// telemetryOrgID returns the org_id value to emit on the next telemetry
+// ping. Reads ORG_ID from the environment (the operator's explicit
+// configuration for self-hosted deployments, or the cs_<uuid> tenant
+// identifier on Community SaaS) and falls back to OrgIDLocalDevSentinel
+// when unset. Always returns a non-empty string. See #2277.
+func telemetryOrgID() string {
+	if v := os.Getenv("ORG_ID"); v != "" {
+		return v
+	}
+	return OrgIDLocalDevSentinel
 }
 
 // EndpointType classifications for telemetry.
@@ -246,7 +269,7 @@ func (c *AxonFlowClient) sendTelemetryPing() {
 // the total blocking time is bounded by ctx — no stacked sub-timeouts.
 // See issue #1693 for the original short-lived-process delivery fix.
 func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
-	log.Printf("[AxonFlow] Anonymous telemetry enabled. Opt out: AXONFLOW_TELEMETRY=off | https://docs.getaxonflow.com/docs/telemetry")
+	log.Printf("[AxonFlow] Telemetry enabled. Opt out: AXONFLOW_TELEMETRY=off | https://docs.getaxonflow.com/docs/telemetry")
 
 	// Determine the checkpoint URL.
 	checkpointURL := os.Getenv("AXONFLOW_CHECKPOINT_URL")
@@ -286,6 +309,7 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		Features:        []string{},
 		InstanceID:      generateInstanceID(),
 		Stream:          stream,
+		OrgID:           telemetryOrgID(),
 	}
 
 	body, err := json.Marshal(payload)

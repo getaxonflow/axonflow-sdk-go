@@ -3,6 +3,7 @@ package axonflow
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -122,6 +123,7 @@ func TestGenerateInstanceID(t *testing.T) {
 
 func TestSendTelemetryPing_Success(t *testing.T) {
 	t.Setenv("AXONFLOW_TELEMETRY", "")
+	t.Setenv("ORG_ID", "") // exercise sentinel path
 	var received telemetryPayload
 	var called atomic.Int32
 
@@ -192,6 +194,9 @@ func TestSendTelemetryPing_Success(t *testing.T) {
 	}
 	if received.InstanceID == "" {
 		t.Error("expected instance_id to be non-empty")
+	}
+	if received.OrgID != OrgIDLocalDevSentinel {
+		t.Errorf("expected org_id=%q (sentinel, ORG_ID unset), got %q", OrgIDLocalDevSentinel, received.OrgID)
 	}
 }
 
@@ -555,5 +560,108 @@ func TestSendTelemetryPing_ProductionNoCreds(t *testing.T) {
 
 	if called.Load() != 1 {
 		t.Errorf("expected exactly 1 HTTP request for production mode without credentials, got %d", called.Load())
+	}
+}
+
+// TestTelemetryOrgID_HelperUnit asserts the env→sentinel fallback. Issue #2277.
+func TestTelemetryOrgID_HelperUnit(t *testing.T) {
+	t.Run("ORG_ID set wins", func(t *testing.T) {
+		t.Setenv("ORG_ID", "acme-corp")
+		if got := telemetryOrgID(); got != "acme-corp" {
+			t.Errorf("expected ORG_ID env to win, got %q", got)
+		}
+	})
+	t.Run("ORG_ID unset returns local-dev-org sentinel", func(t *testing.T) {
+		t.Setenv("ORG_ID", "")
+		if got := telemetryOrgID(); got != OrgIDLocalDevSentinel {
+			t.Errorf("expected sentinel %q, got %q", OrgIDLocalDevSentinel, got)
+		}
+	})
+	t.Run("cs_-prefixed Community SaaS shape", func(t *testing.T) {
+		t.Setenv("ORG_ID", "cs_abc12345-6789-4def-9012-345678901234")
+		if got := telemetryOrgID(); got != "cs_abc12345-6789-4def-9012-345678901234" {
+			t.Errorf("expected ORG_ID to pass through, got %q", got)
+		}
+	})
+}
+
+// TestSendTelemetryPing_OrgIDOnWire asserts the org_id field actually
+// reaches the wire payload — the functional end-to-end check that
+// closes #2277 R2. Uses httptest.Server (the same pattern existing
+// tests use) which is the real net/http stack on both sides.
+func TestSendTelemetryPing_OrgIDOnWire(t *testing.T) {
+	t.Setenv("AXONFLOW_TELEMETRY", "")
+
+	cases := []struct {
+		name     string
+		orgIDEnv string
+		want     string
+	}{
+		{"operator-supplied ORG_ID (self-hosted)", "acme-corp", "acme-corp"},
+		{"cs_-prefixed tenant identifier (Community SaaS)", "cs_e3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8", "cs_e3a4b5c6-d7e8-4f90-a1b2-c3d4e5f6a7b8"},
+		{"unset becomes local-dev-org sentinel", "", OrgIDLocalDevSentinel},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ORG_ID", tc.orgIDEnv)
+
+			var received telemetryPayload
+			// Capture the raw JSON too so we can prove the field is
+			// physically on the wire (not just decoded by our local
+			// struct tag — a mutation that drops the json tag would
+			// be silently re-attached by Go's struct-name fallback).
+			var rawBody []byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				rawBody, _ = io.ReadAll(r.Body)
+				_ = json.Unmarshal(rawBody, &received)
+				json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+			}))
+			defer srv.Close()
+			t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+			client := &AxonFlowClient{
+				config: AxonFlowConfig{Mode: "production", ClientID: "id", ClientSecret: "sec"},
+			}
+			client.sendTelemetryPing()
+
+			if received.OrgID != tc.want {
+				t.Errorf("decoded OrgID = %q, want %q", received.OrgID, tc.want)
+			}
+
+			// Wire-level assertion: the literal JSON field name "org_id"
+			// must appear in the body alongside the expected value. Defends
+			// against tag-removal mutations.
+			if !strings.Contains(string(rawBody), `"org_id":"`+tc.want+`"`) {
+				t.Errorf("wire JSON missing literal \"org_id\":%q field; got body: %s", tc.want, string(rawBody))
+			}
+		})
+	}
+}
+
+// TestSendTelemetryPing_OrgIDAlwaysPresent guards against a future
+// refactor accidentally tagging the field with omitempty + emitting an
+// empty value. Mutation-test trigger: remove the OrgID population line
+// in payload construction → this test fails because the literal
+// "org_id" string is absent from the wire body.
+func TestSendTelemetryPing_OrgIDAlwaysPresent(t *testing.T) {
+	t.Setenv("AXONFLOW_TELEMETRY", "")
+	t.Setenv("ORG_ID", "")
+
+	var rawBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawBody, _ = io.ReadAll(r.Body)
+		json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+	}))
+	defer srv.Close()
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", srv.URL)
+
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{Mode: "production", ClientID: "id", ClientSecret: "sec"},
+	}
+	client.sendTelemetryPing()
+
+	if !strings.Contains(string(rawBody), `"org_id":"local-dev-org"`) {
+		t.Errorf("expected wire body to ALWAYS contain org_id (sentinel when env unset), got: %s", string(rawBody))
 	}
 }
