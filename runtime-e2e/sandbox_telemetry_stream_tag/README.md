@@ -1,8 +1,8 @@
 # Runtime proof — Sandbox-mode telemetry fires with stream=sandbox (v8)
 
-Verifies the v8 contract: a `Sandbox()`-constructed client produces an
-anonymous heartbeat ping that lands in checkpoint DynamoDB with the row
-tagged `stream="sandbox"`.
+Verifies the v8 contract: a `Sandbox()`-constructed client produces a
+heartbeat ping that lands in checkpoint DynamoDB with the row tagged
+`stream="sandbox"`.
 
 ## When to run
 

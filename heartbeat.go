@@ -16,9 +16,9 @@ import (
 // tests can override them — the test files in this package back up the
 // original values and restore them on cleanup.
 var (
-	// heartbeatInterval bounds how often a single machine sends an anonymous
+	// heartbeatInterval bounds how often a single machine sends a
 	// telemetry ping. Aligned with the plugin "7-day heartbeat" contract:
-	// "at most one anonymous heartbeat per environment every 7 days during
+	// "at most one heartbeat per environment every 7 days during
 	// SDK activity."
 	heartbeatInterval = 7 * 24 * time.Hour
 
@@ -65,8 +65,8 @@ func newHeartbeatState() *heartbeatState {
 // sharedHeartbeat is the process-global heartbeat singleton. ALL AxonFlow
 // clients in this process consult the same gate, so concurrent NewClient
 // calls before any stamp exists coalesce onto a single ping (per the
-// "at most one anonymous heartbeat per environment" contract). Tests
-// override via replaceHeartbeatStateForTest.
+// "at most one heartbeat per environment" contract). Tests override via
+// replaceHeartbeatStateForTest.
 var (
 	sharedHeartbeat   = newHeartbeatState()
 	sharedHeartbeatMu sync.Mutex // guards swapping the singleton in tests
