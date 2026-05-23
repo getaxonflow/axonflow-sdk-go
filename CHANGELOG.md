@@ -5,6 +5,57 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.2.0] - 2026-05-23 — `CreateHITLRequest` for explicit HITL row creation
+
+Enables agent-framework callers (Google ADK, n8n, OpenAI Agents SDK) to
+implement the full 4-step HITL approval flow against AxonFlow:
+
+  1. Gate evaluates `require_approval` (via `pre_check` / `check_tool_input`)
+  2. Caller invokes `client.CreateHITLRequest(...)` to enqueue the row
+  3. Caller polls `client.GetHITLRequest(approvalID)` until terminal state
+  4. Caller resumes the agent or denies the call based on the decision
+
+Prior to this release the SDK exposed `GetHITLRequest` /
+`ApproveHITLRequest` / `RejectHITLRequest` (the read + review
+surface) but had no method to **create** a row. The platform's
+`POST /api/v1/hitl/queue` endpoint has existed since v6.x; only the
+SDK surface was missing.
+
+### Added
+
+- **`(*AxonFlowClient) CreateHITLRequest(input HITLCreateInput) (*HITLApprovalRequest, error)`.**
+  Required fields: `ClientID`, `OriginalQuery`, `RequestType`.
+  Optional fields cover policy attribution, severity, compliance
+  framework, an expiry override, and the new `NotifyURL` callback.
+  Server-side `X-Org-ID` / `X-Tenant-ID` headers are derived by the
+  platform's auth middleware from the SDK client's configured
+  credentials — callers do not pass them through this method.
+- **`HITLCreateInput` struct** mirroring
+  `platform/agent/hitl/handler.go:86 CreateRequestInput`.
+- **`NotifyURL` field on `HITLCreateInput` and `HITLApprovalRequest`.**
+  Opt-in webhook URL fired after the request reaches a terminal state
+  (approved / rejected / expired / overridden). Pairs with the
+  HMAC-SHA256 `X-AxonFlow-Signature` header on the receiver side.
+  Scheme allowlist (`https://`, plus `http://` for self-hosted
+  local-dev) is enforced server-side; bad schemes surface as a wrapped
+  error from the SDK carrying the platform's `HTTP 400`. Companion
+  platform work in getaxonflow/axonflow-enterprise#2419.
+- 6 Go test cases covering: full-fields create, minimal required-fields
+  create, bad-`NotifyURL`-scheme 400 propagation, 401 propagation,
+  connect failure propagation, and the three required-field validation
+  guards.
+
+### Compatibility
+
+No breaking changes. New imports are additive in `hitl.go`. The
+existing `GetHITLRequest` / `ApproveHITLRequest` / `RejectHITLRequest`
+/ `ListHITLQueue` / `GetHITLStats` methods are unchanged. `NotifyURL`
+on the response struct is optional and absent in payloads from
+platforms that don't yet implement the field; older code parses the
+new shape cleanly via `omitempty`.
+
+Cross-SDK parity sweep: getaxonflow/axonflow-enterprise#2421.
+
 ## [8.1.0] - 2026-05-22 — `X-Client-ID` header on every outbound request + `org_id` in telemetry heartbeat
 
 Companion release to the v9 identity cleanup on the platform. Every
