@@ -308,6 +308,233 @@ func TestGetHITLRequestServerError(t *testing.T) {
 	}
 }
 
+// TestCreateHITLRequest tests POSTing a full create-input.
+func TestCreateHITLRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/hitl/queue" {
+			t.Errorf("Expected path /api/v1/hitl/queue, got %s", r.URL.Path)
+		}
+
+		var body HITLCreateInput
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("Failed to decode body: %v", err)
+		}
+		if body.ClientID != "loan-desk" {
+			t.Errorf("Expected client_id 'loan-desk', got '%s'", body.ClientID)
+		}
+		if body.NotifyURL != "https://workflows.example.com/hooks/loan-approve" {
+			t.Errorf("Expected notify_url propagated, got '%s'", body.NotifyURL)
+		}
+		if body.Severity != "high" {
+			t.Errorf("Expected severity 'high', got '%s'", body.Severity)
+		}
+		if body.RequestContext["tool_name"] != "disburse_payment" {
+			t.Errorf("Expected request_context.tool_name 'disburse_payment', got %v", body.RequestContext["tool_name"])
+		}
+
+		envelope := hitlItemEnvelope{
+			Success: true,
+			Data: HITLApprovalRequest{
+				RequestID:           "hitl-req-new-001",
+				OrgID:               "org-1",
+				TenantID:            "tenant-1",
+				ClientID:            body.ClientID,
+				UserID:              body.UserID,
+				OriginalQuery:       body.OriginalQuery,
+				RequestType:         body.RequestType,
+				RequestContext:      body.RequestContext,
+				TriggeredPolicyID:   body.TriggeredPolicyID,
+				TriggeredPolicyName: body.TriggeredPolicyName,
+				TriggerReason:       body.TriggerReason,
+				Severity:            body.Severity,
+				NotifyURL:           body.NotifyURL,
+				Status:              "pending",
+				ExpiresAt:           "2026-05-23T11:00:00Z",
+				CreatedAt:           "2026-05-23T10:00:00Z",
+				UpdatedAt:           "2026-05-23T10:00:00Z",
+			},
+		}
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(envelope)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	req, err := client.CreateHITLRequest(HITLCreateInput{
+		ClientID:            "loan-desk",
+		UserID:              "cust-001",
+		OriginalQuery:       "disburse $50000 to cust-001",
+		RequestType:         "adk-tool",
+		RequestContext:      map[string]interface{}{"tool_name": "disburse_payment"},
+		TriggeredPolicyID:   "loan-amount-cap",
+		TriggeredPolicyName: "Loan amount cap",
+		TriggerReason:       "Disbursement above $10k requires manager approval",
+		Severity:            "high",
+		NotifyURL:           "https://workflows.example.com/hooks/loan-approve",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if req.RequestID != "hitl-req-new-001" {
+		t.Errorf("Expected RequestID 'hitl-req-new-001', got '%s'", req.RequestID)
+	}
+	if req.NotifyURL != "https://workflows.example.com/hooks/loan-approve" {
+		t.Errorf("Expected NotifyURL round-trip, got '%s'", req.NotifyURL)
+	}
+	if req.Status != "pending" {
+		t.Errorf("Expected status 'pending', got '%s'", req.Status)
+	}
+}
+
+// TestCreateHITLRequestMinimal verifies the required-field minimum
+// (ClientID + OriginalQuery + RequestType).
+func TestCreateHITLRequestMinimal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body HITLCreateInput
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("Failed to decode body: %v", err)
+		}
+		if body.NotifyURL != "" {
+			t.Errorf("Expected empty notify_url, got '%s'", body.NotifyURL)
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(hitlItemEnvelope{
+			Success: true,
+			Data: HITLApprovalRequest{
+				RequestID:     "hitl-req-minimal",
+				OrgID:         "org-1",
+				TenantID:      "tenant-1",
+				ClientID:      body.ClientID,
+				OriginalQuery: body.OriginalQuery,
+				RequestType:   body.RequestType,
+				Severity:      "high",
+				Status:        "pending",
+				ExpiresAt:     "2026-05-23T11:00:00Z",
+				CreatedAt:     "2026-05-23T10:00:00Z",
+				UpdatedAt:     "2026-05-23T10:00:00Z",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "test"})
+
+	req, err := client.CreateHITLRequest(HITLCreateInput{
+		ClientID:      "c1",
+		OriginalQuery: "q",
+		RequestType:   "chat",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if req.RequestID != "hitl-req-minimal" {
+		t.Errorf("Expected RequestID 'hitl-req-minimal', got '%s'", req.RequestID)
+	}
+	if req.NotifyURL != "" {
+		t.Errorf("Expected empty NotifyURL when not supplied, got '%s'", req.NotifyURL)
+	}
+}
+
+// TestCreateHITLRequestBadNotifyURLScheme verifies a platform-side 400
+// on a bad notify_url scheme is surfaced as a wrapped error from the
+// SDK. Mirrors platform/agent/hitl/webhook.go:105 ValidateNotifyURL.
+func TestCreateHITLRequestBadNotifyURLScheme(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":false,"error":"notify_url scheme \"javascript\" is not allowed (use https:// or http://)"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "test"})
+
+	_, err := client.CreateHITLRequest(HITLCreateInput{
+		ClientID:      "loan-desk",
+		OriginalQuery: "disburse $50000",
+		RequestType:   "adk-tool",
+		NotifyURL:     "javascript:alert(1)",
+	})
+	if err == nil {
+		t.Fatal("Expected error for 400 response, got nil")
+	}
+}
+
+// TestCreateHITLRequestAuthFailure verifies 401 propagates as an error.
+func TestCreateHITLRequestAuthFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"success":false,"error":"Invalid API key"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "test"})
+
+	_, err := client.CreateHITLRequest(HITLCreateInput{
+		ClientID:      "loan-desk",
+		OriginalQuery: "disburse $50000",
+		RequestType:   "adk-tool",
+	})
+	if err == nil {
+		t.Fatal("Expected error for 401 response, got nil")
+	}
+}
+
+// TestCreateHITLRequestNetworkFailure verifies network failure propagates.
+func TestCreateHITLRequestNetworkFailure(t *testing.T) {
+	// Bind+close to get a guaranteed-unused localhost port. Anything
+	// posted at this URL will surface a connect error in real httpx
+	// behavior.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	closedURL := server.URL
+	server.Close()
+
+	client := NewClient(AxonFlowConfig{Endpoint: closedURL, ClientID: "test"})
+
+	_, err := client.CreateHITLRequest(HITLCreateInput{
+		ClientID:      "loan-desk",
+		OriginalQuery: "disburse $50000",
+		RequestType:   "adk-tool",
+	})
+	if err == nil {
+		t.Fatal("Expected error for connection refused, got nil")
+	}
+}
+
+// TestCreateHITLRequestValidation verifies the three required-field
+// guards (ClientID, OriginalQuery, RequestType) reject empty inputs
+// before any HTTP traffic.
+func TestCreateHITLRequestValidation(t *testing.T) {
+	client := NewClient(AxonFlowConfig{Endpoint: "http://localhost", ClientID: "test"})
+
+	cases := []struct {
+		name  string
+		input HITLCreateInput
+	}{
+		{"missing client_id", HITLCreateInput{ClientID: "", OriginalQuery: "q", RequestType: "chat"}},
+		{"missing original_query", HITLCreateInput{ClientID: "c1", OriginalQuery: "", RequestType: "chat"}},
+		{"missing request_type", HITLCreateInput{ClientID: "c1", OriginalQuery: "q", RequestType: ""}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := client.CreateHITLRequest(tc.input)
+			if err == nil {
+				t.Fatalf("Expected validation error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
 // TestApproveHITLRequest tests approving a pending request
 func TestApproveHITLRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
