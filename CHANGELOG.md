@@ -54,6 +54,9 @@ on the response struct is optional and absent in payloads from
 platforms that don't yet implement the field; older code parses the
 new shape cleanly via `omitempty`.
 
+Requires AxonFlow platform >= 8.1.0 for `notify_url` webhook delivery
+and `Idempotency-Key` request deduplication.
+
 Cross-SDK parity sweep: getaxonflow/axonflow-enterprise#2421.
 
 ## [8.1.0] - 2026-05-22 — `X-Client-ID` header on every outbound request + `org_id` in telemetry heartbeat
@@ -74,7 +77,7 @@ when no `ClientID` is configured.
  telemetry up to parity with the platform — every heartbeat now
  identifies which deployment-organization emitted it. Two sources in
  precedence order:
- 1. The `ORG_ID` env var when set (the operator's explicit configuration
+ 1. The `ORG_ID` env var when set (the explicit configuration
     on self-hosted deployments, or the `cs_<uuid>` tenant identifier on
     Community SaaS).
  2. Otherwise the `local-dev-org` sentinel (default-config Community-mode
@@ -89,7 +92,7 @@ when no `ClientID` is configured.
 
 - **Telemetry-enabled log line** softened from "Anonymous telemetry
  enabled" to "Telemetry enabled" to stay coherent with the `org_id`
- addition — the operator-supplied `ORG_ID` on self-hosted is not
+ addition — the configured `ORG_ID` on self-hosted deployments is not
  anonymized; only the `instance_id` and `cs_<uuid>` Community SaaS
  identifier remain anonymous-by-design.
 
