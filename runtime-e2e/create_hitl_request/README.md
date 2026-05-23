@@ -34,8 +34,8 @@ parsed response fields on success for human-readable confirmation.
 ## Companion unit coverage
 
 `hitl_test.go::TestCreateHITLRequest*` exercises the same surface
-through `httptest.NewServer` for six scenarios (happy path
-full-fields, minimal required-fields, bad-`NotifyURL`-scheme 400
-propagation, 401 propagation, connect-failure propagation, and the
-three required-field validation guards). The runtime proof here is
-the redundant real-stack confirmation.
+through an in-process test HTTP server for six scenarios (happy
+path full-fields, minimal required-fields, bad-`NotifyURL`-scheme
+400 propagation, 401 propagation, connect-failure propagation, and
+the three required-field validation guards). The runtime proof
+here is the redundant real-stack confirmation.
