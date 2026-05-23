@@ -357,8 +357,8 @@ func TestCreateHITLRequest(t *testing.T) {
 				UpdatedAt:           "2026-05-23T10:00:00Z",
 			},
 		}
-		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(envelope)
 	}))
 	defer server.Close()
@@ -407,8 +407,8 @@ func TestCreateHITLRequestMinimal(t *testing.T) {
 			t.Errorf("Expected empty notify_url, got '%s'", body.NotifyURL)
 		}
 
-		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(hitlItemEnvelope{
 			Success: true,
 			Data: HITLApprovalRequest{
