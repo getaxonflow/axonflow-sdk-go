@@ -289,9 +289,11 @@
     },
     "AuditLogEntry": {
       "sdk_only": [
+        "data_residency",
         "metadata",
         "model",
-        "policy_violations"
+        "policy_violations",
+        "transfer_basis"
       ],
       "spec_only": []
     },

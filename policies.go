@@ -30,6 +30,7 @@ const (
 	CategoryPIIEU        PolicyCategory = "pii-eu"
 	CategoryPIIIndia     PolicyCategory = "pii-india"
 	CategoryPIISingapore PolicyCategory = "pii-singapore"
+	CategoryPIIIndonesia PolicyCategory = "pii-indonesia"
 
 	// Static policy categories - Code Governance
 	CategoryCodeSecrets    PolicyCategory = "code-secrets"

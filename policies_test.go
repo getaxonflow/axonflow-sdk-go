@@ -1158,3 +1158,33 @@ func TestDynamicPolicyBuildQueryParamsTierOnly(t *testing.T) {
 		t.Errorf("Expected ?tier=organization, got %s", result)
 	}
 }
+
+func TestCategoryPIIIndonesiaConstant(t *testing.T) {
+	if string(CategoryPIIIndonesia) != "pii-indonesia" {
+		t.Errorf("CategoryPIIIndonesia = %q, want %q", CategoryPIIIndonesia, "pii-indonesia")
+	}
+}
+
+func TestCategoryPIIIndonesiaInPolicyCreate(t *testing.T) {
+	req := CreateStaticPolicyRequest{
+		Name:     "Block Indonesian NIK",
+		Category: CategoryPIIIndonesia,
+		Pattern:  `\b\d{16}\b`,
+		Severity: SeverityHigh,
+		Action:   ActionBlock,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if raw["category"] != "pii-indonesia" {
+		t.Errorf("category JSON = %q, want %q", raw["category"], "pii-indonesia")
+	}
+}

@@ -964,3 +964,95 @@ func TestContextCancellation(t *testing.T) {
 		t.Fatal("expected context cancellation error")
 	}
 }
+
+func TestAuditLogEntryCrossBorderFields(t *testing.T) {
+	t.Run("fields populated", func(t *testing.T) {
+		jsonData := `{
+			"id": "aud-001",
+			"request_id": "req-001",
+			"timestamp": "2026-05-26T10:00:00Z",
+			"user_email": "analyst@bank.co.id",
+			"client_id": "client-1",
+			"tenant_id": "tenant-1",
+			"request_type": "llm_chat",
+			"query_summary": "customer lookup",
+			"success": true,
+			"blocked": false,
+			"risk_score": 0.3,
+			"provider": "openai",
+			"model": "gpt-4",
+			"tokens_used": 100,
+			"latency_ms": 50,
+			"data_residency": "ID",
+			"transfer_basis": "adequacy"
+		}`
+
+		var entry AuditLogEntry
+		if err := json.Unmarshal([]byte(jsonData), &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		if entry.DataResidency != "ID" {
+			t.Errorf("data_residency = %q, want %q", entry.DataResidency, "ID")
+		}
+		if entry.TransferBasis != "adequacy" {
+			t.Errorf("transfer_basis = %q, want %q", entry.TransferBasis, "adequacy")
+		}
+	})
+
+	t.Run("backward compat - fields absent", func(t *testing.T) {
+		jsonData := `{
+			"id": "aud-002",
+			"request_id": "req-002",
+			"timestamp": "2026-05-26T10:00:00Z",
+			"user_email": "user@company.com",
+			"client_id": "client-1",
+			"tenant_id": "tenant-1",
+			"request_type": "llm_chat",
+			"query_summary": "hello",
+			"success": true,
+			"blocked": false,
+			"risk_score": 0.1,
+			"provider": "openai",
+			"model": "gpt-4",
+			"tokens_used": 50,
+			"latency_ms": 30
+		}`
+
+		var entry AuditLogEntry
+		if err := json.Unmarshal([]byte(jsonData), &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		if entry.DataResidency != "" {
+			t.Errorf("data_residency = %q, want empty", entry.DataResidency)
+		}
+		if entry.TransferBasis != "" {
+			t.Errorf("transfer_basis = %q, want empty", entry.TransferBasis)
+		}
+	})
+
+	t.Run("omitempty serialization", func(t *testing.T) {
+		entry := AuditLogEntry{
+			ID:        "aud-003",
+			Timestamp: time.Now(),
+		}
+
+		data, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			t.Fatalf("unmarshal raw: %v", err)
+		}
+
+		if _, ok := raw["data_residency"]; ok {
+			t.Error("data_residency should be omitted when empty")
+		}
+		if _, ok := raw["transfer_basis"]; ok {
+			t.Error("transfer_basis should be omitted when empty")
+		}
+	})
+}
