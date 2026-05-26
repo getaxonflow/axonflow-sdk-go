@@ -29,7 +29,8 @@ const (
 	CategoryPIIUS        PolicyCategory = "pii-us"
 	CategoryPIIEU        PolicyCategory = "pii-eu"
 	CategoryPIIIndia     PolicyCategory = "pii-india"
-	CategoryPIISingapore PolicyCategory = "pii-singapore"
+	CategoryPIISingapore  PolicyCategory = "pii-singapore"
+	CategoryPIIIndonesia PolicyCategory = "pii-indonesia"
 
 	// Static policy categories - Code Governance
 	CategoryCodeSecrets    PolicyCategory = "code-secrets"

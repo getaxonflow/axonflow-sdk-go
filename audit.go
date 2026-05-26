@@ -89,6 +89,10 @@ type AuditLogEntry struct {
 	PolicyViolations []string `json:"policy_violations,omitempty"`
 	// Metadata contains additional context
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	// DataResidency is the ISO 3166-1 alpha-2 country code where data is stored
+	DataResidency string `json:"data_residency,omitempty"`
+	// TransferBasis is the legal basis for cross-border data transfer: adequacy, safeguards, or consent
+	TransferBasis string `json:"transfer_basis,omitempty"`
 }
 
 // AuditSearchResponse represents the response from an audit search

@@ -5,6 +5,26 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`CategoryPIIIndonesia` policy category constant** (`"pii-indonesia"`).
+  Enables filtering and creating policies for Indonesian PII detection
+  (NIK, KK, NPWP, BPJS) alongside the existing per-jurisdiction categories.
+- **`DataResidency` and `TransferBasis` fields on `AuditLogEntry`.**
+  Optional string fields supporting UU PDP Art. 56 cross-border data transfer
+  logging. `DataResidency` is an ISO 3166-1 alpha-2 country code;
+  `TransferBasis` is one of `adequacy`, `safeguards`, or `consent`.
+  Both are `omitempty` for backward compatibility with older platform versions.
+- **OJK compliance assessment types** (`ojk.go`): `OJKComplianceFramework`,
+  `OJKPillar`, `OJKReadinessScore`, `OJKBreachNotification`,
+  `OJKAuditExportRequest`/`Response`, `CrossBorderTransferRecord`.
+  Type-only surface for building OJK-regulated AI governance workflows.
+- **Indonesia compliance example** (`examples/indonesia_compliance/`):
+  demonstrates NIK detection, audit log querying with cross-border fields,
+  and policy filtering by the new `pii-indonesia` category.
+
 ## [8.2.0] - 2026-05-23 — `CreateHITLRequest` for explicit HITL row creation
 
 Enables agent-framework callers (Google ADK, n8n, OpenAI Agents SDK) to
