@@ -49,11 +49,11 @@ type OJKBreachNotification struct {
 
 // OJKAuditExportRequest represents a request to export OJK audit data
 type OJKAuditExportRequest struct {
-	StartDate     time.Time `json:"start_date"`
-	EndDate       time.Time `json:"end_date"`
-	Framework     OJKComplianceFramework `json:"framework,omitempty"`
-	IncludePII    bool      `json:"include_pii,omitempty"`
-	Format        string    `json:"format,omitempty"`
+	StartDate  time.Time              `json:"start_date"`
+	EndDate    time.Time              `json:"end_date"`
+	Framework  OJKComplianceFramework `json:"framework,omitempty"`
+	IncludePII bool                   `json:"include_pii,omitempty"`
+	Format     string                 `json:"format,omitempty"`
 }
 
 // OJKAuditExportResponse represents the response from an OJK audit export
