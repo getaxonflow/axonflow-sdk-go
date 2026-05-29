@@ -91,7 +91,10 @@ type AuditLogEntry struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 	// DataResidency is the ISO 3166-1 alpha-2 country code where data is stored
 	DataResidency string `json:"data_residency,omitempty"`
-	// TransferBasis is the legal basis for cross-border data transfer: adequacy, safeguards, or consent
+	// TransferBasis is the legal basis for cross-border data transfer under
+	// Indonesia UU PDP Pasal 56: adequacy, safeguards, pasal_56b_dpa, or consent.
+	// Surfaced verbatim — see the TransferBasis* constants in ojk.go for the
+	// recognized set and their Pasal 56 mapping.
 	TransferBasis string `json:"transfer_basis,omitempty"`
 }
 

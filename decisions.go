@@ -34,6 +34,18 @@ type DecisionExplanation struct {
 	HistoricalHitCountSession int             `json:"historical_hit_count_session"`
 	PolicySourceLink          string          `json:"policy_source_link,omitempty"`
 	ToolSignature             string          `json:"tool_signature,omitempty"`
+
+	// Context is the FULL sanitized request context the PEP attached to the
+	// decision (canonical lower_snake_case keys, string values), read from
+	// the audit row's policy_details->'context'. Unlike ListDecisions (which
+	// truncates to the 5 most-correlated keys), Explain returns every
+	// persisted key up to the platform's 10-key cap, so an auditor gets the
+	// complete correlation set (x_ai_agent / x_session_id / x_leader_identity,
+	// x-bukuwarung-*). ContextTruncated reports whether the agent dropped
+	// surplus keys at write time. Both omitempty so pre-v8.4.0 audit rows keep
+	// their original byte-shape. (platform #2509 / epic #2508)
+	Context          map[string]string `json:"context,omitempty"`
+	ContextTruncated bool              `json:"context_truncated,omitempty"`
 }
 
 // ExplainPolicy is a policy reference inside an explanation.
@@ -137,6 +149,15 @@ type DecisionSummary struct {
 	Decision      string    `json:"decision"` // "allow"|"deny"|"require_approval"
 	PolicyID      string    `json:"policy_id,omitempty"`
 	ToolSignature string    `json:"tool_signature,omitempty"`
+
+	// Context is the sanitized request context the PEP attached to the
+	// decision (canonical lower_snake_case keys, string values), surfaced
+	// from the audit row's policy_details->'context'. The list summary is
+	// truncated by the platform to the 5 most-correlated keys; the full map
+	// (up to the 10-key cap) is available via ExplainDecision. omitempty so
+	// pre-v8.4.0 audit rows + decisions with no context keep the original
+	// byte-shape. (platform #2509 / epic #2508)
+	Context map[string]string `json:"context,omitempty"`
 }
 
 // ListDecisionsOptions carries the 5 optional filters for ListDecisions.
