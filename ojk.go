@@ -77,3 +77,24 @@ type CrossBorderTransferRecord struct {
 	Purpose         string    `json:"purpose,omitempty"`
 	Status          string    `json:"status"`
 }
+
+// Cross-border transfer-basis values recognized under Indonesia UU PDP Pasal 56.
+// These are the legal bases the platform accepts for the TransferBasis field on
+// CrossBorderTransferRecord and AuditLogEntry. The field remains a plain string
+// so the SDK never rejects a value a newer platform may add; these constants give
+// callers type-safe access to the known set.
+//
+//   - TransferBasisAdequacy    → Pasal 56(a): destination with adequate protection
+//   - TransferBasisSafeguards  → Pasal 56(b): binding legal instrument (generic label)
+//   - TransferBasisPasal56bDPA → Pasal 56(b): binding legal instrument, explicit DPA tag
+//   - TransferBasisConsent     → Pasal 56(c): explicit data-subject consent
+//
+// "safeguards" and "pasal_56b_dpa" are semantic equivalents; both are surfaced
+// verbatim and never auto-translated, so an auditor sees the value recorded at
+// decision time. (platform #2513 / epic #2508)
+const (
+	TransferBasisAdequacy    = "adequacy"
+	TransferBasisSafeguards  = "safeguards"
+	TransferBasisPasal56bDPA = "pasal_56b_dpa"
+	TransferBasisConsent     = "consent"
+)

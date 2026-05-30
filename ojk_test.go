@@ -2,6 +2,7 @@ package axonflow
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -195,6 +196,63 @@ func TestCrossBorderTransferRecordOmitsEmpty(t *testing.T) {
 	}
 	if _, ok := raw["purpose"]; ok {
 		t.Error("purpose should be omitted when empty")
+	}
+}
+
+// TestTransferBasisConstants pins the wire values of the UU PDP Pasal 56
+// transfer-basis constants added in v8.4.0 (platform #2513).
+func TestTransferBasisConstants(t *testing.T) {
+	cases := map[string]string{
+		TransferBasisAdequacy:    "adequacy",
+		TransferBasisSafeguards:  "safeguards",
+		TransferBasisPasal56bDPA: "pasal_56b_dpa",
+		TransferBasisConsent:     "consent",
+	}
+	for got, want := range cases {
+		if got != want {
+			t.Errorf("transfer-basis constant = %q, want %q", got, want)
+		}
+	}
+}
+
+// TestCrossBorderTransferRecord_Pasal56bDPA — the new Pasal 56(b) explicit DPA
+// tag must round-trip on CrossBorderTransferRecord without information loss.
+func TestCrossBorderTransferRecord_Pasal56bDPA(t *testing.T) {
+	record := CrossBorderTransferRecord{
+		ID:            "xfer-56b",
+		SourceCountry: "ID",
+		DestCountry:   "SG",
+		TransferBasis: TransferBasisPasal56bDPA,
+		TransferDate:  time.Now().Truncate(time.Second),
+		Status:        "approved",
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"transfer_basis":"pasal_56b_dpa"`) {
+		t.Errorf("expected pasal_56b_dpa on the wire: %s", data)
+	}
+	var decoded CrossBorderTransferRecord
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.TransferBasis != "pasal_56b_dpa" {
+		t.Errorf("transfer_basis = %q, want pasal_56b_dpa", decoded.TransferBasis)
+	}
+}
+
+// TestTransferBasis_BackwardCompatSafeguards — existing v8.3.0-shaped records
+// using "safeguards" must continue to parse unchanged after the widening.
+func TestTransferBasis_BackwardCompatSafeguards(t *testing.T) {
+	raw := []byte(`{"id":"xfer-old","source_country":"ID","dest_country":"NL",` +
+		`"transfer_basis":"safeguards","transfer_date":"2026-05-26T00:00:00Z","status":"approved"}`)
+	var decoded CrossBorderTransferRecord
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.TransferBasis != TransferBasisSafeguards {
+		t.Errorf("transfer_basis = %q, want safeguards", decoded.TransferBasis)
 	}
 }
 

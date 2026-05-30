@@ -428,3 +428,91 @@ func TestDecisionSummary_OptionalFieldsRoundTrip(t *testing.T) {
 		t.Errorf("omitempty must drop unset optionals: %s", s)
 	}
 }
+
+// TestDecisionSummary_ContextRoundTrip — v8.4.0 (platform #2509): the LIST
+// row carries the sanitized request context the PEP attached to the decision.
+// The map must parse and re-serialize without information loss.
+func TestDecisionSummary_ContextRoundTrip(t *testing.T) {
+	raw := []byte(`{"decision_id":"dec-ctx","timestamp":"2026-05-30T12:00:00Z","decision":"deny",` +
+		`"context":{"x_ai_agent":"refund-bot","x_session_id":"sess-42","x_leader_identity":"ops-lead"}}`)
+	var d DecisionSummary
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Context) != 3 {
+		t.Fatalf("expected 3 context keys, got %d (%+v)", len(d.Context), d.Context)
+	}
+	if d.Context["x_ai_agent"] != "refund-bot" || d.Context["x_session_id"] != "sess-42" {
+		t.Errorf("context values not preserved: %+v", d.Context)
+	}
+	out, err := json.Marshal(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back DecisionSummary
+	if err := json.Unmarshal(out, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Context["x_leader_identity"] != "ops-lead" {
+		t.Errorf("round-trip lost context: %s", out)
+	}
+}
+
+// TestDecisionSummary_ContextOmittedWhenEmpty — a decision with no request
+// context (or a pre-v8.4.0 audit row) must keep its original byte-shape:
+// omitempty drops the absent map so the wire payload is unchanged.
+func TestDecisionSummary_ContextOmittedWhenEmpty(t *testing.T) {
+	raw := []byte(`{"decision_id":"dec-noctx","timestamp":"2026-05-30T12:00:00Z","decision":"allow"}`)
+	var d DecisionSummary
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.Context != nil {
+		t.Errorf("expected nil context, got %+v", d.Context)
+	}
+	out, err := json.Marshal(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "context") {
+		t.Errorf("omitempty must drop unset context: %s", out)
+	}
+}
+
+// TestDecisionExplanation_ContextAndTruncated — v8.4.0 (platform #2509): the
+// explain payload returns the FULL context map plus the context_truncated flag.
+func TestDecisionExplanation_ContextAndTruncated(t *testing.T) {
+	raw := []byte(`{"decision_id":"dec-x","timestamp":"2026-05-30T12:00:00Z","decision":"deny",` +
+		`"reason":"pii","override_available":false,"historical_hit_count_session":0,` +
+		`"policy_matches":[],"context":{"x_ai_agent":"a","x_session_id":"s"},"context_truncated":true}`)
+	var e DecisionExplanation
+	if err := json.Unmarshal(raw, &e); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Context) != 2 || e.Context["x_ai_agent"] != "a" {
+		t.Errorf("explain context not parsed: %+v", e.Context)
+	}
+	if !e.ContextTruncated {
+		t.Errorf("expected context_truncated=true")
+	}
+	out, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"context_truncated":true`) {
+		t.Errorf("context_truncated must serialize when true: %s", out)
+	}
+}
+
+// TestDecisionExplanation_ContextTruncatedOmittedWhenFalse — the common case
+// (nothing dropped) must not emit context_truncated, preserving byte-shape.
+func TestDecisionExplanation_ContextTruncatedOmittedWhenFalse(t *testing.T) {
+	e := DecisionExplanation{DecisionID: "d", Decision: "allow"}
+	out, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "context_truncated") {
+		t.Errorf("omitempty must drop context_truncated when false: %s", out)
+	}
+}

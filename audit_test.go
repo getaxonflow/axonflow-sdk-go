@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -997,6 +998,41 @@ func TestAuditLogEntryCrossBorderFields(t *testing.T) {
 		}
 		if entry.TransferBasis != "adequacy" {
 			t.Errorf("transfer_basis = %q, want %q", entry.TransferBasis, "adequacy")
+		}
+	})
+
+	t.Run("pasal_56b_dpa transfer basis (v8.4.0)", func(t *testing.T) {
+		jsonData := `{
+			"id": "aud-56b",
+			"timestamp": "2026-05-30T10:00:00Z",
+			"data_residency": "ID",
+			"transfer_basis": "pasal_56b_dpa"
+		}`
+		var entry AuditLogEntry
+		if err := json.Unmarshal([]byte(jsonData), &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if entry.TransferBasis != TransferBasisPasal56bDPA {
+			t.Errorf("transfer_basis = %q, want %q", entry.TransferBasis, TransferBasisPasal56bDPA)
+		}
+		// Round-trips verbatim — never auto-translated to "safeguards".
+		out, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if !strings.Contains(string(out), `"transfer_basis":"pasal_56b_dpa"`) {
+			t.Errorf("expected pasal_56b_dpa verbatim on the wire: %s", out)
+		}
+	})
+
+	t.Run("backward compat - safeguards still parses (v8.4.0 widening)", func(t *testing.T) {
+		jsonData := `{"id":"aud-sg","timestamp":"2026-05-26T10:00:00Z","transfer_basis":"safeguards"}`
+		var entry AuditLogEntry
+		if err := json.Unmarshal([]byte(jsonData), &entry); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if entry.TransferBasis != TransferBasisSafeguards {
+			t.Errorf("transfer_basis = %q, want safeguards", entry.TransferBasis)
 		}
 	})
 
