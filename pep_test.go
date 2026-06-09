@@ -465,6 +465,53 @@ func TestFulfillRequest_FailClosed_RedactionEvaluatedAbsent(t *testing.T) {
 	}
 }
 
+func TestFulfillRequest_FailClosed_RedactedTrueNoStatement(t *testing.T) {
+	// Self-contradictory engine response: redacted=true but no redacted_statement.
+	// Must fail closed rather than forward the unredacted original.
+	srv := checkInputServer(t, `{"allowed":true,"redacted":true,"redaction_evaluated":true}`, nil)
+	defer srv.Close()
+
+	c := newPEPClient(srv.URL)
+	decision := decideAllow([]Obligation{redactObligation()})
+	// The error IS the fail-closed signal (FulfillRequest returns the original
+	// statement alongside it; a correct caller never forwards on a non-nil err,
+	// and DecideAndFulfill yields empty content on this path — see its test).
+	_, did, err := c.FulfillRequest(context.Background(), &decision, "secret a@b.com")
+	if !errors.Is(err, ErrObligationNotFulfillable) {
+		t.Fatalf("err = %v, want ErrObligationNotFulfillable", err)
+	}
+	if did {
+		t.Error("didRedact = true on fail-closed path")
+	}
+}
+
+// TestDecideAndFulfill_RedactedTrueNoStatement asserts the one-call path yields
+// EMPTY content (never the original) when the engine returns the
+// self-contradictory redacted=true / no-statement response.
+func TestDecideAndFulfill_RedactedTrueNoStatement(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == decidePath {
+			d := decideAllow([]Obligation{redactObligation()})
+			_ = json.NewEncoder(w).Encode(d)
+			return
+		}
+		_, _ = io.WriteString(w, `{"allowed":true,"redacted":true,"redaction_evaluated":true}`)
+	}))
+	defer srv.Close()
+
+	c := newPEPClient(srv.URL)
+	verdict, content, _, err := c.DecideAndFulfill(context.Background(), DecideRequest{Stage: "tool", Query: "secret a@b.com"})
+	if !errors.Is(err, ErrObligationNotFulfillable) {
+		t.Fatalf("err = %v, want ErrObligationNotFulfillable", err)
+	}
+	if verdict != VerdictAllow {
+		t.Errorf("verdict = %q, want allow", verdict)
+	}
+	if content != "" {
+		t.Errorf("content = %q, want empty (fail-closed; never the original)", content)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // DecideAndFulfill
 // ---------------------------------------------------------------------------

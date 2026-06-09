@@ -256,7 +256,13 @@ func (c *AxonFlowClient) fulfillViaCheckInput(ctx context.Context, statement str
 	if !result.RedactionEvaluated {
 		return "", fmt.Errorf("%w: engine reported the redactor did not run (redaction disabled)", ErrObligationNotFulfillable)
 	}
-	if result.Redacted && result.RedactedStatement != "" {
+	if result.Redacted {
+		// FAIL CLOSED on a self-contradictory engine response: redacted=true with
+		// no redacted_statement means the engine claims it masked something but
+		// gave us nothing to forward — never fall back to the unredacted original.
+		if result.RedactedStatement == "" {
+			return "", fmt.Errorf("%w: engine reported redacted=true but returned no redacted_statement", ErrObligationNotFulfillable)
+		}
 		return result.RedactedStatement, nil
 	}
 	// Redactor ran and found nothing to mask — forward the statement unchanged.
