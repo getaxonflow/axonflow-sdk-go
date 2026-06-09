@@ -405,7 +405,9 @@
       "spec_only": []
     },
     "MCPCheckInputRequest": {
-      "sdk_only": [],
+      "sdk_only": [
+        "content_type"
+      ],
       "spec_only": [
         "client_id",
         "tenant_id",
@@ -413,6 +415,14 @@
         "user_role",
         "user_token"
       ]
+    },
+    "MCPCheckInputResponse": {
+      "sdk_only": [
+        "redacted",
+        "redacted_statement",
+        "redaction_evaluated"
+      ],
+      "spec_only": []
     },
     "MCPCheckOutputRequest": {
       "sdk_only": [],
@@ -422,6 +432,12 @@
         "user_id",
         "user_token"
       ]
+    },
+    "MCPCheckOutputResponse": {
+      "sdk_only": [
+        "redaction_evaluated"
+      ],
+      "spec_only": []
     },
     "MCPExecuteRequest": {
       "sdk_only": [

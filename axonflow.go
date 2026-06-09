@@ -1667,6 +1667,13 @@ type MCPCheckInputRequest struct {
 	Statement     string                 `json:"statement"`
 	Parameters    map[string]interface{} `json:"parameters,omitempty"`
 	Operation     string                 `json:"operation,omitempty"`
+
+	// ContentType selects the request-redaction detector (ADR-056 / #2563
+	// addendum). Empty defaults to "text/plain" server-side. A content_type with
+	// no registered detector is rejected (415) so a PEP fulfilling a redact_pii
+	// obligation fails closed rather than forwarding content the engine cannot
+	// govern. Source of truth: platform/agent/mcp_handler.go MCPCheckInputRequest.
+	ContentType string `json:"content_type,omitempty"`
 }
 
 // MCPCheckInputResponse represents the result of input policy evaluation.
@@ -1685,6 +1692,20 @@ type MCPCheckInputResponse struct {
 	PolicyMatches      []ExplainPolicy `json:"policy_matches,omitempty"`
 	OverrideAvailable  *bool           `json:"override_available,omitempty"`
 	OverrideExistingID string          `json:"override_existing_id,omitempty"`
+
+	// Request-phase redaction (ADR-056 / #2563). When an allowed statement
+	// carries PII under a redact (not block) policy, the engine returns the
+	// masked statement in RedactedStatement so a PEP can forward redacted
+	// content WITHOUT hand-rolling its own patterns — this is what makes a
+	// /decide redact_pii obligation engine-fulfillable. RedactionEvaluated
+	// reports whether the redaction detector actually RAN (regardless of whether
+	// it masked anything); a PEP fulfilling a redact_pii obligation MUST fail
+	// closed when it is false, because "Redacted:false" is then indistinguishable
+	// from "looked, found nothing" (#2563 B1). Source of truth:
+	// platform/agent/mcp_handler.go MCPCheckInputResponse.
+	Redacted           bool   `json:"redacted,omitempty"`
+	RedactedStatement  string `json:"redacted_statement,omitempty"`
+	RedactionEvaluated bool   `json:"redaction_evaluated,omitempty"`
 }
 
 // MCPCheckOutputRequest represents a request to validate output against MCP policies.
@@ -1718,6 +1739,14 @@ type MCPCheckOutputResponse struct {
 	// MCPCheckInputResponse fields on the same call site).
 	DecisionID    string          `json:"decision_id,omitempty"`
 	PolicyMatches []ExplainPolicy `json:"policy_matches,omitempty"`
+
+	// RedactionEvaluated mirrors the check-input field for the response phase
+	// (ADR-056 / #2563). A PEP fulfilling a response-phase redact_pii obligation
+	// MUST fail closed when this is false — the redactor did not run, so absence
+	// of redacted output cannot be trusted as "nothing to mask". The agent does
+	// not populate this on every path today; default false keeps a PEP fail-closed
+	// when the platform predates the field. Source of truth: platform/agent/mcp_handler.go.
+	RedactionEvaluated bool `json:"redaction_evaluated,omitempty"`
 }
 
 // MCPCheckInput validates an MCP request against configured policies without executing it.

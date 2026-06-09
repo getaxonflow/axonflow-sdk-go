@@ -5,6 +5,55 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.5.0] - 2026-06-09 — Decision Mode PEP: decide → fulfill → forward
+
+Ports the Decision Mode PEP (Policy Enforcement Point) contract into the Go
+SDK: a single blessed path of **decide → fulfill → forward** (ADR-056, epic
+getaxonflow/axonflow-enterprise#2563, tracking #2571). Cross-SDK parity with
+the canonical Python SDK and the `platform/shared/pep` Go reference PEP.
+
+The structural guarantee #2563 demands: this SDK contains **no redaction logic
+of its own**. The only way it can discharge a `redact_pii` obligation is by
+round-tripping the source content through the engine endpoint the obligation
+names (`/api/v1/mcp/check-input`) and forwarding what the engine returns. If an
+obligation arrives without a fulfillable engine endpoint — or the engine reports
+the redactor did not run — `FulfillRequest` **fails closed** rather than
+forwarding unredacted content.
+
+### Added
+
+- **`(*AxonFlowClient) Decide(ctx, DecideRequest) (*DecideResponse, error)`.**
+  Asks the PDP (`POST /api/v1/decide`) for a verdict. Uses the SDK's existing
+  HTTP Basic (org:license) auth; demo / wrong credentials are refused with HTTP
+  401, surfaced as the SDK's `*httpError`. A deny verdict is returned in the
+  body (HTTP 200), not as an error.
+- **`(*AxonFlowClient) FulfillRequest(ctx, *DecideResponse, statement) (string, bool, error)`.**
+  Discharges every request-phase `redact_pii` obligation by POSTing the
+  statement to the obligation's engine endpoint and returning engine-redacted
+  content. Returns `ErrObligationNotFulfillable` (fail-closed) on every
+  unfulfillable condition: no request-phase fulfillment, a `content_types` set
+  that excludes `text/plain`, a foreign endpoint, an engine error / non-200, or
+  `redaction_evaluated == false`. Never returns the original statement on an
+  unfulfillable condition; never redacts locally.
+- **`(*AxonFlowClient) DecideAndFulfill(ctx, DecideRequest) (verdict, content string, *DecideResponse, error)`.**
+  One-call path: decide, then fulfill any request-phase obligation. Returns
+  empty content on the not-fulfillable path so a caller that ignores the error
+  cannot forward the unredacted query.
+- **`HasRequestRedaction([]Obligation) bool`** — branch helper.
+- **`ErrObligationNotFulfillable`** sentinel error (match with `errors.Is`).
+- **Decision API wire DTOs**: `DecideRequest`, `DecideResponse`, `Obligation`,
+  `ObligationFulfillment`, `DecisionCallerIdentity`, `DecisionTarget`.
+- **Constants**: `ObligationRedactPII`, `PhaseRequest`, `PhaseResponse`,
+  `ContentTypeText`, `VerdictAllow`, `VerdictDeny`, `VerdictNeedsApproval`.
+- **`ContentType` field on `MCPCheckInputRequest`** (`content_type`,
+  `omitempty`) — selects the request-redaction detector.
+- **`Redacted` / `RedactedStatement` / `RedactionEvaluated` on
+  `MCPCheckInputResponse`** — the engine-redacted statement and the
+  did-the-redactor-run flag that makes a `redact_pii` obligation
+  engine-fulfillable.
+- **`RedactionEvaluated` on `MCPCheckOutputResponse`** — response-phase
+  fail-closed parity with check-input.
+
 ## [8.4.0] - 2026-05-30 — Decision request context + Pasal 56(b) transfer basis
 
 Targets AxonFlow platform **v8.5.0**.
