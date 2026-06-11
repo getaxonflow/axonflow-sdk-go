@@ -26,7 +26,7 @@ type DecisionExplanation struct {
 	Timestamp                 time.Time       `json:"timestamp"`
 	PolicyMatches             []ExplainPolicy `json:"policy_matches"`
 	MatchedRules              []ExplainRule   `json:"matched_rules,omitempty"`
-	Decision                  string          `json:"decision"` // "allow"|"deny"|"require_approval"
+	Decision                  string          `json:"decision"` // canonical audit verdict: allowed|blocked|redacted|needs_approval|error (9.0.0+)
 	Reason                    string          `json:"reason"`
 	RiskLevel                 string          `json:"risk_level,omitempty"`
 	OverrideAvailable         bool            `json:"override_available"`
@@ -146,7 +146,7 @@ func (c *AxonFlowClient) ExplainDecision(ctx context.Context, decisionID string)
 type DecisionSummary struct {
 	DecisionID    string    `json:"decision_id"`
 	Timestamp     time.Time `json:"timestamp"`
-	Decision      string    `json:"decision"` // "allow"|"deny"|"require_approval"
+	Decision      string    `json:"decision"` // canonical audit verdict: allowed|blocked|redacted|needs_approval|error (9.0.0+)
 	PolicyID      string    `json:"policy_id,omitempty"`
 	ToolSignature string    `json:"tool_signature,omitempty"`
 
@@ -164,9 +164,14 @@ type DecisionSummary struct {
 // Zero / empty values are omitted from the URL so the platform applies
 // its tier-default page. Limit=0 means "use the tier default"; pass
 // the value you want explicitly.
+//
+// Decision, when set, must be a canonical audit verdict
+// (allowed|blocked|redacted|needs_approval|error) on platform 9.0.0+; the
+// pre-9.0.0 values allow|deny|require_approval are rejected with HTTP 400.
+// See https://docs.getaxonflow.com/docs/deployment/v8-to-v9-migration/
 type ListDecisionsOptions struct {
 	Since         time.Time
-	Decision      string // allow|deny|require_approval
+	Decision      string // allowed|blocked|redacted|needs_approval|error (9.0.0+)
 	PolicyID      string
 	ToolSignature string
 	Limit         int
@@ -217,7 +222,7 @@ func (e *RateLimitError) Error() string {
 // Example:
 //
 //	decisions, err := client.ListDecisions(ctx, ListDecisionsOptions{
-//	    Decision: "deny",
+//	    Decision: "blocked",
 //	    Limit:    10,
 //	})
 //	var rle *RateLimitError

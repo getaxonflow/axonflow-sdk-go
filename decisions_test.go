@@ -28,7 +28,7 @@ func TestExplainDecision_HappyPath(t *testing.T) {
 	want := DecisionExplanation{
 		DecisionID: "dec_wf1_step2",
 		Timestamp:  time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC),
-		Decision:   "deny",
+		Decision:   "blocked",
 		Reason:     "SQL injection detected",
 		RiskLevel:  "high",
 		PolicyMatches: []ExplainPolicy{
@@ -68,8 +68,8 @@ func TestExplainDecision_HappyPath(t *testing.T) {
 	if got.DecisionID != want.DecisionID {
 		t.Errorf("DecisionID = %q, want %q", got.DecisionID, want.DecisionID)
 	}
-	if got.Decision != "deny" {
-		t.Errorf("Decision = %q, want 'deny'", got.Decision)
+	if got.Decision != "blocked" {
+		t.Errorf("Decision = %q, want 'blocked'", got.Decision)
 	}
 	if len(got.PolicyMatches) != 1 {
 		t.Fatalf("PolicyMatches length = %d, want 1", len(got.PolicyMatches))
@@ -92,7 +92,7 @@ func TestExplainDecision_URLEncodesDecisionID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURI = r.RequestURI
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(DecisionExplanation{DecisionID: "a/b", Decision: "allow"})
+		_ = json.NewEncoder(w).Encode(DecisionExplanation{DecisionID: "a/b", Decision: "allowed"})
 	}))
 	defer srv.Close()
 
@@ -197,21 +197,21 @@ func TestListDecisions_HappyPath(t *testing.T) {
 		{
 			DecisionID:    "dec-1",
 			Timestamp:     time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC),
-			Decision:      "deny",
+			Decision:      "blocked",
 			PolicyID:      "pol-sqli",
 			ToolSignature: "postgres.query",
 		},
 		{
 			DecisionID:    "dec-2",
 			Timestamp:     time.Date(2026, 5, 7, 11, 0, 0, 0, time.UTC),
-			Decision:      "allow",
+			Decision:      "allowed",
 			PolicyID:      "pol-default",
 			ToolSignature: "github.status",
 		},
 		{
 			DecisionID:    "dec-3",
 			Timestamp:     time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC),
-			Decision:      "require_approval",
+			Decision:      "needs_approval",
 			PolicyID:      "pol-amount",
 			ToolSignature: "stripe.charge",
 		},
@@ -233,10 +233,10 @@ func TestListDecisions_HappyPath(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("len(got) = %d, want 3", len(got))
 	}
-	if got[0].DecisionID != "dec-1" || got[0].Decision != "deny" {
+	if got[0].DecisionID != "dec-1" || got[0].Decision != "blocked" {
 		t.Errorf("got[0] = %+v", got[0])
 	}
-	if got[2].Decision != "require_approval" {
+	if got[2].Decision != "needs_approval" {
 		t.Errorf("got[2].Decision = %q", got[2].Decision)
 	}
 }
@@ -255,7 +255,7 @@ func TestListDecisions_FilterSerialization(t *testing.T) {
 	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
 	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{
 		Since:         time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC),
-		Decision:      "deny",
+		Decision:      "blocked",
 		PolicyID:      "pol-sqli",
 		ToolSignature: "postgres.query",
 		Limit:         25,
@@ -265,7 +265,7 @@ func TestListDecisions_FilterSerialization(t *testing.T) {
 	}
 	for _, want := range []string{
 		"since=2026-05-07T00%3A00%3A00Z",
-		"decision=deny",
+		"decision=blocked",
 		"policy_id=pol-sqli",
 		"tool_signature=postgres.query",
 		"limit=25",
@@ -285,11 +285,11 @@ func TestListDecisions_OmitsUnsetFilters(t *testing.T) {
 	defer srv.Close()
 
 	c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: srv.URL}, httpClient: srv.Client()}
-	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{Decision: "deny"})
+	_, err := c.ListDecisions(context.Background(), ListDecisionsOptions{Decision: "blocked"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if capturedQuery != "decision=deny" {
+	if capturedQuery != "decision=blocked" {
 		t.Errorf("zero-valued fields must be omitted; got %q", capturedQuery)
 	}
 }
@@ -384,7 +384,7 @@ func TestListDecisions_ForwardCompat(t *testing.T) {
 			"decisions": [{
 				"decision_id": "dec-fwd",
 				"timestamp": "2026-05-07T12:00:00Z",
-				"decision": "deny",
+				"decision": "blocked",
 				"policy_id": "pol-x",
 				"tool_signature": "tool-x",
 				"policy_version": 7,
@@ -411,7 +411,7 @@ func TestListDecisions_ForwardCompat(t *testing.T) {
 // the DecisionSummary type must accept them as zero strings on parse
 // AND drop them on re-serialize via omitempty.
 func TestDecisionSummary_OptionalFieldsRoundTrip(t *testing.T) {
-	raw := []byte(`{"decision_id":"dec-min","timestamp":"2026-05-07T12:00:00Z","decision":"deny"}`)
+	raw := []byte(`{"decision_id":"dec-min","timestamp":"2026-05-07T12:00:00Z","decision":"blocked"}`)
 	var d DecisionSummary
 	if err := json.Unmarshal(raw, &d); err != nil {
 		t.Fatal(err)
@@ -433,7 +433,7 @@ func TestDecisionSummary_OptionalFieldsRoundTrip(t *testing.T) {
 // row carries the sanitized request context the PEP attached to the decision.
 // The map must parse and re-serialize without information loss.
 func TestDecisionSummary_ContextRoundTrip(t *testing.T) {
-	raw := []byte(`{"decision_id":"dec-ctx","timestamp":"2026-05-30T12:00:00Z","decision":"deny",` +
+	raw := []byte(`{"decision_id":"dec-ctx","timestamp":"2026-05-30T12:00:00Z","decision":"blocked",` +
 		`"context":{"x_ai_agent":"refund-bot","x_session_id":"sess-42","x_leader_identity":"ops-lead"}}`)
 	var d DecisionSummary
 	if err := json.Unmarshal(raw, &d); err != nil {
@@ -462,7 +462,7 @@ func TestDecisionSummary_ContextRoundTrip(t *testing.T) {
 // context (or a pre-v8.4.0 audit row) must keep its original byte-shape:
 // omitempty drops the absent map so the wire payload is unchanged.
 func TestDecisionSummary_ContextOmittedWhenEmpty(t *testing.T) {
-	raw := []byte(`{"decision_id":"dec-noctx","timestamp":"2026-05-30T12:00:00Z","decision":"allow"}`)
+	raw := []byte(`{"decision_id":"dec-noctx","timestamp":"2026-05-30T12:00:00Z","decision":"allowed"}`)
 	var d DecisionSummary
 	if err := json.Unmarshal(raw, &d); err != nil {
 		t.Fatal(err)
@@ -482,7 +482,7 @@ func TestDecisionSummary_ContextOmittedWhenEmpty(t *testing.T) {
 // TestDecisionExplanation_ContextAndTruncated — v8.4.0 (platform #2509): the
 // explain payload returns the FULL context map plus the context_truncated flag.
 func TestDecisionExplanation_ContextAndTruncated(t *testing.T) {
-	raw := []byte(`{"decision_id":"dec-x","timestamp":"2026-05-30T12:00:00Z","decision":"deny",` +
+	raw := []byte(`{"decision_id":"dec-x","timestamp":"2026-05-30T12:00:00Z","decision":"blocked",` +
 		`"reason":"pii","override_available":false,"historical_hit_count_session":0,` +
 		`"policy_matches":[],"context":{"x_ai_agent":"a","x_session_id":"s"},"context_truncated":true}`)
 	var e DecisionExplanation
@@ -507,7 +507,7 @@ func TestDecisionExplanation_ContextAndTruncated(t *testing.T) {
 // TestDecisionExplanation_ContextTruncatedOmittedWhenFalse — the common case
 // (nothing dropped) must not emit context_truncated, preserving byte-shape.
 func TestDecisionExplanation_ContextTruncatedOmittedWhenFalse(t *testing.T) {
-	e := DecisionExplanation{DecisionID: "d", Decision: "allow"}
+	e := DecisionExplanation{DecisionID: "d", Decision: "allowed"}
 	out, err := json.Marshal(e)
 	if err != nil {
 		t.Fatal(err)
