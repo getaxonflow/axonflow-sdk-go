@@ -15,6 +15,9 @@ func main() {
 	agentURL := getEnv("AXONFLOW_AGENT_URL", "http://localhost:8080")
 	clientID := getEnv("AXONFLOW_CLIENT_ID", "")
 	clientSecret := getEnv("AXONFLOW_CLIENT_SECRET", "")
+	// Enterprise stacks (DEPLOYMENT_MODE=enterprise) validate user tokens as
+	// JWTs — export AXONFLOW_USER_TOKEN. Community stacks skip JWT validation.
+	userToken := getEnv("AXONFLOW_USER_TOKEN", "")
 
 	if clientID == "" || clientSecret == "" {
 		log.Fatal("AXONFLOW_CLIENT_ID and AXONFLOW_CLIENT_SECRET must be set")
@@ -55,7 +58,7 @@ func main() {
 	fmt.Printf("Goal: %s\n\n", planGoal)
 	fmt.Println("Generating plan...")
 
-	plan, err := client.GeneratePlan(planGoal, "travel")
+	plan, err := client.GeneratePlan(planGoal, "travel", userToken)
 	if err != nil {
 		log.Fatalf("Plan generation failed: %v", err)
 	}
@@ -95,7 +98,7 @@ func main() {
 	fmt.Println("Executing plan...")
 	startTime := time.Now()
 
-	execResp, err := client.ExecutePlan(plan.PlanID)
+	execResp, err := client.ExecutePlan(plan.PlanID, userToken)
 	if err != nil {
 		log.Fatalf("Plan execution failed: %v", err)
 	}
@@ -164,7 +167,7 @@ func main() {
 	fmt.Printf("Goal: %s\n\n", complexGoal)
 	fmt.Println("Generating complex plan...")
 
-	complexPlan, err := client.GeneratePlan(complexGoal, "research")
+	complexPlan, err := client.GeneratePlan(complexGoal, "research", userToken)
 	if err != nil {
 		log.Printf("Complex plan generation failed: %v", err)
 		return

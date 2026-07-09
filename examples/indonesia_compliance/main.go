@@ -14,6 +14,9 @@ func main() {
 	agentURL := getEnv("AXONFLOW_AGENT_URL", "http://localhost:8080")
 	clientID := getEnv("AXONFLOW_CLIENT_ID", "")
 	clientSecret := getEnv("AXONFLOW_CLIENT_SECRET", "")
+	// Enterprise stacks (DEPLOYMENT_MODE=enterprise) validate user tokens as
+	// JWTs — export AXONFLOW_USER_TOKEN. Community stacks skip JWT validation.
+	userToken := getEnv("AXONFLOW_USER_TOKEN", "")
 
 	if clientID == "" || clientSecret == "" {
 		log.Fatal("AXONFLOW_CLIENT_ID and AXONFLOW_CLIENT_SECRET must be set")
@@ -30,7 +33,7 @@ func main() {
 	// 2. Send a request containing an Indonesian NIK (national ID number)
 	fmt.Println("\nSending governed request with NIK...")
 	resp, err := client.ProxyLLMCall(
-		"",
+		userToken,
 		"Customer NIK is 3204110507900003 and their name is Budi Santoso",
 		"chat",
 		map[string]interface{}{
