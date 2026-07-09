@@ -37,7 +37,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          # macos-latest runners abort Go 1.22-built binaries at exec time
+          # ("dyld: missing LC_UUID load command", SIGABRT); newer Go
+          # toolchains emit LC_UUID. 1.22 is EOL and never got the fix.
+          go-version: '1.24.x'
 
       - name: Set up Python (for harness driver)
         uses: actions/setup-python@v5
