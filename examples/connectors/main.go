@@ -14,6 +14,9 @@ func main() {
 	agentURL := getEnv("AXONFLOW_AGENT_URL", "http://localhost:8080")
 	clientID := getEnv("AXONFLOW_CLIENT_ID", "")
 	clientSecret := getEnv("AXONFLOW_CLIENT_SECRET", "")
+	// Enterprise stacks (DEPLOYMENT_MODE=enterprise) validate user tokens as
+	// JWTs — export AXONFLOW_USER_TOKEN. Community stacks skip JWT validation.
+	userToken := getEnv("AXONFLOW_USER_TOKEN", "")
 
 	if clientID == "" || clientSecret == "" {
 		log.Fatal("AXONFLOW_CLIENT_ID and AXONFLOW_CLIENT_SECRET must be set")
@@ -93,7 +96,7 @@ func main() {
 		fmt.Println("Querying Amadeus connector for flights...")
 
 		resp, err := client.QueryConnector(
-			"", // SDK auto-populates user_token (defaults to "anonymous"). Don't hardcode a non-JWT literal — JWT-validating stacks reject it.
+			userToken, // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
 			"amadeus-prod",
 			"Find flights from Paris to Amsterdam on 2025-12-15",
 			map[string]interface{}{
@@ -118,7 +121,7 @@ func main() {
 	fmt.Println("\nQuerying Redis connector...")
 
 	redisResp, err := client.QueryConnector(
-		"", // SDK auto-populates user_token (defaults to "anonymous"). Don't hardcode a non-JWT literal — JWT-validating stacks reject it.
+		userToken, // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
 		"redis-cache",
 		"Get cached user preferences for user-123",
 		map[string]interface{}{

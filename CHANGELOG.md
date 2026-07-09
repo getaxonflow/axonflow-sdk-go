@@ -5,6 +5,50 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
+
+Hostile-testing sweep ahead of the BukuWarung integration
+(getaxonflow/axonflow-enterprise#2861).
+
+### Fixed
+
+- **Production-mode fail-open no longer swallows definitive 4xx errors.**
+  `ProxyLLMCall`/`ProxyLLMCallWithMedia` in `Mode:"production"` used to convert
+  an HTTP 401 (invalid credentials / invalid user token) into a synthetic
+  `success=true` "fail-open" response: the retry wrapper's
+  `request failed after N attempts` prefix matched the string-based
+  `isAxonFlowError` check. Fail-open eligibility is now structural
+  (`isFailOpenEligible`): definitive 4xx client errors (400/401/403*/404, …)
+  always surface as errors; availability failures (transport errors, 5xx) and
+  429 remain fail-open eligible. (*402/403 policy envelopes are still parsed
+  as blocked responses before this check, unchanged.) Regression tests:
+  `TestProxyLLMCallDoesNotFailOpenOn4xx`, `TestProxyLLMCallStillFailsOpenOn5xx`;
+  runtime proof: `runtime-e2e/proxy_fail_closed_4xx/`.
+- **`[SDK-DEBUG]` logging is now gated on `Config.Debug`.** The SDK
+  unconditionally logged raw response bodies (up to 500 chars) and result
+  payloads — customer data (LLM output, PII) landed in the logs of every
+  caller. All `[SDK-DEBUG]` lines in the request path now require
+  `Debug: true`.
+- **`examples/explain-decision` and `examples/wcp-retry-idempotency` build
+  again.** Their standalone `go.mod`s still declared the v7 module path
+  (`require …/v7 v7.1.0` resp. the outright-invalid `…/v7 v5.0.0`) while the
+  code imports `…/v8` — both were broken since the v8 major bump. Now
+  `…/v8` + `replace` to the repo root.
+- **Examples pass `AXONFLOW_USER_TOKEN` and fail honestly.** Enterprise
+  stacks (`DEPLOYMENT_MODE=enterprise`) validate user tokens as JWTs; the
+  examples passed `""` (→ `anonymous`) and 401'd. `basic`, `planning`
+  (incl. `ExecutePlan`), `connectors`, `indonesia_compliance` now read
+  `AXONFLOW_USER_TOKEN`. `basic` also exits non-zero on a failed response
+  instead of printing a success checkmark (and no longer prints
+  `%!s(<nil>)` for the result).
+
+### Added
+
+- `runtime-e2e/proxy_fail_closed_4xx/` — live-agent assertion that
+  production-mode fail-open never converts a 401 into an ungoverned success
+  (garbage user token + wrong Basic credentials must error; control call with
+  valid credentials succeeds).
+
 ## [8.5.0] - 2026-06-09 — Decision Mode PEP: decide → fulfill → forward
 
 Ports the Decision Mode PEP (Policy Enforcement Point) contract into the Go

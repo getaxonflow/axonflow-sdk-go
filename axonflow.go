@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -773,7 +774,7 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 	}
 
 	// Handle fail-open in production mode
-	if err != nil && c.config.Mode == "production" && c.isAxonFlowError(err) {
+	if err != nil && c.config.Mode == "production" && c.isFailOpenEligible(err) {
 		if c.config.Debug {
 			log.Printf("[AxonFlow] AxonFlow unavailable, failing open: %v", err)
 		}
@@ -846,7 +847,7 @@ func (c *AxonFlowClient) ProxyLLMCallWithMedia(userToken, query, requestType str
 	}
 
 	// Handle fail-open in production mode
-	if err != nil && c.config.Mode == "production" && c.isAxonFlowError(err) {
+	if err != nil && c.config.Mode == "production" && c.isFailOpenEligible(err) {
 		if c.config.Debug {
 			log.Printf("[AxonFlow] AxonFlow unavailable, failing open: %v", err)
 		}
@@ -946,12 +947,16 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// [DEBUG] Log raw response body before unmarshaling
-	log.Printf("[SDK-DEBUG] Raw response body size: %d bytes", len(body))
-	if len(body) > 0 && len(body) <= 500 {
-		log.Printf("[SDK-DEBUG] Raw response body (full): %s", string(body))
-	} else if len(body) > 500 {
-		log.Printf("[SDK-DEBUG] Raw response body (first 500 chars): %s...", string(body[:500]))
+	// [DEBUG] Log raw response body before unmarshaling. Gated on Debug:
+	// response bodies can carry customer data (LLM output, PII) and must
+	// never land in logs of a production caller that didn't opt in.
+	if c.config.Debug {
+		log.Printf("[SDK-DEBUG] Raw response body size: %d bytes", len(body))
+		if len(body) > 0 && len(body) <= 500 {
+			log.Printf("[SDK-DEBUG] Raw response body (full): %s", string(body))
+		} else if len(body) > 500 {
+			log.Printf("[SDK-DEBUG] Raw response body (first 500 chars): %s...", string(body[:500]))
+		}
 	}
 
 	// For 402 (Payment Required) or 403 (Forbidden), the request was blocked - parse the response body
@@ -986,7 +991,9 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 			if dataSuccess, hasSuccess := dataMap["success"].(bool); hasSuccess && !dataSuccess {
 				// Orchestrator execution failed - extract error message
 				if errorMsg, hasError := dataMap["error"].(string); hasError {
-					log.Printf("[SDK-DEBUG] Detected orchestrator failure in data.error: %s", errorMsg)
+					if c.config.Debug {
+						log.Printf("[SDK-DEBUG] Detected orchestrator failure in data.error: %s", errorMsg)
+					}
 					// Surface the error by setting the Error field and marking success as false
 					clientResp.Error = errorMsg
 					clientResp.Success = false
@@ -995,24 +1002,32 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 			// Also check if data.result or data.data exists and use it if Result is empty
 			if clientResp.Result == "" {
 				if dataResult, hasResult := dataMap["result"].(string); hasResult && dataResult != "" {
-					log.Printf("[SDK-DEBUG] Using data.result field (length: %d)", len(dataResult))
+					if c.config.Debug {
+						log.Printf("[SDK-DEBUG] Using data.result field (length: %d)", len(dataResult))
+					}
 					clientResp.Result = dataResult
 				} else if dataData, hasData := dataMap["data"].(string); hasData && dataData != "" {
-					log.Printf("[SDK-DEBUG] Using data.data field (length: %d)", len(dataData))
+					if c.config.Debug {
+						log.Printf("[SDK-DEBUG] Using data.data field (length: %d)", len(dataData))
+					}
 					clientResp.Result = dataData
 				}
 			}
 			// Check if data.plan_id exists and use it if PlanID is empty
 			if clientResp.PlanID == "" {
 				if dataPlanID, hasPlanID := dataMap["plan_id"].(string); hasPlanID && dataPlanID != "" {
-					log.Printf("[SDK-DEBUG] Using data.plan_id field: %s", dataPlanID)
+					if c.config.Debug {
+						log.Printf("[SDK-DEBUG] Using data.plan_id field: %s", dataPlanID)
+					}
 					clientResp.PlanID = dataPlanID
 				}
 			}
 			// Check if data.metadata exists and use it if Metadata is empty
 			if clientResp.Metadata == nil {
 				if dataMetadata, hasMetadata := dataMap["metadata"].(map[string]interface{}); hasMetadata {
-					log.Printf("[SDK-DEBUG] Using data.metadata field")
+					if c.config.Debug {
+						log.Printf("[SDK-DEBUG] Using data.metadata field")
+					}
 					clientResp.Metadata = dataMetadata
 				}
 			}
@@ -1020,21 +1035,26 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 	}
 
 	// [DEBUG] Log unmarshaled response details
-	log.Printf("[SDK-DEBUG] Unmarshaled - Success: %v, Blocked: %v, BlockReason: %s, Result length: %d, PlanID: %s",
-		clientResp.Success, clientResp.Blocked, clientResp.BlockReason, len(clientResp.Result), clientResp.PlanID)
-	if len(clientResp.Result) > 0 {
-		if len(clientResp.Result) <= 100 {
-			log.Printf("[SDK-DEBUG] Result (full): %s", clientResp.Result)
+	if c.config.Debug {
+		log.Printf("[SDK-DEBUG] Unmarshaled - Success: %v, Blocked: %v, BlockReason: %s, Result length: %d, PlanID: %s",
+			clientResp.Success, clientResp.Blocked, clientResp.BlockReason, len(clientResp.Result), clientResp.PlanID)
+		if len(clientResp.Result) > 0 {
+			if len(clientResp.Result) <= 100 {
+				log.Printf("[SDK-DEBUG] Result (full): %s", clientResp.Result)
+			} else {
+				log.Printf("[SDK-DEBUG] Result (first 100 chars): %s...", clientResp.Result[:100])
+			}
 		} else {
-			log.Printf("[SDK-DEBUG] Result (first 100 chars): %s...", clientResp.Result[:100])
+			log.Printf("[SDK-DEBUG] Result is empty!")
 		}
-	} else {
-		log.Printf("[SDK-DEBUG] Result is empty!")
+		log.Printf("[SDK-DEBUG] Metadata keys: %v", getMetadataKeys(clientResp.Metadata))
 	}
-	log.Printf("[SDK-DEBUG] Metadata keys: %v", getMetadataKeys(clientResp.Metadata))
 
-	// If we detected an error in the data field, log it prominently
-	if clientResp.Error != "" {
+	// If we detected an error in the data field, log it (Debug-gated): the
+	// server-provided error string is customer-derived and can echo query
+	// fragments, so it must not log in production — same leak class as the
+	// raw-body [SDK-DEBUG] lines above.
+	if clientResp.Error != "" && c.config.Debug {
 		log.Printf("[SDK-DEBUG] Error field set: %s", clientResp.Error)
 	}
 
@@ -1052,6 +1072,25 @@ func (c *AxonFlowClient) isAxonFlowError(err error) bool {
 		strings.Contains(errMsg, "governance") ||
 		strings.Contains(errMsg, "request failed") ||
 		strings.Contains(errMsg, "connection refused")
+}
+
+// isFailOpenEligible reports whether an error may trigger production-mode
+// fail-open. Fail-open exists for AVAILABILITY failures only (agent
+// unreachable, timeout, 5xx). A definitive 4xx from the agent — 401 bad
+// credentials, 400 malformed request, 404 — is not an availability failure:
+// failing open there silently converts an auth/config error into an
+// ungoverned success (the retry wrapper's "request failed after N attempts"
+// prefix used to make isAxonFlowError match exactly that). 429 stays
+// eligible: rate limiting is a capacity condition, same class as 5xx.
+func (c *AxonFlowClient) isFailOpenEligible(err error) bool {
+	var httpErr *httpError
+	if errors.As(err, &httpErr) {
+		if httpErr.statusCode >= 400 && httpErr.statusCode < 500 && httpErr.statusCode != http.StatusTooManyRequests {
+			return false
+		}
+		return true
+	}
+	return c.isAxonFlowError(err)
 }
 
 // HealthCheck checks if AxonFlow Agent is healthy

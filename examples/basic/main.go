@@ -14,6 +14,11 @@ func main() {
 	agentURL := getEnv("AXONFLOW_AGENT_URL", "http://localhost:8080")
 	clientID := getEnv("AXONFLOW_CLIENT_ID", "")
 	clientSecret := getEnv("AXONFLOW_CLIENT_SECRET", "")
+	// Enterprise stacks (DEPLOYMENT_MODE=enterprise) validate user tokens as
+	// JWTs. Export AXONFLOW_USER_TOKEN (see scripts/generate-jwt.sh in the
+	// platform repo). Community stacks skip JWT validation, so leaving it
+	// empty ("anonymous") is fine there.
+	userToken := getEnv("AXONFLOW_USER_TOKEN", "")
 
 	if clientID == "" || clientSecret == "" {
 		log.Fatal("AXONFLOW_CLIENT_ID and AXONFLOW_CLIENT_SECRET must be set")
@@ -34,7 +39,7 @@ func main() {
 	// Execute a simple query
 	fmt.Println("\nExecuting governed query...")
 	resp, err := client.ProxyLLMCall(
-		"", // SDK auto-populates user_token (defaults to "anonymous" if no JWT). Don't pass a literal — JWT-validating stacks reject it.
+		userToken,
 		"What is the capital of France?",
 		"chat",
 		map[string]interface{}{
@@ -57,13 +62,12 @@ func main() {
 
 	// Check if request succeeded
 	if !resp.Success {
-		fmt.Printf("❌ Query failed: %s\n", resp.Error)
-		return
+		log.Fatalf("❌ Query failed: %s", resp.Error)
 	}
 
 	// Display result
 	fmt.Println("✓ Query executed successfully")
-	fmt.Printf("Result: %s\n", resp.Data)
+	fmt.Printf("Result: %v\n", resp.Data)
 
 	// Display governance metadata
 	fmt.Println("\nGovernance Metadata:")
@@ -79,22 +83,23 @@ func main() {
 	fmt.Println(strings.Repeat("=", 60))
 
 	resp2, err := client.ProxyLLMCall(
-		"", // SDK auto-populates user_token (defaults to "anonymous" if no JWT). Don't pass a literal — JWT-validating stacks reject it.
+		userToken,
 		"My email is john.doe@example.com and my SSN is 123-45-6789",
 		"chat",
 		map[string]interface{}{},
 	)
 
 	if err != nil {
-		log.Printf("Warning: PII test query failed: %v", err)
-		return
+		log.Fatalf("PII test query failed: %v", err)
 	}
 
 	if resp2.Blocked {
 		fmt.Printf("✓ PII detected and request blocked\n")
 		fmt.Printf("  Reason: %s\n", resp2.BlockReason)
+	} else if !resp2.Success {
+		log.Fatalf("❌ PII test query failed: %s", resp2.Error)
 	} else {
-		fmt.Printf("✓ PII handled: %s\n", resp2.Data)
+		fmt.Printf("✓ PII handled: %v\n", resp2.Data)
 	}
 }
 

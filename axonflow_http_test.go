@@ -215,6 +215,83 @@ func TestProxyLLMCallFailOpen(t *testing.T) {
 	}
 }
 
+// TestProxyLLMCallDoesNotFailOpenOn4xx pins the fail-open eligibility
+// boundary: a definitive 4xx from the agent (401 bad credentials, 400 bad
+// request) must surface as an error in production mode, never convert into
+// an ungoverned success=true. Regression for the bug where the retry
+// wrapper's "request failed after N attempts" prefix made isAxonFlowError
+// match a wrapped 401 and fail open.
+func TestProxyLLMCallDoesNotFailOpenOn4xx(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"401 unauthorized", http.StatusUnauthorized},
+		{"400 bad request", http.StatusBadRequest},
+		{"404 not found", http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"success":false,"error":"Invalid user token: invalid token: token is malformed","blocked":false}`))
+			}))
+			defer server.Close()
+
+			// Retry enabled: the wrapper's "request failed after N attempts"
+			// prefix is exactly what used to trip the string-match fail-open.
+			client := NewClient(AxonFlowConfig{
+				Endpoint: server.URL,
+				ClientID: "test",
+				Mode:     "production",
+				Retry: RetryConfig{
+					Enabled:      true,
+					MaxAttempts:  2,
+					InitialDelay: 1 * time.Millisecond,
+				},
+				Timeout: 2 * time.Second,
+				Cache:   CacheConfig{Enabled: false},
+			})
+
+			resp, err := client.ProxyLLMCall("user", "query", "chat", nil)
+			if err == nil {
+				t.Fatalf("expected error for HTTP %d in production mode, got success resp: %+v", tc.status, resp)
+			}
+		})
+	}
+}
+
+// TestProxyLLMCallStillFailsOpenOn5xx pins that availability failures (5xx)
+// remain fail-open eligible in production mode after the 4xx fix.
+func TestProxyLLMCallStillFailsOpenOn5xx(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"success":false,"error":"upstream down"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+		Mode:     "production",
+		Retry: RetryConfig{
+			Enabled:      true,
+			MaxAttempts:  2,
+			InitialDelay: 1 * time.Millisecond,
+		},
+		Timeout: 2 * time.Second,
+		Cache:   CacheConfig{Enabled: false},
+	})
+
+	resp, err := client.ProxyLLMCall("user", "query", "chat", nil)
+	if err != nil {
+		t.Fatalf("expected fail-open on 503, got error: %v", err)
+	}
+	if !resp.Success {
+		t.Error("expected fail-open to return success=true on 503")
+	}
+}
+
 func TestProxyLLMCallEmptyUserTokenDefaultsToAnonymous(t *testing.T) {
 	var receivedUserToken string
 
