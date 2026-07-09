@@ -1050,8 +1050,11 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 		log.Printf("[SDK-DEBUG] Metadata keys: %v", getMetadataKeys(clientResp.Metadata))
 	}
 
-	// If we detected an error in the data field, log it prominently
-	if clientResp.Error != "" {
+	// If we detected an error in the data field, log it (Debug-gated): the
+	// server-provided error string is customer-derived and can echo query
+	// fragments, so it must not log in production — same leak class as the
+	// raw-body [SDK-DEBUG] lines above.
+	if clientResp.Error != "" && c.config.Debug {
 		log.Printf("[SDK-DEBUG] Error field set: %s", clientResp.Error)
 	}
 
