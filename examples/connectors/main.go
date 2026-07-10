@@ -110,7 +110,7 @@ func main() {
 		// lookup_airport (parameters carry the search criteria).
 		departureDate := time.Now().AddDate(0, 1, 0).Format("2006-01-02")
 		resp, err := client.QueryConnector(
-			userToken, // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
+			userToken,        // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
 			"amadeus-travel", // query by connector ID (the marketplace ID used at install time)
 			"search_flights",
 			map[string]interface{}{

@@ -125,6 +125,12 @@ Hostile-testing sweep ahead of the BukuWarung integration
   `AXONFLOW_USER_TOKEN`. `basic` also exits non-zero on a failed response
   instead of printing a success checkmark (and no longer prints
   `%!s(<nil>)` for the result).
+- **`UninstallConnector` calls the real platform route.** It issued
+  `DELETE /api/v1/connectors/{id}`, which the platform answers with
+  405 Method Not Allowed — every uninstall through the SDK failed. It now
+  posts to the actual route, `DELETE /api/v1/connectors/{id}/uninstall`.
+  Runtime proof: `runtime-e2e/connector_uninstall_route/`.
+
 ### Added
 
 - `runtime-e2e/proxy_fail_closed_4xx/` — live-agent assertion that
