@@ -5,12 +5,9 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
+## [Unreleased]
 
-Hostile-testing sweep ahead of the BukuWarung integration
-(getaxonflow/axonflow-enterprise#2861).
-
-### Fixed
+### Added
 
 - **`MarkStepCompletedRequest` gains the spec-declared optional `metadata`
   field.** The community v9.6.1 spec (`orchestrator-api.yaml`,
@@ -21,6 +18,14 @@ Hostile-testing sweep ahead of the BukuWarung integration
   LangGraph adapter's `StepCompletedOptions`/`ToolCompletedOptions`. Treat as
   opaque on the client. Runtime proof:
   `runtime-e2e/mark_step_completed_metadata/`.
+
+## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
+
+Hostile-testing sweep ahead of the BukuWarung integration
+(getaxonflow/axonflow-enterprise#2861).
+
+### Fixed
+
 - **Production-mode fail-open no longer swallows definitive 4xx errors.**
   `ProxyLLMCall`/`ProxyLLMCallWithMedia` in `Mode:"production"` used to convert
   an HTTP 401 (invalid credentials / invalid user token) into a synthetic
