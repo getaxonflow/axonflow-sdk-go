@@ -12,6 +12,15 @@ Hostile-testing sweep ahead of the BukuWarung integration
 
 ### Fixed
 
+- **`MarkStepCompletedRequest` gains the spec-declared optional `metadata`
+  field.** The community v9.6.1 spec (`orchestrator-api.yaml`,
+  `MarkStepCompletedRequest`) declares `metadata` as a free-form object
+  captured at step-completion time (audit context the gate-time data didn't
+  have); the platform consumes it at step-completion. Python/TypeScript/Java
+  all model it — Go was the only SDK missing it. Also threaded through the
+  LangGraph adapter's `StepCompletedOptions`/`ToolCompletedOptions`. Treat as
+  opaque on the client. Runtime proof:
+  `runtime-e2e/mark_step_completed_metadata/`.
 - **Production-mode fail-open no longer swallows definitive 4xx errors.**
   `ProxyLLMCall`/`ProxyLLMCallWithMedia` in `Mode:"production"` used to convert
   an HTTP 401 (invalid credentials / invalid user token) into a synthetic

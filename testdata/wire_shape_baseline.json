@@ -471,13 +471,6 @@
         "user_token"
       ]
     },
-    "MarkStepCompletedRequest": {
-      "_note": "New at the v9.6.1 pin: the spec added an optional 'metadata' property that the Go SDK does not expose yet. Real SDK gap surfaced by the getaxonflow/axonflow-enterprise#2861 sweep; needs a targeted SDK field addition in a separate PR (this PR is baseline+pin only).",
-      "sdk_only": [],
-      "spec_only": [
-        "metadata"
-      ]
-    },
     "PlanResponse": {
       "sdk_only": [
         "estimated_duration"
