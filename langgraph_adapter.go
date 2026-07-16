@@ -52,8 +52,14 @@ func (e *WorkflowApprovalRequiredError) Error() string {
 
 // MCPInterceptorOptions configures the behavior of NewMCPToolInterceptor.
 type MCPInterceptorOptions struct {
-	// ConnectorTypeFn maps a server name and tool name to a connector type string.
-	// Defaults to "{serverName}.{toolName}".
+	// ConnectorTypeFn maps a server name and tool name to a connector type
+	// string. It exists for callers who want to derive a custom
+	// connector_type from both dimensions (e.g., grouping several MCP
+	// servers under one connector type); most callers can leave it nil.
+	// The tool name is always sent separately as the "tool" field
+	// alongside connector_type (see MCPCheckInputRequest.Tool /
+	// MCPCheckOutputRequest.Tool) — it is never concatenated into
+	// connector_type. Defaults to returning serverName unchanged.
 	ConnectorTypeFn func(serverName, toolName string) string
 
 	// Operation is the operation type passed to MCPCheckInput. Defaults to "execute".
@@ -482,21 +488,26 @@ func (a *LangGraphAdapter) NewMCPToolInterceptor(opts *MCPInterceptorOptions) MC
 
 	if connectorTypeFn == nil {
 		connectorTypeFn = func(serverName, toolName string) string {
-			return serverName + "." + toolName
+			return serverName
 		}
 	}
 
 	return func(req MCPToolRequest, handler MCPToolHandler) (interface{}, error) {
+		// connectorType and tool are two genuinely separate identity fields
+		// on the wire (see MCPCheckInputRequest.Tool) — they are no longer
+		// concatenated into a single string.
 		connectorType := connectorTypeFn(req.ServerName, req.Name)
+		tool := req.Name
 
 		argsJSON, err := json.Marshal(req.Args)
 		if err != nil {
 			argsJSON = []byte("{}")
 		}
-		statement := fmt.Sprintf("%s(%s)", connectorType, string(argsJSON))
+		statement := fmt.Sprintf("%s.%s(%s)", req.ServerName, req.Name, string(argsJSON))
 
 		preCheck, err := a.client.MCPCheckInput(context.Background(), MCPCheckInputRequest{
 			ConnectorType: connectorType,
+			Tool:          tool,
 			Statement:     statement,
 			Operation:     operation,
 			Parameters:    req.Args,
@@ -524,6 +535,7 @@ func (a *LangGraphAdapter) NewMCPToolInterceptor(opts *MCPInterceptorOptions) MC
 
 		outputCheck, err := a.client.MCPCheckOutput(context.Background(), MCPCheckOutputRequest{
 			ConnectorType: connectorType,
+			Tool:          tool,
 			Message:       string(resultStr),
 		})
 		if err != nil {

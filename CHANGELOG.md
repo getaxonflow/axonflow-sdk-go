@@ -41,6 +41,16 @@ Hostile-testing sweep ahead of the BukuWarung integration
   `AXONFLOW_USER_TOKEN`. `basic` also exits non-zero on a failed response
   instead of printing a success checkmark (and no longer prints
   `%!s(<nil>)` for the result).
+- **LangGraph `NewMCPToolInterceptor` no longer concatenates the MCP server
+  name and tool name into a single `connectorType` string.** `MCPCheckInputRequest`/
+  `MCPCheckOutputRequest` now accept an optional `Tool` field, sent alongside
+  `ConnectorType` on the wire, matching the platform's two-field (server, tool)
+  identity contract (epic #2905 / #2904). The interceptor now sends
+  `ConnectorType: serverName` and `Tool: toolName` as two distinct values
+  instead of `serverName + "." + toolName`. **Note:** the default
+  `ConnectorTypeFn`'s wire value for `connector_type` changes as a result — a
+  policy scoped to the old concatenated string will need to be re-scoped to
+  the bare server name plus the new `tool` field.
 
 ### Added
 

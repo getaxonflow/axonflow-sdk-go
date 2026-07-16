@@ -1054,6 +1054,9 @@ func TestLangGraphAdapter_MCPToolInterceptor_CustomOptions(t *testing.T) {
 	if receivedInputBody.ConnectorType != "my-server" {
 		t.Errorf("expected connector type 'my-server', got '%s'", receivedInputBody.ConnectorType)
 	}
+	if receivedInputBody.Tool != "list-items" {
+		t.Errorf("expected tool 'list-items', got '%s'", receivedInputBody.Tool)
+	}
 	if receivedInputBody.Operation != "query" {
 		t.Errorf("expected operation 'query', got '%s'", receivedInputBody.Operation)
 	}
@@ -1085,12 +1088,19 @@ func TestLangGraphAdapter_MCPToolInterceptor_HandlerError(t *testing.T) {
 	}
 }
 
-func TestLangGraphAdapter_MCPToolInterceptor_DefaultConnectorType(t *testing.T) {
+func TestLangGraphAdapter_MCPToolInterceptor_DefaultConnectorTypeAndTool(t *testing.T) {
 	var receivedInputBody MCPCheckInputRequest
+	var receivedOutputBody MCPCheckOutputRequest
 	server, client := setupLangGraphTestServer(t, map[string]http.HandlerFunc{
 		"/api/v1/mcp/check-input": func(w http.ResponseWriter, r *http.Request) {
 			json.NewDecoder(r.Body).Decode(&receivedInputBody)
 			json.NewEncoder(w).Encode(MCPCheckInputResponse{
+				Allowed: true,
+			})
+		},
+		"/api/v1/mcp/check-output": func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&receivedOutputBody)
+			json.NewEncoder(w).Encode(MCPCheckOutputResponse{
 				Allowed: true,
 			})
 		},
@@ -1112,10 +1122,22 @@ func TestLangGraphAdapter_MCPToolInterceptor_DefaultConnectorType(t *testing.T) 
 
 	interceptor(req, handler)
 
-	if receivedInputBody.ConnectorType != "my-server.do-thing" {
-		t.Errorf("expected connector type 'my-server.do-thing', got '%s'", receivedInputBody.ConnectorType)
+	// connectorType and tool must be sent as two separate, correct values —
+	// never concatenated into a single "my-server.do-thing" string.
+	if receivedInputBody.ConnectorType != "my-server" {
+		t.Errorf("expected connector type 'my-server', got '%s'", receivedInputBody.ConnectorType)
 	}
-	// Statement should be connectorType(args)
+	if receivedInputBody.Tool != "do-thing" {
+		t.Errorf("expected tool 'do-thing', got '%s'", receivedInputBody.Tool)
+	}
+	if receivedOutputBody.ConnectorType != "my-server" {
+		t.Errorf("expected output connector type 'my-server', got '%s'", receivedOutputBody.ConnectorType)
+	}
+	if receivedOutputBody.Tool != "do-thing" {
+		t.Errorf("expected output tool 'do-thing', got '%s'", receivedOutputBody.Tool)
+	}
+	// Statement is a human-readable representation and may still combine
+	// server and tool name, independent of the connector_type/tool wire fields.
 	if !strings.HasPrefix(receivedInputBody.Statement, "my-server.do-thing(") {
 		t.Errorf("expected statement to start with 'my-server.do-thing(', got '%s'", receivedInputBody.Statement)
 	}
