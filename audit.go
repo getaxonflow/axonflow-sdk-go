@@ -120,7 +120,23 @@ type AuditToolCallRequest struct {
 	// ToolName is the name of the tool that was called (required)
 	ToolName string `json:"tool_name"`
 	// ToolType is the type of tool: "function", "mcp", or "api"
+	//
+	// Deprecated: ToolType was historically overloaded to identify which
+	// client made the call (e.g. "claude_code", "codex", "cursor"). Use
+	// CallerName for that purpose instead. ToolType is kept as a
+	// deprecated input fallback for backward compatibility and is not
+	// being removed.
 	ToolType string `json:"tool_type,omitempty"`
+	// CallerName identifies the client that made the tool call (e.g.
+	// "claude_code", "codex", "cursor", "openclaw"). This supersedes the
+	// deprecated ToolType field for that purpose. The server resolves
+	// caller identity as: CallerName if supplied -> legacy ToolType if
+	// supplied -> a default.
+	//
+	// Requires a platform with caller_name support (v9.11.0+); older
+	// platforms silently drop this field, so also set ToolType if you need
+	// attribution there.
+	CallerName string `json:"caller_name,omitempty"`
 	// Input is the input data passed to the tool
 	Input map[string]interface{} `json:"input,omitempty"`
 	// Output is the output data returned by the tool
