@@ -132,6 +132,10 @@ type AuditToolCallRequest struct {
 	// deprecated ToolType field for that purpose. The server resolves
 	// caller identity as: CallerName if supplied -> legacy ToolType if
 	// supplied -> a default.
+	//
+	// Requires a platform with caller_name support (v9.11.0+); older
+	// platforms silently drop this field, so also set ToolType if you need
+	// attribution there.
 	CallerName string `json:"caller_name,omitempty"`
 	// Input is the input data passed to the tool
 	Input map[string]interface{} `json:"input,omitempty"`
