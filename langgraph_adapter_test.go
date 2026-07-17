@@ -1054,8 +1054,101 @@ func TestLangGraphAdapter_MCPToolInterceptor_CustomOptions(t *testing.T) {
 	if receivedInputBody.ConnectorType != "my-server" {
 		t.Errorf("expected connector type 'my-server', got '%s'", receivedInputBody.ConnectorType)
 	}
+	if receivedInputBody.Tool != "list-items" {
+		t.Errorf("expected tool 'list-items', got '%s'", receivedInputBody.Tool)
+	}
 	if receivedInputBody.Operation != "query" {
 		t.Errorf("expected operation 'query', got '%s'", receivedInputBody.Operation)
+	}
+}
+
+// TestLangGraphAdapter_MCPToolInterceptor_StatementUsesResolvedConnectorType
+// pins RULING 2 (epic #2905): the human-readable statement is built from the
+// RESOLVED connector type (whatever ConnectorTypeFn returns), not the raw
+// req.ServerName — matching the python/typescript/java adapters. Here the
+// custom fn returns a value that differs from ServerName, so a statement built
+// from raw ServerName would be observably wrong.
+func TestLangGraphAdapter_MCPToolInterceptor_StatementUsesResolvedConnectorType(t *testing.T) {
+	var receivedInputBody MCPCheckInputRequest
+	server, client := setupLangGraphTestServer(t, map[string]http.HandlerFunc{
+		"/api/v1/mcp/check-input": func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&receivedInputBody)
+			json.NewEncoder(w).Encode(MCPCheckInputResponse{Allowed: true})
+		},
+	})
+	defer server.Close()
+
+	adapter := NewLangGraphAdapter(client, "test-workflow")
+	interceptor := adapter.NewMCPToolInterceptor(&MCPInterceptorOptions{
+		ConnectorTypeFn: func(serverName, toolName string) string {
+			return "prod-" + serverName // deliberately != serverName
+		},
+	})
+
+	handler := func(req MCPToolRequest) (interface{}, error) { return "ok", nil }
+	req := MCPToolRequest{ServerName: "my-server", Name: "do-thing", Args: map[string]interface{}{"k": "v"}}
+
+	if _, err := interceptor(req, handler); err != nil {
+		t.Fatalf("interceptor failed: %v", err)
+	}
+
+	if receivedInputBody.ConnectorType != "prod-my-server" {
+		t.Errorf("expected resolved connector type 'prod-my-server', got '%s'", receivedInputBody.ConnectorType)
+	}
+	if receivedInputBody.Tool != "do-thing" {
+		t.Errorf("expected tool 'do-thing', got '%s'", receivedInputBody.Tool)
+	}
+	// Statement must reflect the RESOLVED connector type, not raw ServerName.
+	if !strings.HasPrefix(receivedInputBody.Statement, "prod-my-server.do-thing(") {
+		t.Errorf("expected statement to start with 'prod-my-server.do-thing(', got '%s'", receivedInputBody.Statement)
+	}
+	if strings.HasPrefix(receivedInputBody.Statement, "my-server.do-thing(") {
+		t.Errorf("statement was built from raw ServerName, not the resolved connector type: '%s'", receivedInputBody.Statement)
+	}
+}
+
+// TestLangGraphAdapter_MCPToolInterceptor_EmptyServerName pins the
+// missing-server edge (epic #2905). With the default resolver, connector_type
+// is the server name, so an empty ServerName sends connector_type="" while the
+// tool name still travels in Tool. A real platform rejects an empty
+// connector_type with HTTP 400, which the client surfaces as an error — the
+// tool call is blocked (fail-closed) and the handler never runs. Before the
+// de-concatenation the value was ".tool" (a non-empty string the platform
+// accepted), so this is a deliberate, surfaced change for server-less tools.
+func TestLangGraphAdapter_MCPToolInterceptor_EmptyServerName(t *testing.T) {
+	var receivedInputBody MCPCheckInputRequest
+	server, client := setupLangGraphTestServer(t, map[string]http.HandlerFunc{
+		"/api/v1/mcp/check-input": func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&receivedInputBody)
+			// Emulate the platform rejecting an empty connector_type.
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "connector_type is required"})
+		},
+	})
+	defer server.Close()
+
+	adapter := NewLangGraphAdapter(client, "test-workflow")
+	interceptor := adapter.NewMCPToolInterceptor(nil)
+
+	handlerCalled := false
+	handler := func(req MCPToolRequest) (interface{}, error) {
+		handlerCalled = true
+		return "ok", nil
+	}
+	req := MCPToolRequest{ServerName: "", Name: "tool", Args: map[string]interface{}{}}
+
+	if _, err := interceptor(req, handler); err == nil {
+		t.Fatal("expected fail-closed error when server rejects the empty connector_type")
+	}
+	if handlerCalled {
+		t.Error("handler must NOT run when the input check fails (fail-closed)")
+	}
+	// The SDK faithfully sends connector_type="" and the tool name separately.
+	if receivedInputBody.ConnectorType != "" {
+		t.Errorf("expected empty connector_type on the wire, got '%s'", receivedInputBody.ConnectorType)
+	}
+	if receivedInputBody.Tool != "tool" {
+		t.Errorf("expected tool 'tool' on the wire, got '%s'", receivedInputBody.Tool)
 	}
 }
 
@@ -1085,12 +1178,19 @@ func TestLangGraphAdapter_MCPToolInterceptor_HandlerError(t *testing.T) {
 	}
 }
 
-func TestLangGraphAdapter_MCPToolInterceptor_DefaultConnectorType(t *testing.T) {
+func TestLangGraphAdapter_MCPToolInterceptor_DefaultConnectorTypeAndTool(t *testing.T) {
 	var receivedInputBody MCPCheckInputRequest
+	var receivedOutputBody MCPCheckOutputRequest
 	server, client := setupLangGraphTestServer(t, map[string]http.HandlerFunc{
 		"/api/v1/mcp/check-input": func(w http.ResponseWriter, r *http.Request) {
 			json.NewDecoder(r.Body).Decode(&receivedInputBody)
 			json.NewEncoder(w).Encode(MCPCheckInputResponse{
+				Allowed: true,
+			})
+		},
+		"/api/v1/mcp/check-output": func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&receivedOutputBody)
+			json.NewEncoder(w).Encode(MCPCheckOutputResponse{
 				Allowed: true,
 			})
 		},
@@ -1112,10 +1212,22 @@ func TestLangGraphAdapter_MCPToolInterceptor_DefaultConnectorType(t *testing.T) 
 
 	interceptor(req, handler)
 
-	if receivedInputBody.ConnectorType != "my-server.do-thing" {
-		t.Errorf("expected connector type 'my-server.do-thing', got '%s'", receivedInputBody.ConnectorType)
+	// connectorType and tool must be sent as two separate, correct values —
+	// never concatenated into a single "my-server.do-thing" string.
+	if receivedInputBody.ConnectorType != "my-server" {
+		t.Errorf("expected connector type 'my-server', got '%s'", receivedInputBody.ConnectorType)
 	}
-	// Statement should be connectorType(args)
+	if receivedInputBody.Tool != "do-thing" {
+		t.Errorf("expected tool 'do-thing', got '%s'", receivedInputBody.Tool)
+	}
+	if receivedOutputBody.ConnectorType != "my-server" {
+		t.Errorf("expected output connector type 'my-server', got '%s'", receivedOutputBody.ConnectorType)
+	}
+	if receivedOutputBody.Tool != "do-thing" {
+		t.Errorf("expected output tool 'do-thing', got '%s'", receivedOutputBody.Tool)
+	}
+	// Statement is a human-readable representation and may still combine
+	// server and tool name, independent of the connector_type/tool wire fields.
 	if !strings.HasPrefix(receivedInputBody.Statement, "my-server.do-thing(") {
 		t.Errorf("expected statement to start with 'my-server.do-thing(', got '%s'", receivedInputBody.Statement)
 	}

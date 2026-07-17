@@ -1,24 +1,24 @@
 # AxonFlow SDK for Go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v8.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v8)
+[![Go Reference](https://pkg.go.dev/badge/github.com/getaxonflow/axonflow-sdk-go/v9.svg)](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v9)
 [![Go Report Card](https://goreportcard.com/badge/github.com/getaxonflow/axonflow-sdk-go)](https://goreportcard.com/report/github.com/getaxonflow/axonflow-sdk-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **Upgrade strongly recommended.** AxonFlow ships substantial monthly security and quality hardening; staying on the latest major is the security-supported release line. [Latest release](https://github.com/getaxonflow/axonflow-sdk-go/releases/latest) · [Security advisories](https://github.com/getaxonflow/axonflow-sdk-go/security/advisories)
 
-> ## ⚠️ Use the `/v8` import path
+> ## ⚠️ Use the `/v9` import path
 >
-> Go's semantic import versioning requires the module path to include the major version suffix for v2+. The current release line is **v8.x**, imported as:
+> Go's semantic import versioning requires the module path to include the major version suffix for v2+. The current release line is **v9.x**, imported as:
 >
 > ```go
-> import "github.com/getaxonflow/axonflow-sdk-go/v8"
+> import "github.com/getaxonflow/axonflow-sdk-go/v9"
 > ```
 >
 > ```bash
-> go get github.com/getaxonflow/axonflow-sdk-go/v8
+> go get github.com/getaxonflow/axonflow-sdk-go/v9
 > ```
 >
-> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v8`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is seven major release lines behind current. See the [Migration Guide](#migration-guide) below.
+> `go get github.com/getaxonflow/axonflow-sdk-go@latest` (without `/v9`) resolves to **v1.17.0** (a 2026-01 relic from before the v2 split) and is eight major release lines behind current. See the [Migration Guide](#migration-guide) below.
 
 > **Evaluating AxonFlow for a real deployment?**
 >
@@ -51,7 +51,7 @@ Three short videos covering different angles of the platform:
 ## Installation
 
 ```bash
-go get github.com/getaxonflow/axonflow-sdk-go/v8
+go get github.com/getaxonflow/axonflow-sdk-go/v9
 ```
 
 ## Evaluation Tier (Free License)
@@ -103,7 +103,7 @@ import (
     "log"
     "os"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v8"
+    "github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 func main() {
@@ -141,7 +141,7 @@ func main() {
 import (
     "time"
     "os"
-    "github.com/getaxonflow/axonflow-sdk-go/v8"
+    "github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 // Full configuration with all features
@@ -179,7 +179,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/getaxonflow/axonflow-sdk-go/v8"
+    "github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 func main() {
@@ -317,8 +317,8 @@ Wrap your LLM clients with automatic AxonFlow governance using the interceptors 
 import (
     "context"
     "github.com/sashabaranov/go-openai"
-    "github.com/getaxonflow/axonflow-sdk-go/v8"
-    "github.com/getaxonflow/axonflow-sdk-go/v8/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v9"
+    "github.com/getaxonflow/axonflow-sdk-go/v9/interceptors"
 )
 
 // Initialize AxonFlow client
@@ -370,8 +370,8 @@ if err != nil {
 ```go
 import (
     "context"
-    "github.com/getaxonflow/axonflow-sdk-go/v8"
-    "github.com/getaxonflow/axonflow-sdk-go/v8/interceptors"
+    "github.com/getaxonflow/axonflow-sdk-go/v9"
+    "github.com/getaxonflow/axonflow-sdk-go/v9/interceptors"
 )
 
 // Create Anthropic interceptor
@@ -802,8 +802,8 @@ If `go get github.com/getaxonflow/axonflow-sdk-go@latest` resolved to **v1.17.0*
 
 ```bash
 # In go.mod, remove the old entry and replace with the v5 path:
-#   github.com/getaxonflow/axonflow-sdk-go → github.com/getaxonflow/axonflow-sdk-go/v8
-go get github.com/getaxonflow/axonflow-sdk-go/v8
+#   github.com/getaxonflow/axonflow-sdk-go → github.com/getaxonflow/axonflow-sdk-go/v9
+go get github.com/getaxonflow/axonflow-sdk-go/v9
 ```
 
 Update all imports in your `.go` files to include `/v5`:
@@ -813,7 +813,7 @@ Update all imports in your `.go` files to include `/v5`:
 import "github.com/getaxonflow/axonflow-sdk-go"
 
 // After:
-import "github.com/getaxonflow/axonflow-sdk-go/v8"
+import "github.com/getaxonflow/axonflow-sdk-go/v9"
 ```
 
 The API surface between v1 and v5 is substantially different. Check the release notes for v2, v3, v4, and v5 for the breaking changes you'll need to adopt. If you're coming from v1.x directly, the fastest path is usually to re-read the [Quick Start](#quick-start) section rather than trying to incrementally migrate.
@@ -824,8 +824,8 @@ The API surface between v1 and v5 is substantially different. Check the release 
 
 ```bash
 # In go.mod, change:
-#   github.com/getaxonflow/axonflow-sdk-go/v4 → github.com/getaxonflow/axonflow-sdk-go/v8
-go get github.com/getaxonflow/axonflow-sdk-go/v8
+#   github.com/getaxonflow/axonflow-sdk-go/v4 → github.com/getaxonflow/axonflow-sdk-go/v9
+go get github.com/getaxonflow/axonflow-sdk-go/v9
 ```
 
 Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface changes are required for the v4 → v5 bump itself — the major version increment reflects a policy break in how plan-scoped HITL responses are returned. See the [v5.0.0 release notes](https://github.com/getaxonflow/axonflow-sdk-go/releases/tag/v5.0.0) for the specifics.

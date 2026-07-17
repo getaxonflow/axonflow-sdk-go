@@ -5,7 +5,7 @@ This directory contains working examples demonstrating how to use the AxonFlow G
 ## Prerequisites
 
 ```bash
-go get github.com/getaxonflow/axonflow-sdk-go/v8
+go get github.com/getaxonflow/axonflow-sdk-go/v9
 ```
 
 Set environment variables:
@@ -92,5 +92,5 @@ Example license keys by tier:
 ## Learn More
 
 - [Main Documentation](../README.md)
-- [API Reference](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v8)
+- [API Reference](https://pkg.go.dev/github.com/getaxonflow/axonflow-sdk-go/v9)
 - [AxonFlow Docs](https://docs.getaxonflow.com)

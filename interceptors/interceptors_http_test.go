@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	axonflow "github.com/getaxonflow/axonflow-sdk-go/v8"
+	axonflow "github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 // createMockAxonFlowServer creates a test server that mimics AxonFlow responses

@@ -28,7 +28,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v8/internal/wireshape"
+	"github.com/getaxonflow/axonflow-sdk-go/v9/internal/wireshape"
 )
 
 const baselineOut = "testdata/wire_shape_baseline.json"

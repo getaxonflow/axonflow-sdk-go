@@ -1702,10 +1702,21 @@ func (c *AxonFlowClient) MCPExecute(ctx context.Context, req MCPExecuteRequest) 
 
 // MCPCheckInputRequest represents a request to validate input against MCP policies.
 type MCPCheckInputRequest struct {
-	ConnectorType string                 `json:"connector_type"`
-	Statement     string                 `json:"statement"`
-	Parameters    map[string]interface{} `json:"parameters,omitempty"`
-	Operation     string                 `json:"operation,omitempty"`
+	ConnectorType string `json:"connector_type"`
+
+	// Tool is the tool name, distinct from ConnectorType/server (e.g. the
+	// tool "read_file" on the server "filesystem"). Optional. Callers with a
+	// two-dimensional identity (server + tool) should send both
+	// connector_type and tool rather than concatenating them into
+	// connector_type. Consumed on POST /api/v1/mcp/check-input by platform
+	// v9.10.0+ (enterprise c8df2006b); silently ignored by platforms below
+	// v9.10.0. Source of truth: platform/agent MCPCheckInputRequest
+	// (epic #2905 / #2904).
+	Tool string `json:"tool,omitempty"`
+
+	Statement  string                 `json:"statement"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
+	Operation  string                 `json:"operation,omitempty"`
 
 	// ContentType selects the request-redaction detector (ADR-056 / #2563
 	// addendum). Empty defaults to "text/plain" server-side. A content_type with
@@ -1749,11 +1760,22 @@ type MCPCheckInputResponse struct {
 
 // MCPCheckOutputRequest represents a request to validate output against MCP policies.
 type MCPCheckOutputRequest struct {
-	ConnectorType string                   `json:"connector_type"`
-	ResponseData  []map[string]interface{} `json:"response_data,omitempty"`
-	Message       string                   `json:"message,omitempty"`
-	Metadata      map[string]interface{}   `json:"metadata,omitempty"`
-	RowCount      int                      `json:"row_count,omitempty"`
+	ConnectorType string `json:"connector_type"`
+
+	// Tool mirrors MCPCheckInputRequest.Tool for the output-phase check so
+	// both check-input and check-output carry the same two-field
+	// (connector_type, tool) identity. Optional. NOTE: unlike the input
+	// plane, the platform's check-output schema has NO tool field on any
+	// released version yet — #2904 added it input-side only, and check-output
+	// support is tracked by #2955 (targeted for v9.11.0). Sending it is
+	// forward-compatible and harmless (the agent ignores unknown keys), but
+	// it is not consumed server-side on any platform today.
+	Tool string `json:"tool,omitempty"`
+
+	ResponseData []map[string]interface{} `json:"response_data,omitempty"`
+	Message      string                   `json:"message,omitempty"`
+	Metadata     map[string]interface{}   `json:"metadata,omitempty"`
+	RowCount     int                      `json:"row_count,omitempty"`
 }
 
 // MCPCheckOutputResponse represents the result of output policy evaluation.

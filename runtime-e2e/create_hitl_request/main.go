@@ -32,7 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	axonflow "github.com/getaxonflow/axonflow-sdk-go/v8"
+	axonflow "github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 const notifyURL = "https://workflows.example.com/hooks/runtime-e2e"

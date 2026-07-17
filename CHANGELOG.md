@@ -7,17 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0] - 2026-07-18
+
+### Changed (BREAKING)
+
+- **Module path bumped to `/v9` (Go semantic import versioning).** The module
+  is now `github.com/getaxonflow/axonflow-sdk-go/v9`. Every import must change
+  from `github.com/getaxonflow/axonflow-sdk-go/v8/...` to `.../v9/...`, and any
+  `go.mod` requiring this SDK must reference the `/v9` path. This is mandatory
+  for the v9 major under Go's import-versioning rules — there is no way to
+  consume `v9.0.0` under the old `/v8` path.
+
+- **The LangGraph adapter now reports the (server, tool) identity as two
+  separate wire fields instead of concatenating them into `connector_type`.**
+  `MCPCheckInputRequest`/`MCPCheckOutputRequest` gain an optional `Tool` field,
+  sent alongside `ConnectorType` on the wire, matching the platform's two-field
+  (server, tool) identity contract. `NewMCPToolInterceptor`
+  now sends `ConnectorType: serverName` and `Tool: toolName` as two distinct
+  values instead of `serverName + "." + toolName`; the default `ConnectorTypeFn`
+  returns the bare `serverName`. `Tool` is always sent separately and is never
+  folded into `ConnectorType`, even with a custom `ConnectorTypeFn`.
+
+  **Migration.** Policies or per-connector settings matching the old
+  concatenated value — e.g. `connector_type == "filesystem.read_file"` — stop
+  matching after upgrade. Re-scope them to match `connector_type ==
+  "filesystem"` together with the `tool` field (e.g. `tool == "read_file"`).
+  The `ConnectorTypeFn` option is the compatibility lever: a caller can restore
+  any prior `connector_type` value (including the old concatenated form,
+  `func(s, t string) string { return s + "." + t }`) without losing the
+  separate `tool` field.
+
+  **Statement text also changed** for policies that match on the
+  human-readable `statement`: it is now `"{connectorType}.{tool}(args)"` built
+  from the *resolved* connector type (previously it was built from the raw
+  server name). With a custom `ConnectorTypeFn`, the statement now reflects the
+  custom connector type — consistent with the Python, TypeScript, and Java
+  adapters.
+
+  **Missing-server edge.** With the default resolver, a tool whose `ServerName`
+  is empty now sends `connector_type=""`, which the platform rejects with HTTP
+  400 → `MCPCheckInput` returns an error and the tool call is blocked
+  (fail-closed), never run ungoverned. Previously the concatenated value was
+  `".tool"` (a non-empty string the platform accepted). Supply a
+  `ConnectorTypeFn` for server-less MCP tools.
+
+  **Minimum platform.** The `tool` field is consumed on `POST
+  /api/v1/mcp/check-input` by **AxonFlow platform v9.10.0+**. On platforms
+  below v9.10.0 the `tool` field is silently dropped and identity degrades to
+  the bare server name — coarser than the old concatenated value — so
+  **upgrade the platform to v9.10.0+ before adopting this SDK major.**
+  Response-plane (`check-output`) `tool` scoping requires **AxonFlow platform
+  v9.11.0+**; until then the SDK sends it forward-compatibly and older
+  platforms ignore it.
+
 ### Added
 
-- **`AuditToolCallRequest.CallerName`** (getaxonflow/axonflow-enterprise#2912,
-  sub-issue of epic #2905). `tool_type` was historically overloaded by every
-  real caller (claude_code/codex/cursor/openclaw) to identify which client
-  made the tool call — not any property of the tool itself. `CallerName` is
-  the correctly-named field for that purpose and is preferred going forward.
-  The server resolves caller identity as: `CallerName` if supplied -> legacy
-  `ToolType` if supplied -> a default. `ToolType` is kept as a deprecated
-  input fallback for backward compatibility — it is not being removed or
-  renamed. Runtime proof: `runtime-e2e/caller_name_audit/`.
+- **`AuditToolCallRequest.CallerName`.** `tool_type` was historically
+  overloaded by every real caller (claude_code/codex/cursor/openclaw) to
+  identify which client made the tool call — not any property of the tool
+  itself. `CallerName` is the correctly-named field for that purpose and is
+  preferred going forward. The server resolves caller identity as: `CallerName`
+  if supplied -> legacy `ToolType` if supplied -> a default. `ToolType` is kept
+  as a deprecated input fallback for backward compatibility — it is not being
+  removed or renamed.
 
 ## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
 
@@ -55,7 +107,6 @@ Hostile-testing sweep ahead of the BukuWarung integration
   `AXONFLOW_USER_TOKEN`. `basic` also exits non-zero on a failed response
   instead of printing a success checkmark (and no longer prints
   `%!s(<nil>)` for the result).
-
 ### Added
 
 - `runtime-e2e/proxy_fail_closed_4xx/` — live-agent assertion that

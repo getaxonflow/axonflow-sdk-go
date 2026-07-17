@@ -40,9 +40,9 @@ module sandbox-rt-${RUN_TAG}
 
 go 1.21
 
-require github.com/getaxonflow/axonflow-sdk-go/v8 v8.0.0-00010101000000-000000000000
+require github.com/getaxonflow/axonflow-sdk-go/v9 v9.0.0-00010101000000-000000000000
 
-replace github.com/getaxonflow/axonflow-sdk-go/v8 => ${SDK_ROOT}
+replace github.com/getaxonflow/axonflow-sdk-go/v9 => ${SDK_ROOT}
 EOF
 
 cat > "$WORK/main.go" <<'EOF'
@@ -53,13 +53,13 @@ import (
 	"os"
 	"time"
 
-	axonflow "github.com/getaxonflow/axonflow-sdk-go/v8"
+	axonflow "github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 func main() {
 	_ = os.Unsetenv("AXONFLOW_TELEMETRY")
 	fmt.Printf("[%s] Constructing Sandbox client (unreachable agent)...\n", time.Now().Format(time.RFC3339))
-	c := axonflow.Sandbox("rt-test", "rt-test")
+	c := axonflow.Sandbox("rt-test")
 	_ = c
 	fmt.Printf("[%s] NewClient returned. Sleeping 2s for inflight HTTP...\n", time.Now().Format(time.RFC3339))
 	time.Sleep(2 * time.Second)

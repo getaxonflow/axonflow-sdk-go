@@ -29,7 +29,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v8"
+	"github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 func main() {

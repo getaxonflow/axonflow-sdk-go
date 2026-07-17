@@ -63,3 +63,8 @@ coverage.txt
 # Heartbeat real-stack smoke build artifact
 tests/heartbeat-real-stack/smoke_go
 tests/heartbeat-real-stack/smoke_go.exe
+
+# Compiled example/test main-package binaries (go build output)
+/examples/explain-decision/explain-decision
+/examples/wcp-retry-idempotency/wcp-retry-idempotency
+/tests/heartbeat-real-stack/heartbeat-real-stack-smoke
