@@ -503,7 +503,11 @@ func (a *LangGraphAdapter) NewMCPToolInterceptor(opts *MCPInterceptorOptions) MC
 		if err != nil {
 			argsJSON = []byte("{}")
 		}
-		statement := fmt.Sprintf("%s.%s(%s)", req.ServerName, req.Name, string(argsJSON))
+		// Build the human-readable statement from the RESOLVED connectorType
+		// (not raw req.ServerName) so a custom ConnectorTypeFn is reflected in
+		// the statement too — matching the python/typescript/java adapters
+		// (epic #2905, RULING 2). The tool name is appended for readability.
+		statement := fmt.Sprintf("%s.%s(%s)", connectorType, tool, string(argsJSON))
 
 		preCheck, err := a.client.MCPCheckInput(context.Background(), MCPCheckInputRequest{
 			ConnectorType: connectorType,

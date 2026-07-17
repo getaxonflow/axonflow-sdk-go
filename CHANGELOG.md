@@ -5,6 +5,59 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+> **This release contains a breaking change and MUST be published as a major
+> version bump.** The `connector_type` wire value emitted by the LangGraph
+> adapter changes from `"{server}.{tool}"` to the bare server name; policies
+> matching the old concatenated value stop matching until re-scoped (see the
+> migration note below).
+
+### Changed (BREAKING)
+
+- **The LangGraph adapter now reports the (server, tool) identity as two
+  separate wire fields instead of concatenating them into `connector_type`.**
+  `MCPCheckInputRequest`/`MCPCheckOutputRequest` gain an optional `Tool` field,
+  sent alongside `ConnectorType` on the wire, matching the platform's two-field
+  (server, tool) identity contract (epic #2905 / #2904). `NewMCPToolInterceptor`
+  now sends `ConnectorType: serverName` and `Tool: toolName` as two distinct
+  values instead of `serverName + "." + toolName`; the default `ConnectorTypeFn`
+  returns the bare `serverName`. `Tool` is always sent separately and is never
+  folded into `ConnectorType`, even with a custom `ConnectorTypeFn`.
+
+  **Migration.** Policies or per-connector settings matching the old
+  concatenated value — e.g. `connector_type == "filesystem.read_file"` — stop
+  matching after upgrade. Re-scope them to match `connector_type ==
+  "filesystem"` together with the `tool` field (e.g. `tool == "read_file"`).
+  The `ConnectorTypeFn` option is the compatibility lever: a caller can restore
+  any prior `connector_type` value (including the old concatenated form,
+  `func(s, t string) string { return s + "." + t }`) without losing the
+  separate `tool` field.
+
+  **Statement text also changed** for policies that match on the
+  human-readable `statement`: it is now `"{connectorType}.{tool}(args)"` built
+  from the *resolved* connector type (previously it was built from the raw
+  server name). With a custom `ConnectorTypeFn`, the statement now reflects the
+  custom connector type — aligning Go with the python/typescript/java adapters
+  (epic #2905, RULING 2).
+
+  **Missing-server edge.** With the default resolver, a tool whose `ServerName`
+  is empty now sends `connector_type=""`, which the platform rejects with HTTP
+  400 → `MCPCheckInput` returns an error and the tool call is blocked
+  (fail-closed), never run ungoverned. Previously the concatenated value was
+  `".tool"` (a non-empty string the platform accepted). Supply a
+  `ConnectorTypeFn` for server-less MCP tools.
+
+  **Minimum platform.** The `tool` field is consumed on `POST
+  /api/v1/mcp/check-input` by platform **v9.10.0+** (enterprise `c8df2006b`,
+  epic #2905 / #2904). On platforms below v9.10.0 the `tool` field is silently
+  dropped and identity degrades to the bare server name — coarser than the old
+  concatenated value — so **upgrade the platform to v9.10.0+ before adopting
+  this SDK major.** The response plane (`check-output`) does **not** consume
+  `tool` on any released platform version yet (tracked by #2955, targeted for
+  v9.11.0); the SDK sends it forward-compatibly and current platforms ignore
+  it.
+
 ## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
 
 Hostile-testing sweep ahead of the BukuWarung integration
@@ -41,17 +94,6 @@ Hostile-testing sweep ahead of the BukuWarung integration
   `AXONFLOW_USER_TOKEN`. `basic` also exits non-zero on a failed response
   instead of printing a success checkmark (and no longer prints
   `%!s(<nil>)` for the result).
-- **LangGraph `NewMCPToolInterceptor` no longer concatenates the MCP server
-  name and tool name into a single `connectorType` string.** `MCPCheckInputRequest`/
-  `MCPCheckOutputRequest` now accept an optional `Tool` field, sent alongside
-  `ConnectorType` on the wire, matching the platform's two-field (server, tool)
-  identity contract (epic #2905 / #2904). The interceptor now sends
-  `ConnectorType: serverName` and `Tool: toolName` as two distinct values
-  instead of `serverName + "." + toolName`. **Note:** the default
-  `ConnectorTypeFn`'s wire value for `connector_type` changes as a result — a
-  policy scoped to the old concatenated string will need to be re-scoped to
-  the bare server name plus the new `tool` field.
-
 ### Added
 
 - `runtime-e2e/proxy_fail_closed_4xx/` — live-agent assertion that

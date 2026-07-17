@@ -1704,12 +1704,14 @@ func (c *AxonFlowClient) MCPExecute(ctx context.Context, req MCPExecuteRequest) 
 type MCPCheckInputRequest struct {
 	ConnectorType string `json:"connector_type"`
 
-	// Tool is the specific tool/action being invoked on the connector (e.g.,
-	// "query" on a "postgres" connector). Optional: pre-#2904 platforms
-	// ignore it. Callers with a two-dimensional identity (server + tool)
-	// should send both connector_type and tool rather than concatenating
-	// them into connector_type. Source of truth: platform/agent
-	// MCPCheckInputRequest (epic #2905 / #2904).
+	// Tool is the tool name, distinct from ConnectorType/server (e.g. the
+	// tool "read_file" on the server "filesystem"). Optional. Callers with a
+	// two-dimensional identity (server + tool) should send both
+	// connector_type and tool rather than concatenating them into
+	// connector_type. Consumed on POST /api/v1/mcp/check-input by platform
+	// v9.10.0+ (enterprise c8df2006b); silently ignored by platforms below
+	// v9.10.0. Source of truth: platform/agent MCPCheckInputRequest
+	// (epic #2905 / #2904).
 	Tool string `json:"tool,omitempty"`
 
 	Statement  string                 `json:"statement"`
@@ -1762,7 +1764,12 @@ type MCPCheckOutputRequest struct {
 
 	// Tool mirrors MCPCheckInputRequest.Tool for the output-phase check so
 	// both check-input and check-output carry the same two-field
-	// (connector_type, tool) identity. Optional: pre-#2904 platforms ignore it.
+	// (connector_type, tool) identity. Optional. NOTE: unlike the input
+	// plane, the platform's check-output schema has NO tool field on any
+	// released version yet — #2904 added it input-side only, and check-output
+	// support is tracked by #2955 (targeted for v9.11.0). Sending it is
+	// forward-compatible and harmless (the agent ignores unknown keys), but
+	// it is not consumed server-side on any platform today.
 	Tool string `json:"tool,omitempty"`
 
 	ResponseData []map[string]interface{} `json:"response_data,omitempty"`
