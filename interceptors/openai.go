@@ -7,8 +7,8 @@
 //
 //	import (
 //		"github.com/sashabaranov/go-openai"
-//		"github.com/getaxonflow/axonflow-sdk-go/v8"
-//		"github.com/getaxonflow/axonflow-sdk-go/v8/interceptors"
+//		"github.com/getaxonflow/axonflow-sdk-go/v9"
+//		"github.com/getaxonflow/axonflow-sdk-go/v9/interceptors"
 //	)
 //
 //	client := openai.NewClient("your-api-key")
@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v8"
+	"github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 // ChatMessage represents a chat message for LLM calls

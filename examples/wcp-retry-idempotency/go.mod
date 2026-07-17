@@ -1,7 +1,7 @@
-module github.com/getaxonflow/axonflow-sdk-go/v8/examples/wcp-retry-idempotency
+module github.com/getaxonflow/axonflow-sdk-go/v9/examples/wcp-retry-idempotency
 
 go 1.23
 
-require github.com/getaxonflow/axonflow-sdk-go/v8 v8.5.1
+require github.com/getaxonflow/axonflow-sdk-go/v9 v9.0.0
 
-replace github.com/getaxonflow/axonflow-sdk-go/v8 => ../..
+replace github.com/getaxonflow/axonflow-sdk-go/v9 => ../..

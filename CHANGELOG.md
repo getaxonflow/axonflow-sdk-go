@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed (BREAKING)
 
+- **Module path bumped to `/v9` (Go semantic import versioning).** The module
+  is now `github.com/getaxonflow/axonflow-sdk-go/v9`. Every import must change
+  from `github.com/getaxonflow/axonflow-sdk-go/v8/...` to `.../v9/...`, and any
+  `go.mod` requiring this SDK must reference the `/v9` path. This is mandatory
+  for the v9 major under Go's import-versioning rules — there is no way to
+  consume `v9.0.0` under the old `/v8` path.
+
 - **The LangGraph adapter now reports the (server, tool) identity as two
   separate wire fields instead of concatenating them into `connector_type`.**
   `MCPCheckInputRequest`/`MCPCheckOutputRequest` gain an optional `Tool` field,

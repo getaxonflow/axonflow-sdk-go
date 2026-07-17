@@ -7,8 +7,8 @@
 //
 //	import (
 //		"github.com/ollama/ollama/api"
-//		"github.com/getaxonflow/axonflow-sdk-go/v8"
-//		"github.com/getaxonflow/axonflow-sdk-go/v8/interceptors"
+//		"github.com/getaxonflow/axonflow-sdk-go/v9"
+//		"github.com/getaxonflow/axonflow-sdk-go/v9/interceptors"
 //	)
 //
 //	client, _ := api.ClientFromEnvironment()
@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getaxonflow/axonflow-sdk-go/v8"
+	"github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 // OllamaMessage represents a message in an Ollama chat
