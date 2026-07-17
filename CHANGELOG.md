@@ -7,11 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **This release contains a breaking change and MUST be published as a major
-> version bump.** The `connector_type` wire value emitted by the LangGraph
-> adapter changes from `"{server}.{tool}"` to the bare server name; policies
-> matching the old concatenated value stop matching until re-scoped (see the
-> migration note below).
+## [9.0.0] - 2026-07-18
 
 ### Changed (BREAKING)
 
@@ -26,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separate wire fields instead of concatenating them into `connector_type`.**
   `MCPCheckInputRequest`/`MCPCheckOutputRequest` gain an optional `Tool` field,
   sent alongside `ConnectorType` on the wire, matching the platform's two-field
-  (server, tool) identity contract (epic #2905 / #2904). `NewMCPToolInterceptor`
+  (server, tool) identity contract. `NewMCPToolInterceptor`
   now sends `ConnectorType: serverName` and `Tool: toolName` as two distinct
   values instead of `serverName + "." + toolName`; the default `ConnectorTypeFn`
   returns the bare `serverName`. `Tool` is always sent separately and is never
@@ -45,8 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   human-readable `statement`: it is now `"{connectorType}.{tool}(args)"` built
   from the *resolved* connector type (previously it was built from the raw
   server name). With a custom `ConnectorTypeFn`, the statement now reflects the
-  custom connector type — aligning Go with the python/typescript/java adapters
-  (epic #2905, RULING 2).
+  custom connector type — consistent with the Python, TypeScript, and Java
+  adapters.
 
   **Missing-server edge.** With the default resolver, a tool whose `ServerName`
   is empty now sends `connector_type=""`, which the platform rejects with HTTP
@@ -56,26 +52,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConnectorTypeFn` for server-less MCP tools.
 
   **Minimum platform.** The `tool` field is consumed on `POST
-  /api/v1/mcp/check-input` by platform **v9.10.0+** (enterprise `c8df2006b`,
-  epic #2905 / #2904). On platforms below v9.10.0 the `tool` field is silently
-  dropped and identity degrades to the bare server name — coarser than the old
-  concatenated value — so **upgrade the platform to v9.10.0+ before adopting
-  this SDK major.** The response plane (`check-output`) does **not** consume
-  `tool` on any released platform version yet (tracked by #2955, targeted for
-  v9.11.0); the SDK sends it forward-compatibly and current platforms ignore
-  it.
+  /api/v1/mcp/check-input` by **AxonFlow platform v9.10.0+**. On platforms
+  below v9.10.0 the `tool` field is silently dropped and identity degrades to
+  the bare server name — coarser than the old concatenated value — so
+  **upgrade the platform to v9.10.0+ before adopting this SDK major.**
+  Response-plane (`check-output`) `tool` scoping requires **AxonFlow platform
+  v9.11.0+**; until then the SDK sends it forward-compatibly and older
+  platforms ignore it.
 
 ### Added
 
-- **`AuditToolCallRequest.CallerName`** (getaxonflow/axonflow-enterprise#2912,
-  sub-issue of epic #2905). `tool_type` was historically overloaded by every
-  real caller (claude_code/codex/cursor/openclaw) to identify which client
-  made the tool call — not any property of the tool itself. `CallerName` is
-  the correctly-named field for that purpose and is preferred going forward.
-  The server resolves caller identity as: `CallerName` if supplied -> legacy
-  `ToolType` if supplied -> a default. `ToolType` is kept as a deprecated
-  input fallback for backward compatibility — it is not being removed or
-  renamed. Runtime proof: `runtime-e2e/caller_name_audit/`.
+- **`AuditToolCallRequest.CallerName`.** `tool_type` was historically
+  overloaded by every real caller (claude_code/codex/cursor/openclaw) to
+  identify which client made the tool call — not any property of the tool
+  itself. `CallerName` is the correctly-named field for that purpose and is
+  preferred going forward. The server resolves caller identity as: `CallerName`
+  if supplied -> legacy `ToolType` if supplied -> a default. `ToolType` is kept
+  as a deprecated input fallback for backward compatibility — it is not being
+  removed or renamed.
 
 ## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
 

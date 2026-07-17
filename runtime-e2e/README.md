@@ -2,7 +2,7 @@
 
 Per CLAUDE.md HARD RULE #0: a user-facing feature is not done until you
 have demonstrated it working through the SDK's actual runtime — a real
-`import "github.com/getaxonflow/axonflow-sdk-go/v8"` from a real Go
+`import "github.com/getaxonflow/axonflow-sdk-go/v9"` from a real Go
 program with real `net/http` against a real running AxonFlow agent.
 
 **Tests in this directory MUST hit a real endpoint.** No
