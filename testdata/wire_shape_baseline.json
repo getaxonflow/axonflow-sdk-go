@@ -308,6 +308,12 @@
       ],
       "spec_only": []
     },
+    "AuditToolCallRequest": {
+      "sdk_only": [
+        "caller_name"
+      ],
+      "spec_only": []
+    },
     "Budget": {
       "sdk_only": [
         "enabled"

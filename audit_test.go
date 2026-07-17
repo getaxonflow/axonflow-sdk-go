@@ -246,6 +246,118 @@ func TestAuditToolCall(t *testing.T) {
 	})
 }
 
+// TestAuditToolCallCallerName tests the CallerName field added alongside the
+// deprecated ToolType field (getaxonflow/axonflow-enterprise#2912). CallerName
+// identifies which client made the tool call; ToolType is kept for backward
+// compatibility as a deprecated input fallback.
+func TestAuditToolCallCallerName(t *testing.T) {
+	t.Run("caller_name marshals on its own", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var reqBody map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+
+			if reqBody["caller_name"] != "claude_code" {
+				t.Errorf("expected caller_name claude_code, got %v", reqBody["caller_name"])
+			}
+			if _, exists := reqBody["tool_type"]; exists {
+				t.Errorf("expected tool_type to be omitted, got %v", reqBody["tool_type"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"audit_id":  "aud_caller1",
+				"status":    "recorded",
+				"timestamp": "2026-07-16T10:00:00Z",
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient(AxonFlowConfig{Endpoint: server.URL})
+
+		_, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName:   "getUserInfo",
+			CallerName: "claude_code",
+		})
+		if err != nil {
+			t.Fatalf("AuditToolCall failed: %v", err)
+		}
+	})
+
+	t.Run("legacy tool_type still works standalone", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var reqBody map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+
+			if reqBody["tool_type"] != "mcp" {
+				t.Errorf("expected tool_type mcp, got %v", reqBody["tool_type"])
+			}
+			if _, exists := reqBody["caller_name"]; exists {
+				t.Errorf("expected caller_name to be omitted, got %v", reqBody["caller_name"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"audit_id":  "aud_legacy1",
+				"status":    "recorded",
+				"timestamp": "2026-07-16T10:05:00Z",
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient(AxonFlowConfig{Endpoint: server.URL})
+
+		_, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName: "getUserInfo",
+			ToolType: "mcp",
+		})
+		if err != nil {
+			t.Fatalf("AuditToolCall failed: %v", err)
+		}
+	})
+
+	t.Run("both caller_name and tool_type marshal together", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var reqBody map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+
+			if reqBody["caller_name"] != "codex" {
+				t.Errorf("expected caller_name codex, got %v", reqBody["caller_name"])
+			}
+			if reqBody["tool_type"] != "mcp" {
+				t.Errorf("expected tool_type mcp, got %v", reqBody["tool_type"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]string{
+				"audit_id":  "aud_both1",
+				"status":    "recorded",
+				"timestamp": "2026-07-16T10:10:00Z",
+			})
+		}))
+		defer server.Close()
+
+		client := NewClient(AxonFlowConfig{Endpoint: server.URL})
+
+		_, err := client.AuditToolCall(context.Background(), AuditToolCallRequest{
+			ToolName:   "getUserInfo",
+			ToolType:   "mcp",
+			CallerName: "codex",
+		})
+		if err != nil {
+			t.Fatalf("AuditToolCall failed: %v", err)
+		}
+	})
+}
+
 // TestSearchAuditLogs tests the SearchAuditLogs method
 func TestSearchAuditLogs(t *testing.T) {
 	t.Run("successful search with all filters", func(t *testing.T) {
