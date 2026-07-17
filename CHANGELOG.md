@@ -57,6 +57,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool` on any released platform version yet (tracked by #2955, targeted for
   v9.11.0); the SDK sends it forward-compatibly and current platforms ignore
   it.
+### Added
+
+- **`AuditToolCallRequest.CallerName`** (getaxonflow/axonflow-enterprise#2912,
+  sub-issue of epic #2905). `tool_type` was historically overloaded by every
+  real caller (claude_code/codex/cursor/openclaw) to identify which client
+  made the tool call — not any property of the tool itself. `CallerName` is
+  the correctly-named field for that purpose and is preferred going forward.
+  The server resolves caller identity as: `CallerName` if supplied -> legacy
+  `ToolType` if supplied -> a default. `ToolType` is kept as a deprecated
+  input fallback for backward compatibility — it is not being removed or
+  renamed. Runtime proof: `runtime-e2e/caller_name_audit/`.
 
 ## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
 
