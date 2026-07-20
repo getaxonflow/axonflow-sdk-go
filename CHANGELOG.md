@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`runtime-e2e/caller_name_audit/` now also covers the no-identity
+  default (#2903).** getaxonflow/axonflow-enterprise#2953 merged and
+  shipped in platform v9.11.0; folded into that same merge, #2903 changed
+  the server's fallback default — when a caller supplies neither
+  `CallerName` nor the legacy `ToolType` — from `"claude_code"` to
+  `"unknown"`. The runtime proof now asserts `policy_details.caller_name
+  == "unknown"` for that case against a real running stack, alongside the
+  existing `CallerName` round-trip assertion. No SDK code changes; `#2912`'s
+  `CallerName` field already worked correctly — this closes a coverage gap
+  in the runtime proof and doc wording that assumed the old default.
+
 ## [9.0.0] - 2026-07-18
 
 ### Changed (BREAKING)
@@ -67,9 +80,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identify which client made the tool call — not any property of the tool
   itself. `CallerName` is the correctly-named field for that purpose and is
   preferred going forward. The server resolves caller identity as: `CallerName`
-  if supplied -> legacy `ToolType` if supplied -> a default. `ToolType` is kept
-  as a deprecated input fallback for backward compatibility — it is not being
-  removed or renamed.
+  if supplied -> legacy `ToolType` if supplied -> `"unknown"` when neither is
+  supplied (#2903 — an unidentified caller is no longer silently attributed to
+  the specific client `"claude_code"`, the pre-#2903 default). `ToolType` is
+  kept as a deprecated input fallback for backward compatibility — it is not
+  being removed or renamed. Both #2912 (`caller_name`) and #2903 (the
+  `"unknown"` default) shipped together in
+  getaxonflow/axonflow-enterprise#2953, merged and released in platform
+  v9.11.0.
 
 ## [8.5.1] - 2026-07-09 — Fail-open hardening + debug-log gating + example fixes
 
