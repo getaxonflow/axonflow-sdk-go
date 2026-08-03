@@ -290,17 +290,23 @@
       ]
     },
     "AuditLogEntry": {
+      "_note": "policy_decision, policy_details and response_time_ms are the REAL orchestrator wire fields (platform/orchestrator/audit_logger.go AuditEntry, identical from community v9.6.1 through v9.13.0 df027c788), added to the SDK by getaxonflow/axonflow-enterprise#3254. The pinned spec here (8c8d6c9c) predates the 9.x spec correction and still declares the fiction shape, so the three read as sdk_only. That part of this entry burns down when the pin advances to v9.13.0 (tracked by the spec-pin PR #185). The pre-existing sdk_only fields (data_residency, metadata, model, policy_violations, transfer_basis) predate #3254 and are unchanged.",
       "sdk_only": [
         "data_residency",
         "metadata",
         "model",
+        "policy_decision",
+        "policy_details",
         "policy_violations",
+        "response_time_ms",
         "transfer_basis"
       ],
       "spec_only": []
     },
     "AuditSearchRequest": {
+      "_note": "action is the search filter the 9.x server actually reads (audit_read_handlers.go), added to the SDK by getaxonflow/axonflow-enterprise#3254. The pinned spec here (8c8d6c9c) predates it, so it reads as sdk_only; that part of this entry burns down when the pin advances to v9.13.0 (tracked by the spec-pin PR #185). The pre-existing sdk_only fields predate #3254 and are unchanged.",
       "sdk_only": [
+        "action",
         "decision_id",
         "offset",
         "override_id",

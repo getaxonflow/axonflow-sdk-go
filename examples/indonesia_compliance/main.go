@@ -67,10 +67,10 @@ func main() {
 	} else {
 		fmt.Printf("Found %d audit entries\n", len(auditResp.Entries))
 		for _, entry := range auditResp.Entries {
-			fmt.Printf("  [%s] type=%s blocked=%v",
+			fmt.Printf("  [%s] type=%s decision=%s",
 				entry.Timestamp.Format(time.RFC3339),
 				entry.RequestType,
-				entry.Blocked)
+				entry.PolicyDecision)
 			if entry.DataResidency != "" {
 				fmt.Printf(" residency=%s", entry.DataResidency)
 			}
