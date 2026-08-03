@@ -182,3 +182,46 @@ func TestSearchAuditLogsSendsActionAndDeprecatedRequestType(t *testing.T) {
 		t.Errorf("request body request_type = %v, want it still sent in the interim", gotBody["request_type"])
 	}
 }
+
+// TestSearchAuditLogsToleratesNullPolicyDetails drives a null-bearing
+// payload through the REAL path (httptest server + SearchAuditLogs, not
+// a bare json.Unmarshal): live 9.x servers send "policy_details": null
+// on planes that record no verdict context (observed on a live llm_chat
+// row, session 3254). The fixture is a HAND-MODIFIED variant of the real
+// capture with policy_details set to null on every entry.
+func TestSearchAuditLogsToleratesNullPolicyDetails(t *testing.T) {
+	payload, err := os.ReadFile("testdata/audit_search_details_null.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+	res, err := client.SearchAuditLogs(context.Background(), &AuditSearchRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("SearchAuditLogs must tolerate policy_details: null, got error: %v", err)
+	}
+	if len(res.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(res.Entries))
+	}
+	wantDecisions := []string{"error", "allowed"}
+	for i, e := range res.Entries {
+		if e.PolicyDetails != nil {
+			t.Errorf("entry %d: PolicyDetails = %v, want nil for a null wire value", i, e.PolicyDetails)
+		}
+		if e.PolicyDecision != wantDecisions[i] {
+			t.Errorf("entry %d: PolicyDecision = %q, want %q (null details must not disturb sibling fields)", i, e.PolicyDecision, wantDecisions[i])
+		}
+		if e.ID == "" || e.RequestType != "tool_call_audit" {
+			t.Errorf("entry %d: surrounding fields must keep parsing: id=%q type=%q", i, e.ID, e.RequestType)
+		}
+	}
+}

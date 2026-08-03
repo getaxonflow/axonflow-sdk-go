@@ -43,9 +43,32 @@ type Baseline struct {
 
 // DriftEntry records the acknowledged drift between an SDK struct and
 // its matching OpenAPI schema at baseline time.
+//
+// Note is the curated human rationale for the entry (tracking issue,
+// burn-down condition). It is round-tripped by the baseline refresher
+// (see CarryDriftNotes) so a regen does not silently drop the paper
+// trail that authorizes the drift.
 type DriftEntry struct {
+	Note     string   `json:"_note,omitempty"`
 	SDKOnly  []string `json:"sdk_only"`
 	SpecOnly []string `json:"spec_only"`
+}
+
+// CarryDriftNotes copies the curated _note from a previous baseline's
+// per_type_drift entries onto the freshly computed entries with the same
+// type name. An entry whose drift fully burned down (absent from next)
+// intentionally loses its note along with the entry; a note is never
+// invented and an existing note on next is never overwritten.
+func CarryDriftNotes(prev, next map[string]DriftEntry) {
+	for name, entry := range next {
+		if entry.Note != "" {
+			continue
+		}
+		if old, ok := prev[name]; ok && old.Note != "" {
+			entry.Note = old.Note
+			next[name] = entry
+		}
+	}
 }
 
 // NewEmptyBaseline returns a zero-value Baseline with non-nil maps so
@@ -220,10 +243,16 @@ func findMapChild(mapping *yaml.Node, key string) *yaml.Node {
 // Go doesn't offer a runtime "list all types in a package" the way
 // Python's pkgutil.walk_packages does, so we parse the AST directly.
 // Type aliases (TypeSpec.Assign != 0) are ignored because their Type
-// is *ast.Ident, not *ast.StructType. Embedded fields appear as
-// FieldList entries with empty Names — not handled today because the
-// axonflow SDK's public types don't use embedding; if that changes,
-// add recursive resolution here.
+// is *ast.Ident, not *ast.StructType.
+//
+// Embedded fields are REJECTED with a hard error rather than skipped or
+// resolved: encoding/json promotes an embedded struct's fields onto the
+// outer type's wire shape, so a skipped embed is a smuggling channel -
+// any field added through it would reach the wire while staying
+// invisible to every TestWireShape* gate. Rather than blacklist that
+// shape, the capability is removed: an exported struct with ANY
+// embedded field fails discovery (and with it the gate and the baseline
+// refresher) until the author flattens the fields into named ones.
 func DiscoverSDKTypes(pkgDir string) (map[string][]string, error) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, pkgDir, func(info os.FileInfo) bool {
@@ -233,6 +262,7 @@ func DiscoverSDKTypes(pkgDir string) (map[string][]string, error) {
 		return nil, fmt.Errorf("parse %s: %w", pkgDir, err)
 	}
 	result := map[string][]string{}
+	var embeddedViolations []string
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -247,7 +277,12 @@ func DiscoverSDKTypes(pkgDir string) (map[string][]string, error) {
 				if !ok {
 					return true
 				}
-				fields := extractWireFieldsFromAST(st)
+				fields, embedded := extractWireFieldsFromAST(st)
+				if len(embedded) > 0 {
+					embeddedViolations = append(embeddedViolations, fmt.Sprintf(
+						"%s (embeds %s)", ts.Name.Name, strings.Join(embedded, ", ")))
+					return true
+				}
 				if len(fields) == 0 {
 					return true
 				}
@@ -256,21 +291,33 @@ func DiscoverSDKTypes(pkgDir string) (map[string][]string, error) {
 			})
 		}
 	}
+	if len(embeddedViolations) > 0 {
+		sort.Strings(embeddedViolations)
+		return nil, fmt.Errorf(
+			"exported struct(s) use embedded fields, which encoding/json promotes "+
+				"onto the wire shape while the wire-shape gate cannot see them: %s. "+
+				"Flatten the embedded struct into named, json-tagged fields so every "+
+				"wire field is visible to the contract gate",
+			strings.Join(embeddedViolations, "; "))
+	}
 	return result, nil
 }
 
 // extractWireFieldsFromAST returns the sorted wire-shape names for a
-// struct's fields. "Wire shape" means: json tag name if set, Go field
-// name otherwise. Fields tagged `json:"-"` are skipped. Anonymous
-// (embedded) fields are skipped for now — see DiscoverSDKTypes.
-func extractWireFieldsFromAST(st *ast.StructType) []string {
+// struct's fields plus the rendered type names of any anonymous
+// (embedded) fields. "Wire shape" means: json tag name if set, Go field
+// name otherwise. Fields tagged `json:"-"` are skipped. Embedded fields
+// are surfaced to the caller, which treats them as a hard error - see
+// DiscoverSDKTypes.
+func extractWireFieldsFromAST(st *ast.StructType) (fields []string, embedded []string) {
 	if st.Fields == nil {
-		return nil
+		return nil, nil
 	}
 	out := []string{}
 	for _, field := range st.Fields.List {
 		if len(field.Names) == 0 {
-			continue // embedded; not handled, see note on DiscoverSDKTypes
+			embedded = append(embedded, renderTypeExpr(field.Type))
+			continue
 		}
 		tagStr := ""
 		if field.Tag != nil {
@@ -296,7 +343,22 @@ func extractWireFieldsFromAST(st *ast.StructType) []string {
 		}
 	}
 	sort.Strings(out)
-	return out
+	return out, embedded
+}
+
+// renderTypeExpr renders an embedded field's type expression for the
+// embedded-field error message (Ident, pkg.Sel, or a pointer to either).
+func renderTypeExpr(e ast.Expr) string {
+	switch t := e.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return renderTypeExpr(t.X) + "." + t.Sel.Name
+	case *ast.StarExpr:
+		return "*" + renderTypeExpr(t.X)
+	default:
+		return fmt.Sprintf("%T", e)
+	}
 }
 
 // ParseJSONTagName returns the name portion of a json struct tag:

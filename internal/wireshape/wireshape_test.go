@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -208,4 +209,90 @@ func TestDifference(t *testing.T) {
 
 func writeFile(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+// TestDiscoverSDKTypesRejectsEmbeddedFields proves the embedded-field
+// smuggling channel is CLOSED by capability removal: encoding/json
+// promotes an embedded struct's fields onto the outer type's wire
+// shape, so a skipped embed would let a field reach the wire while
+// staying invisible to every TestWireShape* gate. Discovery must
+// hard-fail on ANY embedded field in an exported struct, naming the
+// struct and instructing the author to flatten.
+func TestDiscoverSDKTypesRejectsEmbeddedFields(t *testing.T) {
+	t.Run("embedded smuggle turns discovery red", func(t *testing.T) {
+		dir := t.TempDir()
+		src := `package p
+
+type smuggleBase struct {
+	Hidden string ` + "`json:\"hidden_on_the_wire\"`" + `
+}
+
+type Outer struct {
+	smuggleBase
+	Real string ` + "`json:\"real\"`" + `
+}
+`
+		if err := writeFile(filepath.Join(dir, "x.go"), src); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+		_, err := DiscoverSDKTypes(dir)
+		if err == nil {
+			t.Fatal("DiscoverSDKTypes accepted an exported struct with an embedded field - the smuggling channel is open")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "Outer") {
+			t.Errorf("error must name the offending struct, got: %s", msg)
+		}
+		if !strings.Contains(msg, "smuggleBase") {
+			t.Errorf("error must name the embedded type, got: %s", msg)
+		}
+		if !strings.Contains(msg, "Flatten") {
+			t.Errorf("error must instruct the author to flatten, got: %s", msg)
+		}
+	})
+
+	t.Run("pointer and cross-package embeds are also rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		src := `package p
+
+import "sync"
+
+type Guarded struct {
+	*sync.Mutex
+	Value string ` + "`json:\"value\"`" + `
+}
+`
+		if err := writeFile(filepath.Join(dir, "x.go"), src); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+		_, err := DiscoverSDKTypes(dir)
+		if err == nil {
+			t.Fatal("DiscoverSDKTypes accepted a pointer embed")
+		}
+		if !strings.Contains(err.Error(), "*sync.Mutex") {
+			t.Errorf("error must render the embedded type expression, got: %s", err.Error())
+		}
+	})
+
+	t.Run("negative control: flattened struct passes with correct fields", func(t *testing.T) {
+		dir := t.TempDir()
+		src := `package p
+
+type Outer struct {
+	Hidden string ` + "`json:\"hidden_on_the_wire\"`" + `
+	Real   string ` + "`json:\"real\"`" + `
+}
+`
+		if err := writeFile(filepath.Join(dir, "x.go"), src); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+		got, err := DiscoverSDKTypes(dir)
+		if err != nil {
+			t.Fatalf("negative control must pass, got: %v", err)
+		}
+		want := []string{"hidden_on_the_wire", "real"}
+		if !reflect.DeepEqual(got["Outer"], want) {
+			t.Errorf("Outer fields = %v, want %v", got["Outer"], want)
+		}
+	})
 }

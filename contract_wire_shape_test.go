@@ -377,6 +377,25 @@ func TestWireShapeRegisteredTypesStillMap(t *testing.T) {
 	t.Fatal(b.String())
 }
 
+// TestWireShapeBaselineIsNotStale is the burn-down ratchet: a
+// per_type_drift allowance that no longer matches observed drift FAILS
+// the gate instead of merely logging. A stale allowance is not inert -
+// it pre-authorizes future drift of that field name, so a field could
+// later be (re)introduced on either side without any gate going red.
+//
+// Two stale classes fail, with distinct messages:
+//   - burned down: the field is now declared on the other side too
+//     (e.g. a baselined sdk_only field IS in the pinned spec). The
+//     drift resolved; remove it from the baseline entry.
+//   - dead allowance: the field is no longer present on the side that
+//     claimed it (e.g. a baselined sdk_only field the SDK struct no
+//     longer carries, or that it never carried - a phantom entry).
+//
+// Entries whose TYPE no longer maps on both sides stay log-only:
+// acknowledging a type that has no schema at the current pin (with an
+// empty entry carrying only a curated _note) is the documented pattern
+// for types that must outlive their spec declaration until the next
+// major.
 func TestWireShapeBaselineIsNotStale(t *testing.T) {
 	dir := specsDir()
 	if dir == "" {
@@ -392,46 +411,56 @@ func TestWireShapeBaselineIsNotStale(t *testing.T) {
 	}
 	baseline := loadBaseline(t)
 
-	type stale struct {
-		name     string
-		sdkOnly  []string
-		specOnly []string
-		vanished bool
+	var problems []string
+	addProblems := func(name, side string, stale []string, claimingSide, otherSide map[string]struct{}) {
+		for _, f := range stale {
+			_, onClaiming := claimingSide[f]
+			_, onOther := otherSide[f]
+			if onClaiming && onOther {
+				problems = append(problems, fmt.Sprintf(
+					"  %s: %s field %q is now declared on BOTH sides - the drift burned down. Remove it from the baseline entry.",
+					name, side, f))
+			} else {
+				problems = append(problems, fmt.Sprintf(
+					"  %s: %s field %q is not present on the side that claimed it - dead allowance (possibly a phantom entry pre-authorizing future drift). Remove it from the baseline entry.",
+					name, side, f))
+			}
+		}
 	}
-	var staleEntries []stale
+
+	var vanished []string
 	for name, expected := range baseline.PerTypeDrift {
 		sdkFields, hasSDK := sdk[name]
 		specFields, hasSpec := merged[name]
 		if !hasSDK || !hasSpec {
-			staleEntries = append(staleEntries, stale{name: name, vanished: true})
+			vanished = append(vanished, name)
 			continue
 		}
+		sdkSet := toSet(sdkFields)
+		specSet := toSet(specFields)
 		sdkOnly := toSet(wireshape.Difference(sdkFields, specFields))
 		specOnly := toSet(wireshape.Difference(specFields, sdkFields))
-		staleSDK := subtractSet(expected.SDKOnly, sdkOnly)
-		staleSpec := subtractSet(expected.SpecOnly, specOnly)
-		if len(staleSDK) > 0 || len(staleSpec) > 0 {
-			staleEntries = append(staleEntries, stale{name: name, sdkOnly: staleSDK, specOnly: staleSpec})
-		}
+		addProblems(name, "sdk_only", subtractSet(expected.SDKOnly, sdkOnly), sdkSet, specSet)
+		addProblems(name, "spec_only", subtractSet(expected.SpecOnly, specOnly), specSet, sdkSet)
 	}
-	if len(staleEntries) == 0 {
+
+	sort.Strings(vanished)
+	for _, name := range vanished {
+		t.Logf("  %s: <type or schema no longer exists at this pin; entry tolerated for curated _note acknowledgments>", name)
+	}
+	if len(problems) == 0 {
 		return
 	}
-	sort.Slice(staleEntries, func(i, j int) bool { return staleEntries[i].name < staleEntries[j].name })
-	t.Log("Baseline entries that no longer match observed drift (safe to shrink):")
-	for _, e := range staleEntries {
-		if e.vanished {
-			t.Logf("  %s: <type or schema no longer exists>", e.name)
-			continue
-		}
-		t.Logf("  %s:", e.name)
-		if len(e.sdkOnly) > 0 {
-			t.Logf("    sdk_only entries no longer drifting:  %v", e.sdkOnly)
-		}
-		if len(e.specOnly) > 0 {
-			t.Logf("    spec_only entries no longer drifting: %v", e.specOnly)
-		}
+	sort.Strings(problems)
+	var b strings.Builder
+	b.WriteString("\nStale baseline allowances detected (burn-down ratchet):\n\n")
+	for _, p := range problems {
+		b.WriteString(p)
+		b.WriteString("\n")
 	}
+	b.WriteString("\nFix: shrink the listed per_type_drift entries in " + baselinePath + ". " +
+		"A stale allowance silently pre-authorizes future drift of that field name.\n")
+	t.Fatal(b.String())
 }
 
 func TestWireShapeUnmappedTypesAreTracked(t *testing.T) {
