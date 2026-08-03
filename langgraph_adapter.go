@@ -95,6 +95,9 @@ type StepCompletedOptions struct {
 	TokensIn  *int
 	TokensOut *int
 	CostUSD   *float64
+	// Metadata is free-form metadata captured at step-completion time
+	// (e.g. audit context). Treat as opaque on the client.
+	Metadata map[string]interface{}
 }
 
 // CheckToolGateOptions contains optional parameters for CheckToolGate.
@@ -114,6 +117,9 @@ type ToolCompletedOptions struct {
 	TokensIn  *int
 	TokensOut *int
 	CostUSD   *float64
+	// Metadata is free-form metadata captured at step-completion time
+	// (e.g. audit context). Treat as opaque on the client.
+	Metadata map[string]interface{}
 }
 
 // LangGraphAdapter wraps LangGraph workflows with AxonFlow governance.
@@ -314,6 +320,7 @@ func (a *LangGraphAdapter) StepCompleted(ctx context.Context, stepName string, o
 		req.TokensIn = opts.TokensIn
 		req.TokensOut = opts.TokensOut
 		req.CostUSD = opts.CostUSD
+		req.Metadata = opts.Metadata
 	}
 
 	if stepID == "" {
@@ -374,6 +381,7 @@ func (a *LangGraphAdapter) ToolCompleted(ctx context.Context, toolName string, o
 			TokensIn:  opts.TokensIn,
 			TokensOut: opts.TokensOut,
 			CostUSD:   opts.CostUSD,
+			Metadata:  opts.Metadata,
 		}
 	}
 

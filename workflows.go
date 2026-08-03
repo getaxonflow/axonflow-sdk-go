@@ -398,6 +398,10 @@ type MarkStepCompletedRequest struct {
 	// IdempotencyKey must match the key passed on the corresponding gate call, if any.
 	// Mismatch (including empty vs set on either side) yields IdempotencyKeyMismatchError.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+
+	// Metadata is free-form metadata captured at step-completion time
+	// (e.g. audit context). Treat as opaque on the client.
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // CreateWorkflow creates a new workflow for governance tracking.
