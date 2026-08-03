@@ -491,6 +491,13 @@
         "user_token"
       ]
     },
+    "MarkStepCompletedRequest": {
+      "_note": "metadata is spec-declared from community v9.6.1 (ac1b7cd8) and unchanged through v9.13.0 (df027c788): type object, additionalProperties true, opaque on the client. The pinned spec here (8c8d6c9c) predates it. Drop this entry when openapi_specs_sha advances past v9.6.1 (tracked by the spec-pin PR #185; field added by #188).",
+      "sdk_only": [
+        "metadata"
+      ],
+      "spec_only": []
+    },
     "PlanResponse": {
       "sdk_only": [
         "complexity",

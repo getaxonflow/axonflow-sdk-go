@@ -1389,12 +1389,51 @@ func TestMarkStepCompleted(t *testing.T) {
 			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
 
-		var req MarkStepCompletedRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Decode into a raw map so we can assert exactly what landed on the wire.
+		var wire map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
 			t.Fatalf("Failed to decode request body: %v", err)
 		}
-		if req.Output == nil || req.Output["result"] != "success" {
-			t.Errorf("Expected output with result=success, got %v", req.Output)
+		output, _ := wire["output"].(map[string]interface{})
+		if output == nil || output["result"] != "success" {
+			t.Errorf("Expected output with result=success, got %v", wire["output"])
+		}
+		metadata, _ := wire["metadata"].(map[string]interface{})
+		if metadata == nil || metadata["ticket"] != "JIRA-42" || metadata["approved_by"] != "ops-lead" {
+			t.Errorf("Expected metadata with ticket=JIRA-42 approved_by=ops-lead, got %v", wire["metadata"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint:     server.URL,
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	})
+
+	err := client.MarkStepCompleted("wf_test123", "step_1", &MarkStepCompletedRequest{
+		Output:   map[string]interface{}{"result": "success"},
+		Metadata: map[string]interface{}{"ticket": "JIRA-42", "approved_by": "ops-lead"},
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestMarkStepCompletedMetadataOmittedWhenNil tests that a nil Metadata map
+// does not serialize a "metadata" key onto the wire body
+func TestMarkStepCompletedMetadataOmittedWhenNil(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var wire map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
+			t.Fatalf("Failed to decode request body: %v", err)
+		}
+		if _, present := wire["metadata"]; present {
+			t.Errorf("Expected metadata key to be omitted when nil, got %v", wire["metadata"])
 		}
 
 		w.WriteHeader(http.StatusOK)

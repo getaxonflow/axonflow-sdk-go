@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CallerName` field already worked correctly — this closes a coverage gap
   in the runtime proof and doc wording that assumed the old default.
 
+- **`MarkStepCompletedRequest` gains the spec-declared optional `metadata`
+  field.** The community spec from v9.6.1 through v9.13.0 (`orchestrator-api.yaml`,
+  `MarkStepCompletedRequest`) declares `metadata` as a free-form object
+  captured at step-completion time (audit context the gate-time data didn't
+  have); the platform consumes it at step-completion. Python/TypeScript/Java
+  all model it — Go was the only SDK missing it. Also threaded through the
+  LangGraph adapter's `StepCompletedOptions`/`ToolCompletedOptions`. Treat as
+  opaque on the client. Runtime proof:
+  `runtime-e2e/mark_step_completed_metadata/`.
+
 ### Fixed
 
 - **`UninstallConnector` calls the real platform route.** It issued
