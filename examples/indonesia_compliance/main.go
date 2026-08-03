@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	axonflow "github.com/getaxonflow/axonflow-sdk-go/v9"
@@ -41,6 +42,7 @@ func main() {
 		},
 	)
 	if err != nil {
+		failOnAuthError(err)
 		log.Printf("Request error (expected if no LLM configured): %v", err)
 	} else {
 		fmt.Printf("Response blocked: %v\n", resp.Blocked)
@@ -60,6 +62,7 @@ func main() {
 		Limit:     5,
 	})
 	if err != nil {
+		failOnAuthError(err)
 		log.Printf("Audit search error: %v", err)
 	} else {
 		fmt.Printf("Found %d audit entries\n", len(auditResp.Entries))
@@ -84,6 +87,7 @@ func main() {
 		Category: axonflow.CategoryPIIIndonesia,
 	})
 	if err != nil {
+		failOnAuthError(err)
 		log.Printf("Policy list error: %v", err)
 	} else {
 		fmt.Printf("Found %d Indonesia PII policies\n", len(policies))
@@ -101,4 +105,17 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// failOnAuthError exits non-zero when err is an authentication failure
+// (HTTP 401): bad AXONFLOW_CLIENT_ID/AXONFLOW_CLIENT_SECRET, or an
+// invalid/missing AXONFLOW_USER_TOKEN on an enterprise stack. An auth
+// failure is never a "no LLM configured" situation and must not be
+// swallowed by the tolerant error paths above (getaxonflow/
+// axonflow-enterprise#2861 class; mirrors the Python SDK's
+// AuthenticationError re-raise in its indonesia_compliance example).
+func failOnAuthError(err error) {
+	if err != nil && strings.Contains(err.Error(), "HTTP 401") {
+		log.Fatalf("Authentication failed (check AXONFLOW_CLIENT_ID/AXONFLOW_CLIENT_SECRET and AXONFLOW_USER_TOKEN): %v", err)
+	}
 }
