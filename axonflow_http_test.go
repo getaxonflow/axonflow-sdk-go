@@ -1382,9 +1382,13 @@ func TestOrchestratorHealthCheckUnhealthy(t *testing.T) {
 
 func TestUninstallConnector(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "DELETE" && r.URL.Path == "/api/v1/connectors/postgres" {
+		if r.Method == "DELETE" && r.URL.Path == "/api/v1/connectors/postgres/uninstall" {
 			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+		// Any other path is the regression this guards: the platform
+		// answers DELETE /api/v1/connectors/{id} (no /uninstall) with 405.
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	}))
 	defer server.Close()
 

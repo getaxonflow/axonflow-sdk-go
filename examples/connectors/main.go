@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/getaxonflow/axonflow-sdk-go/v9"
 )
@@ -17,6 +18,10 @@ func main() {
 	// Enterprise stacks (DEPLOYMENT_MODE=enterprise) validate user tokens as
 	// JWTs — export AXONFLOW_USER_TOKEN. Community stacks skip JWT validation.
 	userToken := getEnv("AXONFLOW_USER_TOKEN", "")
+	// Connector installs are tenant-scoped: the tenant must exist on the
+	// platform (tenants.tenant_id). On local/dev stacks the tenant id matches
+	// the client id (org), so default to that.
+	tenantID := getEnv("AXONFLOW_TENANT_ID", clientID)
 
 	if clientID == "" || clientSecret == "" {
 		log.Fatal("AXONFLOW_CLIENT_ID and AXONFLOW_CLIENT_SECRET must be set")
@@ -67,10 +72,12 @@ func main() {
 
 		err = client.InstallConnector(axonflow.ConnectorInstallRequest{
 			ConnectorID: "amadeus-travel",
-			Name:        "amadeus-prod",
-			TenantID:    "demo-tenant",
+			Name:        "amadeus-travel",
+			TenantID:    tenantID,
 			Options: map[string]interface{}{
-				"environment": "production",
+				// Amadeus issues self-service keys for the "test" environment;
+				// switch to "production" only with production Amadeus keys.
+				"environment": "test",
 				"region":      "europe",
 			},
 			Credentials: map[string]string{
@@ -80,7 +87,11 @@ func main() {
 		})
 
 		if err != nil {
-			log.Printf("Failed to install connector: %v", err)
+			if strings.Contains(err.Error(), "already registered") {
+				fmt.Println("✓ Connector already installed, continuing")
+			} else {
+				log.Printf("Failed to install connector: %v", err)
+			}
 		} else {
 			fmt.Println("✓ Connector installed successfully!")
 		}
@@ -95,15 +106,19 @@ func main() {
 	if amadeusKey != "" {
 		fmt.Println("Querying Amadeus connector for flights...")
 
+		// Amadeus connector operations: search_flights, search_hotels,
+		// lookup_airport (parameters carry the search criteria).
+		departureDate := time.Now().AddDate(0, 1, 0).Format("2006-01-02")
 		resp, err := client.QueryConnector(
-			userToken, // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
-			"amadeus-prod",
-			"Find flights from Paris to Amsterdam on 2025-12-15",
+			userToken,        // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
+			"amadeus-travel", // query by connector ID (the marketplace ID used at install time)
+			"search_flights",
 			map[string]interface{}{
-				"origin":      "CDG",
-				"destination": "AMS",
-				"date":        "2025-12-15",
-				"adults":      1,
+				"origin":         "CDG",
+				"destination":    "AMS",
+				"departure_date": departureDate,
+				"adults":         1,
+				"max":            2,
 			},
 		)
 
@@ -111,6 +126,10 @@ func main() {
 			log.Printf("Connector query failed: %v", err)
 		} else if !resp.Success {
 			fmt.Printf("Query failed: %s\n", resp.Error)
+		} else if resp.Error != "" || resp.Data == nil {
+			// Success=true with an Error set means the SDK failed open
+			// (production mode, AxonFlow unavailable) — don't report data.
+			fmt.Printf("⚠ No flight data (governed call did not reach the connector): %s\n", resp.Error)
 		} else {
 			fmt.Println("✓ Flight data retrieved:")
 			fmt.Printf("%v\n", resp.Data)
@@ -123,7 +142,9 @@ func main() {
 	redisResp, err := client.QueryConnector(
 		userToken, // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
 		"redis-cache",
-		"Get cached user preferences for user-123",
+		// Redis connector queries are command statements: GET, EXISTS, TTL, KEYS
+		// (the key goes in params).
+		"GET",
 		map[string]interface{}{
 			"key": "user:123:preferences",
 		},
@@ -133,6 +154,8 @@ func main() {
 		fmt.Printf("⚠ Redis query failed (expected if not installed): %v\n", err)
 	} else if !redisResp.Success {
 		fmt.Printf("⚠ Redis query failed: %s\n", redisResp.Error)
+	} else if redisResp.Error != "" || redisResp.Data == nil {
+		fmt.Printf("⚠ No Redis data (governed call did not reach the connector): %s\n", redisResp.Error)
 	} else {
 		fmt.Println("✓ Redis data retrieved:")
 		fmt.Printf("%v\n", redisResp.Data)
@@ -152,7 +175,11 @@ func main() {
 	for _, conn := range connectors {
 		if conn.Installed {
 			installedCount++
-			fmt.Printf("✓ %s (installed as '%s')\n", conn.Name, conn.InstanceName)
+			if conn.InstanceName != "" {
+				fmt.Printf("✓ %s (installed as '%s')\n", conn.Name, conn.InstanceName)
+			} else {
+				fmt.Printf("✓ %s\n", conn.Name)
+			}
 		}
 	}
 

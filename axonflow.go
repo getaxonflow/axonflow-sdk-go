@@ -1582,7 +1582,8 @@ func (c *AxonFlowClient) InstallConnector(req ConnectorInstallRequest) error {
 
 // UninstallConnector removes an installed MCP connector
 func (c *AxonFlowClient) UninstallConnector(connectorName string) error {
-	url := fmt.Sprintf("%s/api/v1/connectors/%s", c.config.Endpoint, connectorName)
+	// Connector uninstall via Agent proxy: DELETE /api/v1/connectors/{id}/uninstall
+	url := fmt.Sprintf("%s/api/v1/connectors/%s/uninstall", c.config.Endpoint, connectorName)
 	httpReq, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create uninstall request: %w", err)
