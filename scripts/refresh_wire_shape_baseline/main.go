@@ -3,7 +3,10 @@
 //
 // Usage:
 //
-//	go run ./scripts/refresh_wire_shape_baseline <specs_dir> [--sha <SHA>]
+//	go run ./scripts/refresh_wire_shape_baseline [--sha <SHA>] [--drop-notes] <specs_dir>
+//
+// (flags BEFORE the positional specs dir - the flag package stops
+// parsing at the first non-flag argument.)
 //
 // When --sha is not provided, the script tries `git -C <specs_dir>
 // rev-parse HEAD` to pick up the commit of the specs repo. If neither
@@ -35,13 +38,15 @@ const baselineOut = "testdata/wire_shape_baseline.json"
 
 func main() {
 	shaFlag := flag.String("sha", "", "community-repo commit SHA to pin")
+	dropNotes := flag.Bool("drop-notes", false,
+		"confirm discarding curated _note keys that do not survive the regen")
 	flag.Parse()
 
 	if flag.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/refresh_wire_shape_baseline <specs_dir> [--sha <SHA>]")
+		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/refresh_wire_shape_baseline [--sha <SHA>] [--drop-notes] <specs_dir>")
 		os.Exit(2)
 	}
-	if err := run(flag.Arg(0), *shaFlag); err != nil {
+	if err := run(flag.Arg(0), *shaFlag, *dropNotes); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -50,7 +55,7 @@ func main() {
 // run regenerates the baseline at baselineOut (relative to the current
 // working directory, like the SDK discovery itself). Split from main so
 // the note-preservation contract is testable.
-func run(specsDir, sha string) error {
+func run(specsDir, sha string, dropNotes bool) error {
 	stat, err := os.Stat(specsDir)
 	if err != nil || !stat.IsDir() {
 		return fmt.Errorf("%s is not a directory", specsDir)
@@ -100,10 +105,32 @@ func run(specsDir, sha string) error {
 	// Preserve the curated _note keys from the existing baseline: they
 	// are the paper trail (tracking issue + burn-down condition) that
 	// authorizes each drift entry, and a regen must not silently drop
-	// them. A note whose entry fully burned down disappears with the
-	// entry, which is the intended lifecycle.
-	if prev, prevErr := readExistingBaseline(baselineOut); prevErr == nil {
-		wireshape.CarryDriftNotes(prev.PerTypeDrift, drift)
+	// them. Vanished-type acknowledgment entries (empty except for a
+	// _note, type still unmapped) are preserved wholesale. Any note
+	// that would not survive is listed and blocks the regen unless
+	// --drop-notes confirms the discard.
+	prev, prevErr := readExistingBaseline(baselineOut)
+	if prevErr != nil && !os.IsNotExist(prevErr) {
+		// A corrupt or unreadable previous baseline must not silently
+		// become "no previous baseline" - that path discards every
+		// curated note while exiting 0.
+		return fmt.Errorf("previous baseline %s exists but cannot be used: %w", baselineOut, prevErr)
+	}
+	if prev != nil {
+		dropped := wireshape.CarryDriftNotes(prev.PerTypeDrift, drift, sdk, merged)
+		if len(dropped) > 0 {
+			fmt.Fprintf(os.Stderr, "dropped %d curated note(s):\n", len(dropped))
+			for _, d := range dropped {
+				fmt.Fprintf(os.Stderr, "  - %s\n", d)
+			}
+			if !dropNotes {
+				return fmt.Errorf(
+					"regen would drop %d curated _note key(s) (listed above). "+
+						"If the drop is intentional (entry burned down, type renamed), "+
+						"re-run with --drop-notes; otherwise move each note to the "+
+						"surviving entry name first", len(dropped))
+			}
+		}
 	}
 
 	out := wireshape.Baseline{

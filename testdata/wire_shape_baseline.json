@@ -200,6 +200,7 @@
     "ClientResponse",
     "ConfigureKillSwitchRequest",
     "CreateAssessmentRequest",
+    "CreateOverrideRequest",
     "CreateStaticPolicyRequest",
     "CreateWebhookRequest",
     "CreateWorkflowRequest",
@@ -331,6 +332,13 @@
         "message"
       ],
       "spec_only": []
+    },
+    "CreateOverrideRequest": {
+      "_note": "Surfaced by the alias-resolution fix in the #3254 R3 round 2 sweep: CreateOverrideRequest is an exported alias of CreatePolicyOverrideRequest (policies.go) and was previously invisible to discovery, hiding this spec-side drift. enabled_override is an optional request property the SDK does not send yet - informational at this pin, no consumer break (verified against agent-api.yaml at 8c8d6c9c). Follow-up: model enabled_override on CreatePolicyOverrideRequest in a separate SDK-change PR.",
+      "sdk_only": [],
+      "spec_only": [
+        "enabled_override"
+      ]
     },
     "ClientRequest": {
       "sdk_only": [

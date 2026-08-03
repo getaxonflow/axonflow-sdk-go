@@ -29,8 +29,11 @@
 // spec change):
 //
 //	go run ./scripts/refresh_wire_shape_baseline \
-//	    /path/to/axonflow/docs/api \
-//	    --sha <community-repo-commit-sha>
+//	    --sha <community-repo-commit-sha> \
+//	    /path/to/axonflow/docs/api
+//
+// (flags BEFORE the positional specs dir - the flag package stops
+// parsing at the first non-flag argument.)
 
 package axonflow
 
@@ -49,8 +52,12 @@ import (
 
 // ExcludedTypes names struct types that legitimately do not participate
 // in the wire contract even if their name collides with an OpenAPI
-// schema. Each entry needs a one-line reason.
-var ExcludedTypes = map[string]string{}
+// schema. Each entry needs a one-line reason. The canonical map lives
+// in internal/wireshape (single source of truth shared with the
+// baseline refresher, and consulted by DiscoverSDKTypes BEFORE its
+// embedded-field check); this alias keeps the gate reading the same
+// data.
+var ExcludedTypes = wireshape.ExcludedTypes
 
 const baselinePath = "testdata/wire_shape_baseline.json"
 
@@ -383,19 +390,14 @@ func TestWireShapeRegisteredTypesStillMap(t *testing.T) {
 // it pre-authorizes future drift of that field name, so a field could
 // later be (re)introduced on either side without any gate going red.
 //
-// Two stale classes fail, with distinct messages:
-//   - burned down: the field is now declared on the other side too
-//     (e.g. a baselined sdk_only field IS in the pinned spec). The
-//     drift resolved; remove it from the baseline entry.
-//   - dead allowance: the field is no longer present on the side that
-//     claimed it (e.g. a baselined sdk_only field the SDK struct no
-//     longer carries, or that it never carried - a phantom entry).
-//
-// Entries whose TYPE no longer maps on both sides stay log-only:
-// acknowledging a type that has no schema at the current pin (with an
-// empty entry carrying only a curated _note) is the documented pattern
-// for types that must outlive their spec declaration until the next
-// major.
+// Four stale classes fail, with distinct messages (see
+// wireshape.StaleBaselineProblems for the classification and its table
+// test): burned-down fields, dead/phantom field allowances, vanished
+// types whose entry carries ANY field allowance, and empty entries
+// whose type maps on both sides. The ONLY tolerated vanished-type
+// shape is an empty entry carrying only a curated _note - the
+// documented pattern for types that must outlive their spec
+// declaration until the next major; those are logged, not failed.
 func TestWireShapeBaselineIsNotStale(t *testing.T) {
 	dir := specsDir()
 	if dir == "" {
@@ -411,47 +413,18 @@ func TestWireShapeBaselineIsNotStale(t *testing.T) {
 	}
 	baseline := loadBaseline(t)
 
-	var problems []string
-	addProblems := func(name, side string, stale []string, claimingSide, otherSide map[string]struct{}) {
-		for _, f := range stale {
-			_, onClaiming := claimingSide[f]
-			_, onOther := otherSide[f]
-			if onClaiming && onOther {
-				problems = append(problems, fmt.Sprintf(
-					"  %s: %s field %q is now declared on BOTH sides - the drift burned down. Remove it from the baseline entry.",
-					name, side, f))
-			} else {
-				problems = append(problems, fmt.Sprintf(
-					"  %s: %s field %q is not present on the side that claimed it - dead allowance (possibly a phantom entry pre-authorizing future drift). Remove it from the baseline entry.",
-					name, side, f))
-			}
-		}
-	}
+	// The classification logic lives in internal/wireshape and is
+	// table-tested there (TestStaleBaselineProblems) - a ratchet whose
+	// only exercise is its own green run fails open on its own
+	// mutations.
+	problems, vanishedAcks := wireshape.StaleBaselineProblems(baseline.PerTypeDrift, sdk, merged)
 
-	var vanished []string
-	for name, expected := range baseline.PerTypeDrift {
-		sdkFields, hasSDK := sdk[name]
-		specFields, hasSpec := merged[name]
-		if !hasSDK || !hasSpec {
-			vanished = append(vanished, name)
-			continue
-		}
-		sdkSet := toSet(sdkFields)
-		specSet := toSet(specFields)
-		sdkOnly := toSet(wireshape.Difference(sdkFields, specFields))
-		specOnly := toSet(wireshape.Difference(specFields, sdkFields))
-		addProblems(name, "sdk_only", subtractSet(expected.SDKOnly, sdkOnly), sdkSet, specSet)
-		addProblems(name, "spec_only", subtractSet(expected.SpecOnly, specOnly), specSet, sdkSet)
-	}
-
-	sort.Strings(vanished)
-	for _, name := range vanished {
-		t.Logf("  %s: <type or schema no longer exists at this pin; entry tolerated for curated _note acknowledgments>", name)
+	for _, name := range vanishedAcks {
+		t.Logf("  %s: <type or schema no longer exists at this pin; empty entry tolerated for its curated _note acknowledgment>", name)
 	}
 	if len(problems) == 0 {
 		return
 	}
-	sort.Strings(problems)
 	var b strings.Builder
 	b.WriteString("\nStale baseline allowances detected (burn-down ratchet):\n\n")
 	for _, p := range problems {

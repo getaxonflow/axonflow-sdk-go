@@ -4,20 +4,20 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/getaxonflow/axonflow-sdk-go/v9/internal/wireshape"
 )
 
-// TestRunPreservesCuratedNotes proves the refresher does not silently
-// drop the curated _note keys that authorize baseline drift entries: a
-// regen over an existing baseline must carry each entry's note forward
-// as long as the entry still has drift, and must drop the note together
-// with the entry once the drift fully burns down.
-func TestRunPreservesCuratedNotes(t *testing.T) {
-	dir := t.TempDir()
+// scratchTree builds a temp working tree for run(): a scratch SDK
+// package (Foo drifts sdk_only ["b"], Clean matches its schema
+// exactly), a scratch specs dir, and a previous baseline provided by
+// the caller. It chdirs into the tree and restores the wd on cleanup.
+func scratchTree(t *testing.T, prev *wireshape.Baseline) (dir, specsDir string) {
+	t.Helper()
+	dir = t.TempDir()
 
-	// Scratch SDK package: Foo drifts (sdk_only "b"), Clean does not.
 	sdkSrc := `package p
 
 type Foo struct {
@@ -33,7 +33,7 @@ type Clean struct {
 		t.Fatalf("write sdk fixture: %v", err)
 	}
 
-	specsDir := filepath.Join(dir, "specs")
+	specsDir = filepath.Join(dir, "specs")
 	if err := os.MkdirAll(specsDir, 0o755); err != nil {
 		t.Fatalf("mkdir specs: %v", err)
 	}
@@ -53,34 +53,19 @@ components:
 		t.Fatalf("write spec fixture: %v", err)
 	}
 
-	// Existing baseline: Foo's entry carries a curated note. Clean has a
-	// note on an entry whose drift no longer exists; that note must die
-	// with the entry (the burn-down lifecycle), not be resurrected.
-	prev := wireshape.Baseline{
-		OpenAPISpecsSHA: "oldsha",
-		PerTypeDrift: map[string]wireshape.DriftEntry{
-			"Foo": {
-				Note:    "KEEP-ME: tracked by #3254, burns down at the next pin",
-				SDKOnly: []string{"b"},
-			},
-			"Clean": {
-				Note:    "DROP-ME: this entry's drift resolved",
-				SDKOnly: []string{"c_old"},
-			},
-		},
-	}
 	if err := os.MkdirAll(filepath.Join(dir, "testdata"), 0o755); err != nil {
 		t.Fatalf("mkdir testdata: %v", err)
 	}
-	prevBytes, err := json.Marshal(prev)
-	if err != nil {
-		t.Fatalf("marshal prev baseline: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "testdata", "wire_shape_baseline.json"), prevBytes, 0o644); err != nil {
-		t.Fatalf("write prev baseline: %v", err)
+	if prev != nil {
+		prevBytes, err := json.Marshal(prev)
+		if err != nil {
+			t.Fatalf("marshal prev baseline: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "testdata", "wire_shape_baseline.json"), prevBytes, 0o644); err != nil {
+			t.Fatalf("write prev baseline: %v", err)
+		}
 	}
 
-	// run() resolves the SDK dir and baseline path relative to cwd.
 	oldWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -88,16 +73,16 @@ components:
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		if err := os.Chdir(oldWD); err != nil {
 			t.Fatalf("chdir back: %v", err)
 		}
-	}()
+	})
+	return dir, specsDir
+}
 
-	if err := run(specsDir, "newsha"); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-
+func readBaseline(t *testing.T, dir string) wireshape.Baseline {
+	t.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, "testdata", "wire_shape_baseline.json"))
 	if err != nil {
 		t.Fatalf("read regenerated baseline: %v", err)
@@ -106,6 +91,33 @@ components:
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("parse regenerated baseline: %v", err)
 	}
+	return got
+}
+
+// TestRunPreservesCuratedNotes proves the refresher does not silently
+// drop curated _note keys: a note on a still-drifting entry survives a
+// regen, and a vanished-type acknowledgment entry (empty except for its
+// _note, type unmapped at the pin) is preserved wholesale - the shape
+// the #185 re-land relies on for types with no schema at the pin.
+func TestRunPreservesCuratedNotes(t *testing.T) {
+	prev := &wireshape.Baseline{
+		OpenAPISpecsSHA: "oldsha",
+		PerTypeDrift: map[string]wireshape.DriftEntry{
+			"Foo": {
+				Note:    "KEEP-ME: tracked by #3254, burns down at the next pin",
+				SDKOnly: []string{"b"},
+			},
+			"VanishedTypeX": {
+				Note: "ACK: no schema at this pin; type kept until the next major",
+			},
+		},
+	}
+	dir, specsDir := scratchTree(t, prev)
+
+	if err := run(specsDir, "newsha", false); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := readBaseline(t, dir)
 
 	if got.OpenAPISpecsSHA != "newsha" {
 		t.Errorf("openapi_specs_sha = %q, want newsha", got.OpenAPISpecsSHA)
@@ -120,7 +132,78 @@ components:
 	if len(foo.SDKOnly) != 1 || foo.SDKOnly[0] != "b" {
 		t.Errorf("Foo.sdk_only = %v, want [b]", foo.SDKOnly)
 	}
+	vx, ok := got.PerTypeDrift["VanishedTypeX"]
+	if !ok {
+		t.Fatal("VanishedTypeX acknowledgment entry DELETED by the regen - the vanished-type paper trail must survive")
+	}
+	if vx.Note != "ACK: no schema at this pin; type kept until the next major" {
+		t.Errorf("VanishedTypeX._note = %q, want the acknowledgment note", vx.Note)
+	}
+	if len(vx.SDKOnly) != 0 || len(vx.SpecOnly) != 0 {
+		t.Errorf("VanishedTypeX entry must stay empty, got %+v", vx)
+	}
+}
+
+// TestRunRefusesToDropNotesWithoutFlag proves a note that would not
+// survive the regen (here: Clean's drift resolved, so its entry burns
+// down) blocks the refresher with a diagnostic naming the note, and
+// only --drop-notes confirms the discard.
+func TestRunRefusesToDropNotesWithoutFlag(t *testing.T) {
+	prev := &wireshape.Baseline{
+		OpenAPISpecsSHA: "oldsha",
+		PerTypeDrift: map[string]wireshape.DriftEntry{
+			"Clean": {
+				Note:    "DROP-ME: this entry's drift resolved",
+				SDKOnly: []string{"c_old"},
+			},
+		},
+	}
+	dir, specsDir := scratchTree(t, prev)
+
+	err := run(specsDir, "newsha", false)
+	if err == nil {
+		t.Fatal("run must refuse to silently drop a curated note without --drop-notes")
+	}
+	if !strings.Contains(err.Error(), "drop-notes") || !strings.Contains(err.Error(), "1 curated") {
+		t.Errorf("refusal must name the flag and the drop count, got: %v", err)
+	}
+
+	if err := run(specsDir, "newsha", true); err != nil {
+		t.Fatalf("run with --drop-notes must proceed: %v", err)
+	}
+	got := readBaseline(t, dir)
 	if clean, exists := got.PerTypeDrift["Clean"]; exists {
-		t.Errorf("Clean entry should have burned down entirely, got %+v", clean)
+		t.Errorf("Clean entry should have burned down entirely under --drop-notes, got %+v", clean)
+	}
+}
+
+// TestRunFailsOnCorruptPreviousBaseline proves a corrupt (unreadable or
+// unparsable) previous baseline fails the run instead of being treated
+// as "no previous baseline" - that path would discard every curated
+// note while exiting 0.
+func TestRunFailsOnCorruptPreviousBaseline(t *testing.T) {
+	dir, specsDir := scratchTree(t, nil)
+	if err := os.WriteFile(filepath.Join(dir, "testdata", "wire_shape_baseline.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("write corrupt baseline: %v", err)
+	}
+	err := run(specsDir, "newsha", false)
+	if err == nil {
+		t.Fatal("run must fail on a corrupt previous baseline, not silently drop all notes")
+	}
+	if !strings.Contains(err.Error(), "cannot be used") {
+		t.Errorf("error should say the previous baseline cannot be used, got: %v", err)
+	}
+}
+
+// TestRunBootstrapsWithoutPreviousBaseline proves the genuine bootstrap
+// path (no baseline file at all) still works.
+func TestRunBootstrapsWithoutPreviousBaseline(t *testing.T) {
+	dir, specsDir := scratchTree(t, nil)
+	if err := run(specsDir, "newsha", false); err != nil {
+		t.Fatalf("bootstrap run: %v", err)
+	}
+	got := readBaseline(t, dir)
+	if _, ok := got.PerTypeDrift["Foo"]; !ok {
+		t.Error("bootstrap regen must record Foo's drift")
 	}
 }
