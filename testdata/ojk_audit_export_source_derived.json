@@ -1,7 +1,7 @@
 {
     "export_id": "exp-1",
     "status": "completed",
-    "framework": "uu_pdp",
+    "framework": "UU_PDP",
     "format": "json",
     "summary": {
         "total_records": 421,

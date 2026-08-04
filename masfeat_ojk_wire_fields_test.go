@@ -168,7 +168,7 @@ func TestOJKAuditExportParsesSummary(t *testing.T) {
 	if got.Summary.ComplianceScore != 0.97 {
 		t.Errorf("Summary.ComplianceScore = %v, want 0.97", got.Summary.ComplianceScore)
 	}
-	if got.Framework != "uu_pdp" || got.Format != "json" || got.ExpiresAt == nil {
+	if got.Framework != "UU_PDP" || got.Format != "json" || got.ExpiresAt == nil {
 		t.Errorf("framework/format/expires_at did not parse: %+v", got)
 	}
 	if got.RecordCount != 0 {
