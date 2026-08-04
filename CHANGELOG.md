@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.1.0] - 2026-08-04
+
 ### Added
 
 - **Real masfeat/OJK wire fields (#3254 pin-advance batch).**
