@@ -43,9 +43,152 @@ type Baseline struct {
 
 // DriftEntry records the acknowledged drift between an SDK struct and
 // its matching OpenAPI schema at baseline time.
+//
+// Note is the curated human rationale for the entry (tracking issue,
+// burn-down condition). It is round-tripped by the baseline refresher
+// (see CarryDriftNotes) so a regen does not silently drop the paper
+// trail that authorizes the drift.
 type DriftEntry struct {
+	Note     string   `json:"_note,omitempty"`
 	SDKOnly  []string `json:"sdk_only"`
 	SpecOnly []string `json:"spec_only"`
+}
+
+// CarryDriftNotes reconciles the curated _note keys of a previous
+// baseline's per_type_drift with a freshly computed drift map:
+//
+//   - a note is copied onto the freshly computed entry with the same
+//     type name (never invented, never overwriting);
+//   - a vanished-type ACKNOWLEDGMENT entry (empty sdk_only AND empty
+//     spec_only, non-empty note, and the type still unmapped on at
+//     least one side) is preserved wholesale - it is the sanctioned
+//     shape for a type that must outlive its spec declaration, and a
+//     regen must not delete the paper trail;
+//   - every other previously noted entry that does not survive (entry
+//     burned down, type renamed, or an acknowledgment whose type now
+//     maps on both sides again) is reported in the returned dropped
+//     list ("name: note") so the caller can refuse to discard curated
+//     rationale silently.
+func CarryDriftNotes(prev, next map[string]DriftEntry, sdk, spec map[string][]string) (dropped []string) {
+	for name, entry := range next {
+		if entry.Note != "" {
+			continue
+		}
+		if old, ok := prev[name]; ok && old.Note != "" {
+			entry.Note = old.Note
+			next[name] = entry
+		}
+	}
+	for name, old := range prev {
+		if _, carried := next[name]; carried {
+			continue
+		}
+		_, hasSDK := sdk[name]
+		_, hasSpec := spec[name]
+		if len(old.SDKOnly) == 0 && len(old.SpecOnly) == 0 && old.Note != "" && (!hasSDK || !hasSpec) {
+			next[name] = old
+		}
+	}
+	for name, old := range prev {
+		if old.Note == "" {
+			continue
+		}
+		if kept, ok := next[name]; !ok || kept.Note == "" {
+			dropped = append(dropped, fmt.Sprintf("%s: %s", name, old.Note))
+		}
+	}
+	sort.Strings(dropped)
+	return dropped
+}
+
+// StaleBaselineProblems classifies every per_type_drift allowance
+// against the observed SDK and spec shapes. It is the burn-down
+// ratchet's logic, extracted so it can be table-tested independently of
+// the gate that calls it (a ratchet with no test of its own fails open
+// on its own mutations).
+//
+// Returned problems (each a human-readable line) fail the gate:
+//   - a baselined field now declared on BOTH sides (drift burned down);
+//   - a baselined field absent from the side that claimed it (dead
+//     allowance, including phantom entries pre-authorizing future
+//     drift);
+//   - a VANISHED type whose entry carries ANY field allowance - the
+//     only tolerated vanished-type shape is an empty entry with a
+//     curated _note, otherwise a planted allowance would sit dormant
+//     and pre-authorize drift the moment the type/schema returns;
+//   - an empty entry whose type maps on BOTH sides - a dead entry that
+//     is not a vanished-type acknowledgment (structurally covers a
+//     carried-but-stale note).
+//
+// vanishedAcks lists the tolerated vanished-type acknowledgments for
+// the caller to log.
+func StaleBaselineProblems(perTypeDrift map[string]DriftEntry, sdk, spec map[string][]string) (problems, vanishedAcks []string) {
+	addProblems := func(name, side string, stale []string, claimingSide, otherSide map[string]struct{}) {
+		for _, f := range stale {
+			_, onClaiming := claimingSide[f]
+			_, onOther := otherSide[f]
+			if onClaiming && onOther {
+				problems = append(problems, fmt.Sprintf(
+					"  %s: %s field %q is now declared on BOTH sides - the drift burned down. Remove it from the baseline entry.",
+					name, side, f))
+			} else {
+				problems = append(problems, fmt.Sprintf(
+					"  %s: %s field %q is not present on the side that claimed it - dead allowance (possibly a phantom entry pre-authorizing future drift). Remove it from the baseline entry.",
+					name, side, f))
+			}
+		}
+	}
+
+	for name, expected := range perTypeDrift {
+		sdkFields, hasSDK := sdk[name]
+		specFields, hasSpec := spec[name]
+		emptyEntry := len(expected.SDKOnly) == 0 && len(expected.SpecOnly) == 0
+
+		if !hasSDK || !hasSpec {
+			if emptyEntry {
+				vanishedAcks = append(vanishedAcks, name)
+				continue
+			}
+			problems = append(problems, fmt.Sprintf(
+				"  %s: type or schema does not exist at this pin, but the entry carries field allowances (sdk_only=%v spec_only=%v). A vanished-type acknowledgment must be an EMPTY entry with only a curated _note; field allowances on a vanished type would pre-authorize drift the moment the type or schema returns.",
+				name, expected.SDKOnly, expected.SpecOnly))
+			continue
+		}
+		if emptyEntry {
+			problems = append(problems, fmt.Sprintf(
+				"  %s: entry allows nothing and the type maps on BOTH sides - dead entry (a vanished-type acknowledgment is only valid while the type has no schema at the pin). Remove it.",
+				name))
+			continue
+		}
+		sdkSet := listToSet(sdkFields)
+		specSet := listToSet(specFields)
+		sdkOnly := listToSet(Difference(sdkFields, specFields))
+		specOnly := listToSet(Difference(specFields, sdkFields))
+		addProblems(name, "sdk_only", subtractList(expected.SDKOnly, sdkOnly), sdkSet, specSet)
+		addProblems(name, "spec_only", subtractList(expected.SpecOnly, specOnly), specSet, sdkSet)
+	}
+	sort.Strings(problems)
+	sort.Strings(vanishedAcks)
+	return problems, vanishedAcks
+}
+
+func listToSet(s []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(s))
+	for _, v := range s {
+		out[v] = struct{}{}
+	}
+	return out
+}
+
+func subtractList(a []string, b map[string]struct{}) []string {
+	out := []string{}
+	for _, v := range a {
+		if _, ok := b[v]; !ok {
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // NewEmptyBaseline returns a zero-value Baseline with non-nil maps so
@@ -217,13 +360,37 @@ func findMapChild(mapping *yaml.Node, key string) *yaml.Node {
 // returns {StructName: sortedWireFieldNames} for every exported struct
 // with at least one JSON-tagged field.
 //
+// ExcludedTypes names Go types that legitimately do not participate in
+// the wire contract. Each entry needs a one-line reason. It is the
+// single source of truth for the gate (contract_wire_shape_test.go
+// aliases it) AND the baseline refresher, and it is consulted BEFORE
+// the embedded-field check so a genuinely non-wire type (e.g. one
+// embedding sync.Mutex) can be excluded instead of flattened.
+var ExcludedTypes = map[string]string{}
+
 // Go doesn't offer a runtime "list all types in a package" the way
 // Python's pkgutil.walk_packages does, so we parse the AST directly.
-// Type aliases (TypeSpec.Assign != 0) are ignored because their Type
-// is *ast.Ident, not *ast.StructType. Embedded fields appear as
-// FieldList entries with empty Names — not handled today because the
-// axonflow SDK's public types don't use embedding; if that changes,
-// add recursive resolution here.
+//
+// Embedded fields are REJECTED with a hard error rather than skipped or
+// resolved: encoding/json promotes an embedded struct's fields onto the
+// outer type's wire shape, so a skipped embed is a smuggling channel -
+// any field added through it would reach the wire while staying
+// invisible to every TestWireShape* gate. Rather than blacklist that
+// shape, the capability is removed: a struct declaration with ANY
+// embedded field fails discovery (and with it the gate and the baseline
+// refresher). The check runs on EVERY struct declaration in the
+// package, exported or not, because an unexported embed-carrying struct
+// reaches the wire through an exported alias, an exported defined type,
+// or as the type of a named field on an exported struct. Types listed
+// in ExcludedTypes are skipped (excluded from both the embed check and
+// the wire mapping) - that is the sanctioned escape for genuinely
+// non-wire types.
+//
+// Exported aliases (`type A = b`) and exported defined types
+// (`type A b`) whose target resolves to a struct declared in this
+// package are registered under the exported name with the target's
+// fields, so a schema-named alias (e.g. CreateOverrideRequest) cannot
+// escape the contract by pointing at a differently named struct.
 func DiscoverSDKTypes(pkgDir string) (map[string][]string, error) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, pkgDir, func(info os.FileInfo) bool {
@@ -232,7 +399,12 @@ func DiscoverSDKTypes(pkgDir string) (map[string][]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", pkgDir, err)
 	}
-	result := map[string][]string{}
+
+	// Pass 1: collect every type declaration in the package - struct
+	// declarations by name (any export status) and ident-target
+	// declarations (aliases and defined types over a named type).
+	structDecls := map[string]*ast.StructType{}
+	identTargets := map[string]string{}
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -240,37 +412,106 @@ func DiscoverSDKTypes(pkgDir string) (map[string][]string, error) {
 				if !ok {
 					return true
 				}
-				if !ts.Name.IsExported() {
-					return true
+				switch t := ts.Type.(type) {
+				case *ast.StructType:
+					structDecls[ts.Name.Name] = t
+				case *ast.Ident:
+					identTargets[ts.Name.Name] = t.Name
 				}
-				st, ok := ts.Type.(*ast.StructType)
-				if !ok {
-					return true
-				}
-				fields := extractWireFieldsFromAST(st)
-				if len(fields) == 0 {
-					return true
-				}
-				result[ts.Name.Name] = fields
 				return true
 			})
 		}
 	}
+
+	// Pass 2: embed check over ALL struct declarations (minus explicit
+	// exclusions), so an embed cannot hide behind an unexported name.
+	var embeddedViolations []string
+	for name, st := range structDecls {
+		if _, excluded := ExcludedTypes[name]; excluded {
+			continue
+		}
+		_, embedded := extractWireFieldsFromAST(st)
+		if len(embedded) > 0 {
+			embeddedViolations = append(embeddedViolations, fmt.Sprintf(
+				"%s (embeds %s)", name, strings.Join(embedded, ", ")))
+		}
+	}
+	if len(embeddedViolations) > 0 {
+		sort.Strings(embeddedViolations)
+		return nil, fmt.Errorf(
+			"struct declaration(s) use embedded fields, which encoding/json promotes "+
+				"onto the wire shape while the wire-shape gate cannot see them: %s. "+
+				"Flatten the embedded struct into named, json-tagged fields so every "+
+				"wire field is visible to the contract gate; if the type is genuinely "+
+				"not a wire type (e.g. it embeds sync.Mutex for internal locking), add "+
+				"it to internal/wireshape ExcludedTypes with a one-line reason instead",
+			strings.Join(embeddedViolations, "; "))
+	}
+
+	// Pass 3: register every exported name that resolves to a struct -
+	// directly, or through a bounded alias/defined-type ident chain.
+	result := map[string][]string{}
+	for name := range structDecls {
+		registerResolved(result, name, structDecls, identTargets)
+	}
+	for name := range identTargets {
+		registerResolved(result, name, structDecls, identTargets)
+	}
 	return result, nil
 }
 
+// registerResolved maps an exported, non-excluded type name to the wire
+// fields of the struct it resolves to (itself, or through a chain of
+// same-package aliases/defined types). Non-exported names, excluded
+// names, and names that do not resolve to a struct in this package are
+// skipped.
+func registerResolved(result map[string][]string, name string, structDecls map[string]*ast.StructType, identTargets map[string]string) {
+	if !ast.IsExported(name) {
+		return
+	}
+	if _, excluded := ExcludedTypes[name]; excluded {
+		return
+	}
+	target := name
+	seen := map[string]bool{}
+	for {
+		if seen[target] {
+			return // cyclic declaration; nothing to register
+		}
+		seen[target] = true
+		if st, ok := structDecls[target]; ok {
+			if _, excluded := ExcludedTypes[target]; excluded {
+				return // alias of an excluded type is excluded too
+			}
+			fields, _ := extractWireFieldsFromAST(st)
+			if len(fields) > 0 {
+				result[name] = fields
+			}
+			return
+		}
+		next, ok := identTargets[target]
+		if !ok {
+			return // resolves outside the package (or to a non-struct)
+		}
+		target = next
+	}
+}
+
 // extractWireFieldsFromAST returns the sorted wire-shape names for a
-// struct's fields. "Wire shape" means: json tag name if set, Go field
-// name otherwise. Fields tagged `json:"-"` are skipped. Anonymous
-// (embedded) fields are skipped for now — see DiscoverSDKTypes.
-func extractWireFieldsFromAST(st *ast.StructType) []string {
+// struct's fields plus the rendered type names of any anonymous
+// (embedded) fields. "Wire shape" means: json tag name if set, Go field
+// name otherwise. Fields tagged `json:"-"` are skipped. Embedded fields
+// are surfaced to the caller, which treats them as a hard error - see
+// DiscoverSDKTypes.
+func extractWireFieldsFromAST(st *ast.StructType) (fields []string, embedded []string) {
 	if st.Fields == nil {
-		return nil
+		return nil, nil
 	}
 	out := []string{}
 	for _, field := range st.Fields.List {
 		if len(field.Names) == 0 {
-			continue // embedded; not handled, see note on DiscoverSDKTypes
+			embedded = append(embedded, renderTypeExpr(field.Type))
+			continue
 		}
 		tagStr := ""
 		if field.Tag != nil {
@@ -296,7 +537,22 @@ func extractWireFieldsFromAST(st *ast.StructType) []string {
 		}
 	}
 	sort.Strings(out)
-	return out
+	return out, embedded
+}
+
+// renderTypeExpr renders an embedded field's type expression for the
+// embedded-field error message (Ident, pkg.Sel, or a pointer to either).
+func renderTypeExpr(e ast.Expr) string {
+	switch t := e.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return renderTypeExpr(t.X) + "." + t.Sel.Name
+	case *ast.StarExpr:
+		return "*" + renderTypeExpr(t.X)
+	default:
+		return fmt.Sprintf("%T", e)
+	}
 }
 
 // ParseJSONTagName returns the name portion of a json struct tag:

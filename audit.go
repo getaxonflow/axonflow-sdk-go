@@ -28,7 +28,18 @@ type AuditSearchRequest struct {
 	StartTime *time.Time `json:"start_time,omitempty"`
 	// EndTime is the end of the time range to search
 	EndTime *time.Time `json:"end_time,omitempty"`
-	// RequestType filters by request type (e.g., "llm_chat", "policy_check")
+	// Action filters by action/request type with verdict normalization on
+	// the server side. This is the filter the 9.x server actually reads
+	// (audit_read_handlers.go).
+	Action string `json:"action,omitempty"`
+	// RequestType filters by request type (e.g., "llm_chat", "policy_check").
+	//
+	// Deprecated: the 9.x server does not read this filter; a search
+	// filtered only by it returns unfiltered results. Use `action`.
+	// Scheduled for removal in the next major (#3254). The SDK keeps
+	// sending it (harmless, ignored). Note this deprecation is scoped to
+	// the SEARCH REQUEST only - AuditLogEntry.RequestType on the read
+	// model IS served and stays.
 	RequestType string `json:"request_type,omitempty"`
 	// DecisionID filters logs by the explainability decision ID (ADR-043).
 	// Useful for reconstructing everything tied to a single decision.
@@ -69,13 +80,56 @@ type AuditLogEntry struct {
 	TenantID string `json:"tenant_id"`
 	// RequestType is the type of request (e.g., "llm_chat", "sql", "mcp-query")
 	RequestType string `json:"request_type"`
-	// QuerySummary is a summary of the query/request
+	// PolicyDecision is the governance verdict for this entry as served by
+	// the 9.x orchestrator. Observed values include "allowed", "blocked",
+	// "redacted" and "error"; the set is OPEN, so treat this as a plain
+	// string, not an enum. Empty when an old server or a non-LLM plane
+	// omits the field.
+	PolicyDecision string `json:"policy_decision"`
+	// PolicyDetails carries verdict context as an object with arbitrary
+	// keys (e.g. tool_name, caller_name, error_message). Nil when the
+	// server omits it.
+	PolicyDetails map[string]interface{} `json:"policy_details"`
+	// ResponseTimeMs is the request latency in milliseconds as served by
+	// the 9.x orchestrator. Zero when the server omits it or did not
+	// measure it for this plane.
+	ResponseTimeMs int64 `json:"response_time_ms"`
+	// QuerySummary is a summary of the query/request.
+	//
+	// Deprecated: never populated on the 9.x line - the wire carries
+	// `query`/`query_hash`, not modeled in this interim
+	// (getaxonflow/axonflow-enterprise#3254). Read `policy_decision` for
+	// the verdict ("blocked" replaces `blocked=true`; "allowed" replaces
+	// `success=true`), `policy_details` for violation context, and
+	// `response_time_ms` for latency. Scheduled for removal in the next
+	// major.
 	QuerySummary string `json:"query_summary"`
-	// Success indicates whether the request succeeded
+	// Success indicates whether the request succeeded.
+	//
+	// Deprecated: never populated on the 9.x line - the server has never
+	// sent this field (getaxonflow/axonflow-enterprise#3254). Read
+	// `policy_decision` for the verdict ("blocked" replaces
+	// `blocked=true`; "allowed" replaces `success=true`),
+	// `policy_details` for violation context, and `response_time_ms` for
+	// latency. Scheduled for removal in the next major.
 	Success bool `json:"success"`
-	// Blocked indicates whether the request was blocked by policy
+	// Blocked indicates whether the request was blocked by policy.
+	//
+	// Deprecated: never populated on the 9.x line - the server has never
+	// sent this field (getaxonflow/axonflow-enterprise#3254). Read
+	// `policy_decision` for the verdict ("blocked" replaces
+	// `blocked=true`; "allowed" replaces `success=true`),
+	// `policy_details` for violation context, and `response_time_ms` for
+	// latency. Scheduled for removal in the next major.
 	Blocked bool `json:"blocked"`
-	// RiskScore is the calculated risk score (0.0-1.0)
+	// RiskScore is the calculated risk score (0.0-1.0).
+	//
+	// Deprecated: never populated on the 9.x line - no wire equivalent
+	// (getaxonflow/axonflow-enterprise#3254). Read `policy_decision` for
+	// the verdict ("blocked" replaces `blocked=true`; "allowed" replaces
+	// `success=true`), `policy_details` for violation context, and
+	// `response_time_ms` for latency. Scheduled for removal in the next
+	// major.
 	RiskScore float64 `json:"risk_score"`
 	// Provider is the LLM provider used (if applicable)
 	Provider string `json:"provider"`
@@ -83,11 +137,33 @@ type AuditLogEntry struct {
 	Model string `json:"model"`
 	// TokensUsed is the total tokens consumed
 	TokensUsed int `json:"tokens_used"`
-	// LatencyMs is the request latency in milliseconds
+	// LatencyMs is the request latency in milliseconds.
+	//
+	// Deprecated: never populated on the 9.x line - the server has never
+	// sent this field (getaxonflow/axonflow-enterprise#3254). Read
+	// `policy_decision` for the verdict ("blocked" replaces
+	// `blocked=true`; "allowed" replaces `success=true`),
+	// `policy_details` for violation context, and `response_time_ms` for
+	// latency. Scheduled for removal in the next major.
 	LatencyMs int `json:"latency_ms"`
-	// PolicyViolations is a list of violated policy IDs (if any)
+	// PolicyViolations is a list of violated policy IDs (if any).
+	//
+	// Deprecated: never populated on the 9.x line - the server has never
+	// sent this field (getaxonflow/axonflow-enterprise#3254). Read
+	// `policy_decision` for the verdict ("blocked" replaces
+	// `blocked=true`; "allowed" replaces `success=true`),
+	// `policy_details` for violation context, and `response_time_ms` for
+	// latency. Scheduled for removal in the next major.
 	PolicyViolations []string `json:"policy_violations,omitempty"`
-	// Metadata contains additional context
+	// Metadata contains additional context.
+	//
+	// Deprecated: never populated on the 9.x line - the wire carries
+	// `policy_details`/`security_metrics` instead
+	// (getaxonflow/axonflow-enterprise#3254). Read `policy_decision` for
+	// the verdict ("blocked" replaces `blocked=true`; "allowed" replaces
+	// `success=true`), `policy_details` for violation context, and
+	// `response_time_ms` for latency. Scheduled for removal in the next
+	// major.
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 	// DataResidency is the ISO 3166-1 alpha-2 country code where data is stored
 	DataResidency string `json:"data_residency,omitempty"`
@@ -239,11 +315,12 @@ func (c *AxonFlowClient) AuditToolCall(ctx context.Context, req AuditToolCallReq
 //	}
 //
 //	for _, entry := range result.Entries {
-//	    fmt.Printf("[%s] %s: %s (blocked: %v)\n",
+//	    fmt.Printf("[%s] %s: %s (decision: %s, %dms)\n",
 //	        entry.Timestamp.Format(time.RFC3339),
 //	        entry.UserEmail,
-//	        entry.QuerySummary,
-//	        entry.Blocked)
+//	        entry.RequestType,
+//	        entry.PolicyDecision,
+//	        entry.ResponseTimeMs)
 //	}
 func (c *AxonFlowClient) SearchAuditLogs(ctx context.Context, req *AuditSearchRequest) (*AuditSearchResponse, error) {
 	if req == nil {
@@ -272,6 +349,11 @@ func (c *AxonFlowClient) SearchAuditLogs(ctx context.Context, req *AuditSearchRe
 	if req.EndTime != nil {
 		reqBody["end_time"] = req.EndTime.Format(time.RFC3339)
 	}
+	if req.Action != "" {
+		reqBody["action"] = req.Action
+	}
+	// Deprecated request_type is still sent for now (harmless, the 9.x
+	// server ignores it); removal rides the next major (#3254).
 	if req.RequestType != "" {
 		reqBody["request_type"] = req.RequestType
 	}
@@ -372,7 +454,7 @@ func (c *AxonFlowClient) SearchAuditLogs(ctx context.Context, req *AuditSearchRe
 //	    fmt.Printf("  [%s] %s - %s\n",
 //	        entry.Timestamp.Format(time.RFC3339),
 //	        entry.RequestType,
-//	        entry.QuerySummary)
+//	        entry.PolicyDecision)
 //	}
 //
 //	// With custom options

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Real audit wire fields on the read and search models (#3254).**
+  `policy_decision` (open string verdict set: "allowed"/"blocked"/
+  "redacted" documented, "error" observed live - not an enum),
+  `policy_details` (object, arbitrary keys) and `response_time_ms`
+  (int64) on `AuditLogEntry`, and `action` on `AuditSearchRequest`
+  (the filter the 9.x server actually reads, with verdict
+  normalization server-side). All additive and absence-tolerant: an
+  old server or a non-LLM plane may omit them and they default to
+  zero values.
+
 - **`runtime-e2e/caller_name_audit/` now also covers the no-identity
   default (#2903).** getaxonflow/axonflow-enterprise#2953 merged and
   shipped in platform v9.11.0; folded into that same merge, #2903 changed
@@ -29,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LangGraph adapter's `StepCompletedOptions`/`ToolCompletedOptions`. Treat as
   opaque on the client. Runtime proof:
   `runtime-e2e/mark_step_completed_metadata/`.
+
+### Deprecated
+
+- **Audit model fiction fields - never served/read on the 9.x line
+  (getaxonflow/axonflow-enterprise#3254).** Read model
+  (`AuditLogEntry`): `query_summary`, `success`, `blocked`,
+  `risk_score`, `latency_ms`, `policy_violations`, `metadata`.
+  Search request (`AuditSearchRequest`): `request_type` (the 9.x
+  server does not read this filter; the READ model's `request_type`
+  IS served and is untouched). All stay in place and keep parsing
+  (zero-valued against real servers); read `policy_decision` for the
+  verdict, `policy_details` for violation context, `response_time_ms`
+  for latency, and use `action` to filter searches. Removal rides the
+  next major.
 
 ### Fixed
 
