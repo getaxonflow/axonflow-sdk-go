@@ -1,0 +1,21 @@
+{
+    "export_id": "exp-1",
+    "status": "completed",
+    "framework": "uu_pdp",
+    "format": "json",
+    "summary": {
+        "total_records": 421,
+        "records_by_type": {
+            "policy_violations": 20,
+            "llm_calls": 401
+        },
+        "date_range": {
+            "start": "2026-07-01T00:00:00Z",
+            "end": "2026-08-01T00:00:00Z"
+        },
+        "compliance_score": 0.97
+    },
+    "download_url": "https://example.com/exports/exp-1",
+    "created_at": "2026-08-01T01:00:00Z",
+    "expires_at": "2026-08-08T01:00:00Z"
+}

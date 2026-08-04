@@ -146,13 +146,20 @@ type UpdateSystemRequest struct {
 
 // AISystemRegistry represents an AI system in the registry
 type AISystemRegistry struct {
-	ID                        string                    `json:"id"`
-	OrgID                     string                    `json:"org_id"`
-	SystemID                  string                    `json:"system_id"`
-	SystemName                string                    `json:"system_name"`
-	Description               string                    `json:"description,omitempty"`
-	UseCase                   AISystemUseCase           `json:"use_case"`
-	OwnerTeam                 string                    `json:"owner_team"`
+	ID          string          `json:"id"`
+	OrgID       string          `json:"org_id"`
+	SystemID    string          `json:"system_id"`
+	SystemName  string          `json:"system_name"`
+	Description string          `json:"description,omitempty"`
+	UseCase     AISystemUseCase `json:"use_case"`
+	OwnerTeam   string          `json:"owner_team"`
+	// TechnicalOwner names a technical owner for the system.
+	//
+	// Deprecated: never populated on the 9.x line - no wire equivalent
+	// (the server serves `owner_email` and `owner_team`, both already
+	// modeled here; getaxonflow/axonflow-enterprise#3254). Read
+	// `owner_email`/`owner_team`. Scheduled for removal in the next
+	// major.
 	TechnicalOwner            string                    `json:"technical_owner,omitempty"`
 	BusinessOwner             string                    `json:"owner_email,omitempty"`
 	CustomerImpact            int                       `json:"risk_rating_impact"`
@@ -168,13 +175,56 @@ type AISystemRegistry struct {
 
 // RegistrySummary represents summary statistics for the registry
 type RegistrySummary struct {
-	TotalSystems           int            `json:"total_systems"`
-	ActiveSystems          int            `json:"active_systems"`
-	HighMaterialityCount   int            `json:"high_materiality_count"`
-	MediumMaterialityCount int            `json:"medium_materiality_count"`
-	LowMaterialityCount    int            `json:"low_materiality_count"`
-	ByUseCase              map[string]int `json:"by_use_case"`
-	ByStatus               map[string]int `json:"by_status"`
+	// OrgID is the organization the summary is scoped to. Served by the
+	// 9.x server (platform/orchestrator/masfeat/types.go RegistrySummary).
+	OrgID         string `json:"org_id"`
+	TotalSystems  int    `json:"total_systems"`
+	ActiveSystems int    `json:"active_systems"`
+	// HighMateriality is the count of high-materiality systems as served
+	// by the 9.x server. Zero when an old server omits it.
+	HighMateriality int `json:"high_materiality"`
+	// MediumMateriality is the count of medium-materiality systems as
+	// served by the 9.x server. Zero when an old server omits it.
+	MediumMateriality int `json:"medium_materiality"`
+	// LowMateriality is the count of low-materiality systems as served
+	// by the 9.x server. Zero when an old server omits it.
+	LowMateriality int `json:"low_materiality"`
+	// AssessmentsDue is the count of systems with FEAT assessments due.
+	// Served by the 9.x server. Zero when an old server omits it.
+	AssessmentsDue int `json:"assessments_due"`
+	// KillSwitchesTriggered is the count of currently triggered kill
+	// switches. Served by the 9.x server. Zero when an old server omits it.
+	KillSwitchesTriggered int `json:"kill_switches_triggered"`
+	// HighMaterialityCount is the count of high-materiality systems.
+	//
+	// Deprecated: never populated on the 9.x line - the server serves
+	// `high_materiality` instead (getaxonflow/axonflow-enterprise#3254).
+	// Read `high_materiality`. Scheduled for removal in the next major.
+	HighMaterialityCount int `json:"high_materiality_count"`
+	// MediumMaterialityCount is the count of medium-materiality systems.
+	//
+	// Deprecated: never populated on the 9.x line - the server serves
+	// `medium_materiality` instead (getaxonflow/axonflow-enterprise#3254).
+	// Read `medium_materiality`. Scheduled for removal in the next major.
+	MediumMaterialityCount int `json:"medium_materiality_count"`
+	// LowMaterialityCount is the count of low-materiality systems.
+	//
+	// Deprecated: never populated on the 9.x line - the server serves
+	// `low_materiality` instead (getaxonflow/axonflow-enterprise#3254).
+	// Read `low_materiality`. Scheduled for removal in the next major.
+	LowMaterialityCount int `json:"low_materiality_count"`
+	// ByUseCase breaks systems down by use case.
+	//
+	// Deprecated: never populated on the 9.x line - no wire equivalent
+	// (getaxonflow/axonflow-enterprise#3254). Scheduled for removal in
+	// the next major.
+	ByUseCase map[string]int `json:"by_use_case"`
+	// ByStatus breaks systems down by status.
+	//
+	// Deprecated: never populated on the 9.x line - no wire equivalent
+	// (getaxonflow/axonflow-enterprise#3254). Scheduled for removal in
+	// the next major.
+	ByStatus map[string]int `json:"by_status"`
 }
 
 // ListSystemsOptions represents options for listing AI systems
@@ -276,11 +326,26 @@ type KillSwitch struct {
 	AutoTriggerEnabled bool             `json:"auto_trigger_enabled"`
 	TriggeredAt        *time.Time       `json:"triggered_at,omitempty"`
 	TriggeredBy        string           `json:"triggered_by,omitempty"`
-	TriggeredReason    string           `json:"triggered_reason,omitempty"`
-	RestoredAt         *time.Time       `json:"restored_at,omitempty"`
-	RestoredBy         string           `json:"restored_by,omitempty"`
-	CreatedAt          time.Time        `json:"created_at"`
-	UpdatedAt          time.Time        `json:"updated_at"`
+	// TriggerReason is why the kill switch was triggered, as served by
+	// the 9.x server (platform/orchestrator/masfeat/types.go KillSwitch,
+	// wire tag trigger_reason). Empty when an old server omits it.
+	TriggerReason string `json:"trigger_reason,omitempty"`
+	// TriggeredReason is why the kill switch was triggered.
+	//
+	// Deprecated: never populated on the 9.x line - the server serves
+	// `trigger_reason` instead (getaxonflow/axonflow-enterprise#3254).
+	// Read `trigger_reason`. Scheduled for removal in the next major.
+	TriggeredReason string     `json:"triggered_reason,omitempty"`
+	RestoredAt      *time.Time `json:"restored_at,omitempty"`
+	RestoredBy      string     `json:"restored_by,omitempty"`
+	// RestoreReason is why the kill switch was restored, as served by
+	// the 9.x server. It completes the restore audit trail alongside
+	// RestoredAt/RestoredBy (the restore API accepts a reason that was
+	// previously unreadable through this model). Empty when an old
+	// server omits it.
+	RestoreReason string    `json:"restore_reason,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // ConfigureKillSwitchRequest represents a request to configure a kill switch
@@ -1065,7 +1130,7 @@ func (c *AxonFlowClient) MASFEATCheckKillSwitch(systemID string, req *CheckKillS
 	}
 
 	if c.config.Debug && result.Status == KillSwitchTriggered {
-		log.Printf("[AxonFlow MASFEAT] Kill switch TRIGGERED: %s reason=%s", systemID, result.TriggeredReason)
+		log.Printf("[AxonFlow MASFEAT] Kill switch TRIGGERED: %s reason=%s", systemID, result.TriggerReason)
 	}
 
 	return &result, nil
