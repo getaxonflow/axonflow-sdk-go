@@ -1,0 +1,20 @@
+{
+    "id": "breach-1",
+    "incident_timestamp": "2026-07-30T22:00:00Z",
+    "discovery_time": "2026-07-31T08:00:00Z",
+    "notification_deadline": "2026-08-03T08:00:00Z",
+    "data_subjects_affected": 1500,
+    "data_types_involved": [
+        "email",
+        "phone"
+    ],
+    "description": "credential stuffing on the portal",
+    "remediation_steps": [
+        "password reset forced",
+        "WAF rule deployed"
+    ],
+    "notified_authority": "MOCDA",
+    "status": "submitted",
+    "submitted_at": "2026-08-01T12:00:00Z",
+    "created_at": "2026-07-31T08:30:00Z"
+}

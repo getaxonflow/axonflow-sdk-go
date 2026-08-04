@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Real masfeat/OJK wire fields (#3254 pin-advance batch).**
+  `RegistrySummary`: `org_id`, `high_materiality`, `medium_materiality`,
+  `low_materiality`, `assessments_due`, `kill_switches_triggered`.
+  `KillSwitch`: `trigger_reason`, `restore_reason`.
+  `OJKAuditExportResponse`: `framework`, `format`, `summary` (new nested
+  `OJKAuditExportSummary` + `DateRange` types - the real home of the
+  record counts), `expires_at`. `OJKBreachNotification`:
+  `incident_timestamp`, `discovery_time`, `notification_deadline`,
+  `data_subjects_affected`, `data_types_involved`, `remediation_steps`,
+  `notified_authority`, `submitted_at`, `acknowledged_at`,
+  `created_at`. All additive and absence-tolerant (old servers may omit
+  them; zero-value defaults).
+
 - **Real audit wire fields on the read and search models (#3254).**
   `policy_decision` (open string verdict set: "allowed"/"blocked"/
   "redacted" documented, "error" observed live - not an enum),
@@ -41,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `runtime-e2e/mark_step_completed_metadata/`.
 
 ### Deprecated
+
+- **masfeat/OJK model fiction fields - never served on the 9.x line
+  (getaxonflow/axonflow-enterprise#3254 pin-advance batch).**
+  `RegistrySummary`: `high_materiality_count`,
+  `medium_materiality_count`, `low_materiality_count`, `by_use_case`,
+  `by_status`. `KillSwitch`: `triggered_reason` (the server serves
+  `trigger_reason`). `AISystemRegistry`: `technical_owner` (the server
+  serves `owner_email`/`owner_team`, both already modeled).
+  `OJKAuditExportResponse`: `record_count` (the counts live inside
+  `summary`). `OJKBreachNotification`: `incident_date`,
+  `notification_date`, `affected_subjects`, `data_categories`,
+  `severity`, `regulatory_ref`. All stay in place and keep parsing;
+  removal rides the next major.
 
 - **Audit model fiction fields - never served/read on the 9.x line
   (getaxonflow/axonflow-enterprise#3254).** Read model

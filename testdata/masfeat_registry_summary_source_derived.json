@@ -1,0 +1,10 @@
+{
+    "org_id": "org-s3254",
+    "total_systems": 12,
+    "active_systems": 9,
+    "high_materiality": 3,
+    "medium_materiality": 4,
+    "low_materiality": 5,
+    "assessments_due": 2,
+    "kill_switches_triggered": 1
+}

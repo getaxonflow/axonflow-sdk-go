@@ -333,13 +333,6 @@
       ],
       "spec_only": []
     },
-    "CreateOverrideRequest": {
-      "_note": "Surfaced by the alias-resolution fix in the #3254 R3 round 2 sweep: CreateOverrideRequest is an exported alias of CreatePolicyOverrideRequest (policies.go) and was previously invisible to discovery, hiding this spec-side drift. enabled_override is an optional request property the SDK does not send yet - informational at this pin, no consumer break (verified against agent-api.yaml at 8c8d6c9c). Follow-up: model enabled_override on CreatePolicyOverrideRequest in a separate SDK-change PR.",
-      "sdk_only": [],
-      "spec_only": [
-        "enabled_override"
-      ]
-    },
     "ClientRequest": {
       "sdk_only": [
         "media"
@@ -355,6 +348,13 @@
         "request_id"
       ],
       "spec_only": []
+    },
+    "CreateOverrideRequest": {
+      "_note": "Surfaced by the alias-resolution fix in the #3254 R3 round 2 sweep: CreateOverrideRequest is an exported alias of CreatePolicyOverrideRequest (policies.go) and was previously invisible to discovery, hiding this spec-side drift. enabled_override is an optional request property the SDK does not send yet - informational at this pin, no consumer break (verified against agent-api.yaml at 8c8d6c9c). Follow-up: model enabled_override on CreatePolicyOverrideRequest in a separate SDK-change PR.",
+      "sdk_only": [],
+      "spec_only": [
+        "enabled_override"
+      ]
     },
     "CreateStaticPolicyRequest": {
       "sdk_only": [
@@ -421,6 +421,14 @@
       "sdk_only": [
         "due_date",
         "pillar"
+      ],
+      "spec_only": []
+    },
+    "KillSwitch": {
+      "_note": "trigger_reason and restore_reason are the REAL 9.x kill-switch wire fields (platform/orchestrator/masfeat/types.go KillSwitch at v9.13.0 df027c788), added by the getaxonflow/axonflow-enterprise#3254 pin-advance batch; the deprecated fiction sibling triggered_reason stays in place until the next major. The pinned spec here (8c8d6c9c) predates the 9.x spec correction, so the two real fields read as sdk_only. Burns down when the pin advances to v9.13.0 (spec-pin PR #185).",
+      "sdk_only": [
+        "restore_reason",
+        "trigger_reason"
       ],
       "spec_only": []
     },
@@ -555,6 +563,18 @@
         "human_reliance",
         "model_complexity"
       ]
+    },
+    "RegistrySummary": {
+      "_note": "org_id, high_materiality, medium_materiality, low_materiality, assessments_due and kill_switches_triggered are the REAL 9.x registry-summary wire fields (platform/orchestrator/masfeat/types.go RegistrySummary at v9.13.0 df027c788), added by the getaxonflow/axonflow-enterprise#3254 pin-advance batch; the deprecated fiction siblings (high/medium/low_materiality_count, by_use_case, by_status) stay in place until the next major. The pinned spec here (8c8d6c9c) predates the 9.x spec correction, so the six real fields read as sdk_only. Burns down when the pin advances to v9.13.0 (spec-pin PR #185).",
+      "sdk_only": [
+        "assessments_due",
+        "high_materiality",
+        "kill_switches_triggered",
+        "low_materiality",
+        "medium_materiality",
+        "org_id"
+      ],
+      "spec_only": []
     },
     "ResumePlanResponse": {
       "sdk_only": [
