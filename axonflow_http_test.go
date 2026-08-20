@@ -2459,3 +2459,43 @@ func TestProxyLLMCallWithoutMediaStillUsesCache(t *testing.T) {
 		t.Errorf("Expected 1 server call (cached), got %d", callCount)
 	}
 }
+
+// Regression for #184: a policy-blocked execution (success:true, blocked:true)
+// must never report Status "completed". Mutation check: reverting the
+// Blocked-verdict branch in ExecutePlan makes the first assertion fail.
+func TestExecutePlanBlockedIsNotCompleted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/request" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":      true,
+				"blocked":      true,
+				"block_reason": "policy sys_test_gate denied the plan",
+			})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL,
+		ClientID: "test",
+		Cache:    CacheConfig{Enabled: false},
+	})
+
+	result, err := client.ExecutePlan("plan-blocked")
+	if err == nil {
+		t.Fatalf("Expected error for blocked plan, got nil")
+	}
+	if result == nil {
+		t.Fatalf("Expected result even when blocked, got nil")
+	}
+	if result.Status == "completed" {
+		t.Errorf("Blocked execution must not read Status 'completed'")
+	}
+	if result.Status != "failed" {
+		t.Errorf("Expected status 'failed', got '%s'", result.Status)
+	}
+	if result.Error == "" {
+		t.Errorf("Expected the block reason carried on Error, got empty")
+	}
+}

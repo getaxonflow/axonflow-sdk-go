@@ -2075,12 +2075,22 @@ func (c *AxonFlowClient) ExecutePlan(planID string, userToken ...string) (*PlanE
 		}
 	}
 
-	if !resp.Success {
+	if !resp.Success || resp.Blocked {
+		// A blocked execution is not a completed one (#184): the envelope can
+		// carry success:true with blocked:true when policy stopped the plan,
+		// and callers branching on Status must never read that as success.
 		execResp.Status = "failed"
 		if c.config.Debug {
 			log.Printf("[AxonFlow] Plan executed: %s - Status: %s", planID, execResp.Status)
 		}
 		errMsg := resp.Error
+		if errMsg == "" && resp.Blocked {
+			errMsg = resp.BlockReason
+			if errMsg == "" {
+				errMsg = "plan execution blocked by policy"
+			}
+			execResp.Error = errMsg
+		}
 		if errMsg == "" {
 			errMsg = "plan execution failed"
 		}
