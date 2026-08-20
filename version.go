@@ -1,4 +1,4 @@
 package axonflow
 
 // Version is the current SDK version.
-const Version = "9.1.0"
+const Version = "9.1.1"
