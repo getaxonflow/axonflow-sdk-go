@@ -128,7 +128,7 @@ func (r *AuthZENResponse) Obligations() []AuthZENObligation {
 //	dec, err := client.Evaluate(ctx, axonflow.AuthZENRequest{
 //	    Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
 //	    Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
-//	    Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+//	    Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
 //	    Context: map[string]any{
 //	        "args": map[string]any{"query": userPrompt},
 //	    },
@@ -159,11 +159,11 @@ func (c *AxonFlowClient) Evaluate(ctx context.Context, req AuthZENRequest) (*Aut
 //
 //	dec, err := client.EvaluateAll(ctx, axonflow.AuthZENBulk{
 //	    Subject: &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
-//	    Action:  &axonflow.AuthZENAction{Name: "llm.completion"},
+//	    Action:  &axonflow.AuthZENAction{Name: "tool.call"},
 //	    Context: map[string]any{"args": map[string]any{"query": userPrompt}},
 //	    Evaluations: []AuthZENRequest{
-//	        {Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"}},
-//	        {Resource: &axonflow.AuthZENResource{Type: "llm", ID: "anthropic/claude-sonnet-4"}},
+//	        {Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/move_issue"}},
+//	        {Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/update_project"}},
 //	    },
 //	})
 func (c *AxonFlowClient) EvaluateAll(ctx context.Context, bulk AuthZENBulk) (*AuthZENResponse, error) {
@@ -228,12 +228,29 @@ func (c *AxonFlowClient) evaluateEnvelope(ctx context.Context, env AuthZENEnvelo
 		return nil, fmt.Errorf("failed to decode the AuthZEN response: %w; body=%s", err, string(raw))
 	}
 
-	// A profile context from a version this build does not know is dropped
-	// rather than half-read: its fields may not mean what these types say they
-	// mean. The boolean is still returned, which is exactly what an
-	// un-negotiated caller would have received.
+	// A profile context from a version this build does not know is REFUSED, not
+	// silently dropped.
+	//
+	// Dropping it was a fail-open. The SDK always negotiates, so a mismatched
+	// profile means the server answered in a dialect this build cannot read --
+	// and the parts it cannot read are exactly the parts that constrain an
+	// allow: the obligations and the approval challenge. Blanking the context
+	// left Allowed() returning true, Obligations() returning nil
+	// (indistinguishable from "no obligations"), and the caller proceeding on an
+	// allow whose mandatory redaction it never saw.
+	//
+	// Refusing is the only answer that does not misreport. It is also the one
+	// that matters at the v11 cutover, which is precisely when a server starts
+	// speaking a profile an older SDK does not know.
 	if out.Context != nil && out.Context.Profile != AuthZENProfileV1 {
-		out.Context = nil
+		return nil, &AuthZENError{
+			Code: AuthZENErrorCodeEvaluationUnavailable,
+			Message: fmt.Sprintf(
+				"the server answered with AuthZEN profile %q; this build can only interpret %q. "+
+					"The obligations and approval challenge that constrain an allow are carried in that "+
+					"payload, so the decision cannot be acted on safely. Upgrade the SDK.",
+				out.Context.Profile, AuthZENProfileV1),
+		}
 	}
 	return &out, nil
 }

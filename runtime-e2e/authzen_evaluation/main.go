@@ -184,7 +184,7 @@ func request(query string) axonflow.AuthZENRequest {
 	return axonflow.AuthZENRequest{
 		Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "runtime-e2e-gateway"},
 		Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
-		Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+		Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
 		Context:  map[string]any{"args": map[string]any{"query": query}},
 	}
 }

@@ -25,7 +25,7 @@ func okRequest() AuthZENRequest {
 	return AuthZENRequest{
 		Subject:  &AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
 		Action:   &AuthZENAction{Name: "llm.completion"},
-		Resource: &AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+		Resource: &AuthZENResource{Type: "llm", ID: "llm"},
 		Context:  map[string]any{"args": map[string]any{"query": "what is the weather"}},
 	}
 }
@@ -92,11 +92,11 @@ func TestEvaluateAllSendsThePluralEnvelope(t *testing.T) {
 
 	_, err := c.EvaluateAll(context.Background(), AuthZENBulk{
 		Subject: &AuthZENSubject{Type: "gateway", ID: "g"},
-		Action:  &AuthZENAction{Name: "llm.completion"},
+		Action:  &AuthZENAction{Name: "tool.call"},
 		Context: map[string]any{"args": map[string]any{"query": "q"}},
 		Evaluations: []AuthZENRequest{
-			{Resource: &AuthZENResource{Type: "llm", ID: "openai/gpt-4o"}},
-			{Resource: &AuthZENResource{Type: "llm", ID: "anthropic/claude-sonnet-4"}},
+			{Resource: &AuthZENResource{Type: "tool", ID: "jira/move_issue"}},
+			{Resource: &AuthZENResource{Type: "tool", ID: "jira/update_project"}},
 		},
 	})
 	if err != nil {
@@ -247,13 +247,20 @@ func TestEvaluateRefusesAnUnauthenticatedCall(t *testing.T) {
 	}
 }
 
-// TestEvaluateRejectsAProfileItCannotRead pins the version guard.
+// TestEvaluateRefusesAProfileItCannotRead pins the fail-open that mattered
+// most.
 //
-// A context from a profile version this build does not know may not mean what
-// these generated types say it means. Half-reading it is worse than not reading
-// it: the boolean is still correct, and the caller falls back to the same
-// behaviour an un-negotiated client would have had.
-func TestEvaluateRejectsAProfileItCannotRead(t *testing.T) {
+// This SDK always negotiates, so a mismatched profile means the server answered
+// in a dialect this build cannot read -- and the unreadable parts are exactly
+// the ones that CONSTRAIN an allow: the obligations and the approval challenge.
+//
+// The first version blanked the context and returned the decision. That left
+// Allowed() true, Obligations() nil (indistinguishable from "no obligations"),
+// and the documented path -- "read Allowed() rather than comparing the state
+// yourself" -- proceeding on an allow whose mandatory redaction it never saw.
+// It is the v11 cutover scenario exactly: that is when a server starts speaking
+// a profile an older SDK does not know.
+func TestEvaluateRefusesAProfileItCannotRead(t *testing.T) {
 	c := authzenServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"decision":true,"context":{` +
@@ -262,28 +269,31 @@ func TestEvaluateRejectsAProfileItCannotRead(t *testing.T) {
 	})
 
 	dec, err := c.Evaluate(context.Background(), okRequest())
-	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
+	if err == nil {
+		t.Fatalf("an unreadable profile was accepted: %+v", dec)
 	}
-	if dec.Context != nil {
-		t.Errorf("a context from an unknown profile was kept: %+v", dec.Context)
+	// It must NOT come back as an allow by any route the caller might take.
+	if dec.Allowed() {
+		t.Error("an unreadable profile produced an allowed decision")
 	}
-	// The boolean survives...
-	if !dec.Allowed() {
-		t.Error("the boolean was lost along with the context")
+	if len(dec.Obligations()) != 0 {
+		t.Error("obligations were reported from a payload this build cannot read")
 	}
-	// ...and the state falls back to ERROR rather than to a zero value that
-	// would read as "not denied".
-	if dec.State() != AuthZENOperationalStateError {
-		t.Errorf("State() = %q, want ERROR when there is no readable context", dec.State())
+	azErr, ok := AsAuthZENError(err)
+	if !ok {
+		t.Fatalf("expected a typed error, got %T: %v", err, err)
+	}
+	// Retryable: a newer server will keep answering the same way until the SDK
+	// is upgraded, so the code must not invite a retry loop... but it IS the
+	// dependency-shaped code, so assert the message carries the remedy instead.
+	if !strings.Contains(azErr.Message, AuthZENProfileV1) {
+		t.Errorf("the error does not name the profile this build understands: %s", azErr.Message)
+	}
+	if !strings.Contains(azErr.Message, "2099-01-01") {
+		t.Errorf("the error does not name the profile the server sent: %s", azErr.Message)
 	}
 }
 
-// TestEvaluateRefusesAnUnknownResponseMember pins strict decoding.
-//
-// An unknown member in a decision is a server speaking a profile this build does
-// not understand. Dropping it quietly means acting on a partial reading of an
-// authorization decision.
 func TestEvaluateRefusesAnUnknownResponseMember(t *testing.T) {
 	c := authzenServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -314,15 +324,15 @@ func TestEnvelopeValidationFailsBeforeTheRoundTrip(t *testing.T) {
 	}{
 		{"no subject", AuthZENRequest{
 			Action:   &AuthZENAction{Name: "llm.completion"},
-			Resource: &AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+			Resource: &AuthZENResource{Type: "llm", ID: "llm"},
 		}},
 		{"no action", AuthZENRequest{
 			Subject:  &AuthZENSubject{Type: "gateway", ID: "g"},
-			Resource: &AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+			Resource: &AuthZENResource{Type: "llm", ID: "llm"},
 		}},
 		{"no resource", AuthZENRequest{
 			Subject: &AuthZENSubject{Type: "gateway", ID: "g"},
-			Action:  &AuthZENAction{Name: "llm.completion"},
+			Action:  &AuthZENAction{Name: "tool.call"},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -61,7 +61,7 @@ func main() {
 		dec, err := client.Evaluate(ctx, axonflow.AuthZENRequest{
 			Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
 			Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
-			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
 			Context: map[string]any{
 				"args": map[string]any{"query": "summarise yesterday's incident report"},
 			},
@@ -82,13 +82,13 @@ func main() {
 	step("several preconditions of one operation", func() error {
 		dec, err := client.EvaluateAll(ctx, axonflow.AuthZENBulk{
 			Subject: &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
-			Action:  &axonflow.AuthZENAction{Name: "llm.completion"},
+			Action:  &axonflow.AuthZENAction{Name: "tool.call"},
 			Context: map[string]any{
 				"args": map[string]any{"query": "summarise yesterday's incident report"},
 			},
 			Evaluations: []axonflow.AuthZENRequest{
-				{Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"}},
-				{Resource: &axonflow.AuthZENResource{Type: "llm", ID: "anthropic/claude-sonnet-4"}},
+				{Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/move_issue"}},
+				{Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/update_project"}},
 			},
 		})
 		if err != nil {
@@ -136,7 +136,7 @@ func main() {
 				Properties: map[string]any{"clearance": "secret"},
 			},
 			Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
-			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
 			Context:  map[string]any{"args": map[string]any{"query": "q"}},
 		},
 		axonflow.AuthZENErrorCodeUnevaluableAttribute)
@@ -145,7 +145,7 @@ func main() {
 		axonflow.AuthZENRequest{
 			Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
 			Action:   &axonflow.AuthZENAction{Name: "jira.transition_issue"},
-			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
 			Context:  map[string]any{"args": map[string]any{"query": "q"}},
 		},
 		axonflow.AuthZENErrorCodeUnsupportedAction)
@@ -165,7 +165,7 @@ func main() {
 		axonflow.AuthZENRequest{
 			Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
 			Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
-			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+			Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
 			Context:  map[string]any{"args": map[string]any{}},
 		},
 		axonflow.AuthZENErrorCodeMissingEvaluableContent)

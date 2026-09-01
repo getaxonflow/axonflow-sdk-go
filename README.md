@@ -254,7 +254,7 @@ resource, and get back a decision your enforcement point can act on.
 dec, err := client.Evaluate(ctx, axonflow.AuthZENRequest{
     Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
     Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
-    Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"},
+    Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
     Context: map[string]any{
         "args": map[string]any{"query": userPrompt},
     },
@@ -306,11 +306,11 @@ Anything an entry omits is inherited from the shared base.
 ```go
 dec, err := client.EvaluateAll(ctx, axonflow.AuthZENBulk{
     Subject: &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
-    Action:  &axonflow.AuthZENAction{Name: "llm.completion"},
+    Action:  &axonflow.AuthZENAction{Name: "tool.call"},
     Context: map[string]any{"args": map[string]any{"query": userPrompt}},
     Evaluations: []axonflow.AuthZENRequest{
-        {Resource: &axonflow.AuthZENResource{Type: "llm", ID: "openai/gpt-4o"}},
-        {Resource: &axonflow.AuthZENResource{Type: "llm", ID: "anthropic/claude-sonnet-4"}},
+        {Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/move_issue"}},
+        {Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/update_project"}},
     },
 })
 ```
