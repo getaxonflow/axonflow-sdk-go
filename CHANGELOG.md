@@ -7,6 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.2.0] - 2026-09-01: AuthZEN-native authorization surface
+
+### Added
+
+- **AuthZEN-native authorization surface (ADR-065, #204).** `Evaluate` and
+  `EvaluateAll` ask `POST /api/v1/access/evaluation` whether a subject may
+  perform an action on a resource, and return a decision an enforcement point
+  can act on. This is purely ADDITIVE. Nothing is deprecated and nothing is
+  removed: the existing decision surface (`Decide`, `DecideAndFulfill` and the
+  gateway/proxy methods) is unchanged, still supported, and wire-stable through
+  all of v11. Write NEW integrations against the AuthZEN surface, because at
+  v11 the engine behind `Evaluate` becomes the ADR-065 Policy Decision Point
+  with no wire change, so an integration written against it migrates once
+  rather than twice.
+
+- **`EvaluateAll` returns ONE decision for a bulk envelope, not one per entry.**
+  The entries are preconditions of a single operation, so they combine to the
+  least permissive outcome: one denied entry denies the operation. Anything an
+  entry omits is inherited from the shared base.
+
+- **Typed refusals: `AuthZENError`, `AsAuthZENError` and
+  `AuthZENErrorCode.Retryable()`.** The server refuses what it cannot evaluate
+  rather than evaluating around it, so an unrecognised member comes back as a
+  typed refusal naming the offending JSON Pointer, never as a decision computed
+  without it. A refusal is NOT a denial: the request was never evaluated.
+  Branch on it rather than treating every error as a deny. Only
+  `evaluation_unavailable` is retryable; every other code names something about
+  the request that a retry will not change. A `401` continues to surface as the
+  SDK's existing authentication error.
+
+- **Decision readers**: `Allowed()`, `State()` (the operational state behind
+  the boolean) and `Obligations()`. An allow can carry obligations the
+  enforcement point must discharge; a `Mandatory` obligation that cannot be
+  discharged means the operation must not proceed, even though `Allowed()`
+  reported true.
+
+- **The wire types are GENERATED, not transcribed.** `authzen_types_gen.go` is
+  emitted by `scripts/gen_authzen_types` from the platform's canonical surface
+  artifact, vendored byte-identically at `testdata/authzen-surface.json`. The
+  generated file is committed so `go get` yields working types, and a test
+  regenerates it in memory and compares bytes, so editing either the artifact
+  or the generated file without the other fails CI. Generation carries the two
+  rules no struct tag can express: the envelope's exactly-one-of, and a
+  singular member's own required set.
+
+- **Documentation.** `README.md` gains an "AuthZEN Authorization" section
+  covering the call shape, the refusal contract, bulk semantics, obligations,
+  and a table of what is evaluable today (`Subject.Type` accepts `gateway`;
+  `Action.Name` accepts `llm.completion`, `tool.call`, `agent.invoke`).
+  `docs/AUTHZEN_MIGRATION_DRAFT.md` carries the legacy-to-AuthZEN mapping table
+  and the v10.3.0 / v11.0.0 / v12.0.0 timeline. That file is a DRAFT held out
+  of the README on purpose: nothing is deprecated today. The legacy surface is
+  deprecated at v11.0.0 and removed only at v12.0.0.
+
+- **Runnable proofs**: `examples/authzen/` and
+  `runtime-e2e/authzen_evaluation/` (the latter runs against a live agent).
+
+### Migration notes
+
+- **No migration is required.** A v9.1.x integration compiles and behaves
+  identically on 9.2.0. The notes below apply only if you choose to move an
+  integration onto the new surface.
+- The mapping is mechanical: `stage: "llm"` becomes
+  `Action.Name: "llm.completion"` plus `Resource.Type: "llm"`; `stage: "tool"`
+  becomes `tool.call` plus `Resource.Type: "tool"`; `stage: "agent"` becomes
+  `agent.invoke` plus `Resource.Type: "agent"`. `target.provider` +
+  `target.model` become `Resource.ID: "provider/model"`; `target.server` +
+  `target.tool` become `Resource.ID: "server/tool"`; `query` moves to
+  `Context["args"]["query"]`. `verdict: "allow"` is `Decision: true`,
+  `"deny"` is `Decision: false`, and `"needs_approval"` is `Decision: false`
+  with a CHALLENGE state.
+- **The one behavioural difference to plan for**: the legacy surface silently
+  dropped context members it did not recognise; the AuthZEN surface refuses
+  them. Code that was quietly sending fields nothing read will start receiving
+  refusals that name those fields. That is the surface reporting something
+  true which was previously hidden.
+- **An end-user subject is not yet expressible.** `Subject.Type` must be
+  `gateway`. Integrations that authorize per end user should stay on the legacy
+  `user_token` path until the identity plane arrives at v11.
+- The full table and timeline live in `docs/AUTHZEN_MIGRATION_DRAFT.md`.
+
+### Known issues
+
+- **Go has no tri-state attribute type, and cannot express "unknown".** The
+  four sibling SDKs (TypeScript, Python, Java, Rust) ship an explicit
+  three-valued attribute wrapper - `known` / `absent` / `unknown` - so a caller
+  can state that a source could not establish a value and have the request
+  refused locally rather than evaluated as though the attribute were simply
+  missing. **Go has no such type.** `Subject.Properties`, `Resource.Properties`
+  and `Context` are plain `map[string]any`, so a Go caller can express a known
+  value and an absent one and cannot distinguish "there is no value" from "we
+  could not read the value". Resolve attributes fully before building the
+  request, and do not substitute a placeholder for one you could not resolve.
+- **A required primitive member absent from the wire decodes to Go's zero value
+  instead of being refused (#205, OPEN).** An obligation arriving without
+  `mandatory` decodes as `mandatory: false`, so an obligation that should stop
+  the operation when it cannot be discharged reads as advisory; one arriving
+  without `schema_version` decodes as `0`. Until this is fixed, an enforcement
+  point that acts on obligations should fail closed when it cannot account for
+  a `mandatory` member.
+
 ## [9.1.1] - 2026-08-20: blocked plan executions no longer report Status completed
 
 ### Fixed
