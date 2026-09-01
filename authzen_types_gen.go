@@ -93,8 +93,8 @@ const (
 	AuthZENCategoryInvalidRequest         AuthZENCategory = "invalid_request"
 )
 
-// AllAuthZENCategorys returns every value this build knows, in declaration order.
-func AllAuthZENCategorys() []AuthZENCategory {
+// AllAuthZENCategories returns every value this build knows, in declaration order.
+func AllAuthZENCategories() []AuthZENCategory {
 	return []AuthZENCategory{
 		AuthZENCategoryAllowed,
 		AuthZENCategoryNotPermitted,
@@ -110,7 +110,7 @@ func AllAuthZENCategorys() []AuthZENCategory {
 // added after this SDK was built. It IS a reason not to branch on the value as
 // though it were one of the known ones.
 func (v AuthZENCategory) Valid() bool {
-	for _, known := range AllAuthZENCategorys() {
+	for _, known := range AllAuthZENCategories() {
 		if known == v {
 			return true
 		}
@@ -464,6 +464,11 @@ func (v *AuthZENBulk) Validate() error {
 	if len(v.Evaluations) < 1 {
 		return fmt.Errorf("AuthZENBulk: evaluations needs at least 1 entry")
 	}
+	for i := range v.Evaluations {
+		if err := v.Evaluations[i].Validate(); err != nil {
+			return fmt.Errorf("AuthZENBulk.evaluations[%d]: %w", i, err)
+		}
+	}
 	return nil
 }
 
@@ -507,6 +512,11 @@ func (v *AuthZENEnvelope) Validate() error {
 	}
 	if v.Evaluation != nil && v.Evaluation.Subject == nil {
 		return fmt.Errorf("AuthZENEnvelope: evaluation has no subject; it has no shared base to inherit one from")
+	}
+	if v.Evaluation != nil {
+		if err := v.Evaluation.Validate(); err != nil {
+			return fmt.Errorf("AuthZENEnvelope.evaluation: %w", err)
+		}
 	}
 	if v.Evaluations != nil {
 		if err := v.Evaluations.Validate(); err != nil {
@@ -567,6 +577,32 @@ type AuthZENRequest struct {
 	Resource *AuthZENResource `json:"resource,omitempty"`
 
 	Context map[string]any `json:"context,omitempty"`
+}
+
+// Validate reports whether v carries what the server requires.
+//
+// Calling it is optional: the server enforces the same rules and answers with
+// a typed AuthZENError. It exists so a caller can fail before a round trip.
+func (v *AuthZENRequest) Validate() error {
+	if v == nil {
+		return fmt.Errorf("AuthZENRequest: is nil")
+	}
+	if v.Subject != nil {
+		if err := v.Subject.Validate(); err != nil {
+			return fmt.Errorf("AuthZENRequest.subject: %w", err)
+		}
+	}
+	if v.Action != nil {
+		if err := v.Action.Validate(); err != nil {
+			return fmt.Errorf("AuthZENRequest.action: %w", err)
+		}
+	}
+	if v.Resource != nil {
+		if err := v.Resource.Validate(); err != nil {
+			return fmt.Errorf("AuthZENRequest.resource: %w", err)
+		}
+	}
+	return nil
 }
 
 // AuthZENResource is The AuthZEN resource object.

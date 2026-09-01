@@ -89,6 +89,30 @@ func main() {
 		}
 	}
 
+	// The answer must satisfy the contract this SDK was generated from, and the
+	// boolean must be the collapse of the state.
+	//
+	// The client now refuses a 200 whose context is absent or incomplete, so
+	// reaching this line at all is evidence the live server sends a complete
+	// one; asserting it here rather than trusting that keeps the driver honest
+	// if the refusal is ever loosened. The agreement leg is the one no stub can
+	// establish: a server that answered decision=true with state=CHALLENGE would
+	// be telling two different stories about the same evaluation.
+	if err == nil {
+		switch {
+		case allow.Validate() != nil:
+			check("the live answer satisfies the generated contract", allow.Validate())
+		// Read the RAW boolean, not Allowed(): Allowed() now requires the two to
+		// agree, so comparing it against the state could never report a
+		// disagreement. The wire field is the only thing that can.
+		case allow.Decision != (allow.State() == axonflow.AuthZENOperationalStateAllow):
+			check("the live answer satisfies the generated contract",
+				fmt.Errorf("decision=%v and state=%s disagree", allow.Decision, allow.State()))
+		default:
+			check("the live answer satisfies the generated contract", nil)
+		}
+	}
+
 	// -- 2. a denial is a DECISION, not an error -----------------------------
 	deny, err := client.Evaluate(ctx, request(blocked))
 	check("a blocked query returns a decision rather than an error", err)

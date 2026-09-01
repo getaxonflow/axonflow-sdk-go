@@ -91,8 +91,16 @@ func AsAuthZENError(err error) (*AuthZENError, bool) {
 // Read this rather than comparing the state yourself. Exactly one state permits
 // execution, and a caller that branches on anything else -- "not DENY", say --
 // treats a CHALLENGE or an ERROR as permission.
+//
+// It requires the boolean and the state to AGREE. Per the contract `decision`
+// is the collapse of the state: ALLOW is true and every other state is false.
+// A response where the two disagree was not evaluated to either of them, so it
+// cannot be acted on, and reading only the boolean turned {decision:true,
+// state:CHALLENGE} into permission. The state lives in the profile context, so
+// a decision carrying no context is not an allow either -- which is the same
+// reading State gives it.
 func (r *AuthZENResponse) Allowed() bool {
-	return r != nil && r.Decision
+	return r != nil && r.Decision && r.Context != nil && r.Context.State == AuthZENOperationalStateAllow
 }
 
 // State returns the four-valued operational state, or ERROR when the server did
@@ -228,6 +236,28 @@ func (c *AxonFlowClient) evaluateEnvelope(ctx context.Context, env AuthZENEnvelo
 		return nil, fmt.Errorf("failed to decode the AuthZEN response: %w; body=%s", err, string(raw))
 	}
 
+	// A 200 carrying NO profile context is refused, for the same reason and by
+	// the same argument as the mismatched profile below.
+	//
+	// An absent context IS the blanked context. The SDK always negotiates -- the
+	// header goes out above, unconditionally -- and the contract returns the
+	// context to every enforcement point that negotiated, so an answer without
+	// one means the negotiation was not honoured. That is exactly the case where
+	// obligations may exist and be unreadable. Returning the decision produced an
+	// object that contradicted itself: Allowed() reported true while State()
+	// reported ERROR and Obligations() reported nil, indistinguishable from "no
+	// obligations".
+	if out.Context == nil {
+		return nil, &AuthZENError{
+			Code: AuthZENErrorCodeEvaluationUnavailable,
+			Message: fmt.Sprintf(
+				"the server answered without a profile context, though this build negotiated %q. "+
+					"The state, the obligations and the approval challenge that constrain an allow are "+
+					"carried in that payload, so the decision cannot be acted on safely.",
+				AuthZENProfileV1),
+		}
+	}
+
 	// A profile context from a version this build does not know is REFUSED, not
 	// silently dropped.
 	//
@@ -242,7 +272,7 @@ func (c *AxonFlowClient) evaluateEnvelope(ctx context.Context, env AuthZENEnvelo
 	// Refusing is the only answer that does not misreport. It is also the one
 	// that matters at the v11 cutover, which is precisely when a server starts
 	// speaking a profile an older SDK does not know.
-	if out.Context != nil && out.Context.Profile != AuthZENProfileV1 {
+	if out.Context.Profile != AuthZENProfileV1 {
 		return nil, &AuthZENError{
 			Code: AuthZENErrorCodeEvaluationUnavailable,
 			Message: fmt.Sprintf(
@@ -250,6 +280,26 @@ func (c *AxonFlowClient) evaluateEnvelope(ctx context.Context, env AuthZENEnvelo
 					"The obligations and approval challenge that constrain an allow are carried in that "+
 					"payload, so the decision cannot be acted on safely. Upgrade the SDK.",
 				out.Context.Profile, AuthZENProfileV1),
+		}
+	}
+
+	// The decoded response is held to the contract it was generated from, not
+	// merely to what the decoder accepts.
+	//
+	// The request path validates before the round trip; the response path did
+	// not validate at all, so a context stripped to the profile alone decoded
+	// cleanly and yielded an allow whose state was the empty string -- a value
+	// the SDK's own generated Valid rejects. Validate recurses, so this also
+	// covers an obligation the caller is expected to discharge but that names no
+	// source policy.
+	if err := out.Validate(); err != nil {
+		return nil, &AuthZENError{
+			Code: AuthZENErrorCodeEvaluationUnavailable,
+			Message: fmt.Sprintf(
+				"the server's answer does not satisfy the AuthZEN contract this build was generated "+
+					"from (%s): %v. A decision missing a member the contract requires cannot be acted "+
+					"on, because the missing member may be the one that constrains it.",
+				AuthZENContractSchemaVersion, err),
 		}
 	}
 	return &out, nil

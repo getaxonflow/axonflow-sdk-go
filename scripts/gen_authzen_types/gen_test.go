@@ -140,6 +140,97 @@ func TestGeneratedFileCoversTheWholeArtifact(t *testing.T) {
 	}
 }
 
+// TestPluralTypeNameFormsTheEnglishPlural pins the exported accessor names.
+//
+// The expectations are written by hand rather than derived from the emitter, so
+// this is a statement about the names and not a restatement of the code that
+// makes them. It matters because those names are exported: AllAuthZENCategorys
+// would be a compatibility commitment for the life of the surface, and the same
+// emitter shape ships in four sibling SDKs.
+func TestPluralTypeNameFormsTheEnglishPlural(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		// The one the naive rule got wrong, and the five it happened to get right.
+		{"AuthZENCategory", "AuthZENCategories"},
+		{"AuthZENErrorCode", "AuthZENErrorCodes"},
+		{"AuthZENIdentifierKind", "AuthZENIdentifierKinds"},
+		{"AuthZENObligationType", "AuthZENObligationTypes"},
+		{"AuthZENOperationalState", "AuthZENOperationalStates"},
+		{"AuthZENReasonCode", "AuthZENReasonCodes"},
+		// Shapes a later enum could arrive in.
+		{"AuthZENPolicy", "AuthZENPolicies"},
+		{"AuthZENKey", "AuthZENKeys"},
+		{"AuthZENStatus", "AuthZENStatuses"},
+		{"AuthZENBranch", "AuthZENBranches"},
+		{"AuthZENIndex", "AuthZENIndices"},
+	} {
+		if got := pluralTypeName(tc.in); got != tc.want {
+			t.Errorf("pluralTypeName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestGeneratedAccessorsCarryThePluralName checks the committed file, because
+// the rule above is only worth anything if the emission uses it in BOTH places
+// it spells the accessor: the declaration and the Valid loop that calls it.
+func TestGeneratedAccessorsCarryThePluralName(t *testing.T) {
+	s := loadSurface(t)
+	src, err := os.ReadFile(repoOutput)
+	if err != nil {
+		t.Fatalf("reading %s: %v", repoOutput, err)
+	}
+	got := string(src)
+	if strings.Contains(got, "AllAuthZENCategorys") {
+		t.Error("the generated file still carries the naive plural AllAuthZENCategorys")
+	}
+	for _, e := range s.Enums {
+		name := goTypeName(e.Name)
+		all := "All" + pluralTypeName(name)
+		if !strings.Contains(got, "func "+all+"() []"+name+" {") {
+			t.Errorf("the generated file declares no %s()", all)
+		}
+		if !strings.Contains(got, "range "+all+"()") {
+			t.Errorf("%s.Valid does not call %s()", name, all)
+		}
+	}
+}
+
+// TestATypeReachingAValidatedMemberGetsAValidate pins the fixed point.
+//
+// A type with no required member of its own still needs a Validate when it
+// carries a member whose type has one. Without it the local checks were
+// asymmetric: the envelope nil-checked its singular's subject and nothing
+// called the subject's own validator, so a subject left at the Go zero value
+// went to the server as "type": "".
+func TestATypeReachingAValidatedMemberGetsAValidate(t *testing.T) {
+	s := loadSurface(t)
+	validated := computeValidated(s)
+
+	for _, tp := range s.Types {
+		for _, f := range tp.Fields {
+			ref, ok := validatableRef(f.Type)
+			if ok && validated[ref] && !validated[tp.Name] {
+				t.Errorf("%s.%s reaches %s, which validates, but %s has no Validate to call it from",
+					tp.Name, f.Name, ref, tp.Name)
+			}
+		}
+	}
+
+	// The anti-vacuity leg: the loop above is satisfied by a surface where
+	// every type qualifies on its own account, which is what it looked like
+	// before. At least one type must qualify ONLY through composition, or the
+	// fixed point is doing nothing and the assertion proves nothing.
+	composed := 0
+	for _, tp := range s.Types {
+		if validated[tp.Name] && !typeHasOwnValidate(tp) {
+			composed++
+		}
+	}
+	if composed == 0 {
+		t.Error("no type in the artifact qualifies for a Validate through a member's type; " +
+			"the assertion above cannot fail and proves nothing")
+	}
+}
+
 // TestParseSurfaceRefusesWhatItCannotGenerate pins the fail-loud rule.
 //
 // An artifact member this emitter does not understand is a construct the

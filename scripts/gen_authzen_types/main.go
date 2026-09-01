@@ -139,10 +139,7 @@ const AuthZENContractSchemaVersion = %q
 	}
 	// Computed BEFORE emitting, because a type's validator calls its children's
 	// and the children may be emitted after it.
-	validated := map[string]bool{}
-	for _, t := range s.Types {
-		validated[t.Name] = typeHasValidate(t)
-	}
+	validated := computeValidated(s)
 	for _, t := range s.Types {
 		if err := emitType(&body, s, t, validated); err != nil {
 			return nil, err
@@ -170,6 +167,9 @@ const AuthZENContractSchemaVersion = %q
 
 func emitEnum(b *strings.Builder, e Enum) {
 	name := goTypeName(e.Name)
+	// Computed once and used by both sites below. Two spellings of the same
+	// accessor name is one of them not compiling.
+	all := "All" + pluralTypeName(name)
 	fmt.Fprintf(b, "// %s is a closed set of values the server may send.\n", name)
 	fmt.Fprintf(b, "//\n")
 	fmt.Fprintf(b, "// It is a string type rather than an integer so an unrecognised value from a\n")
@@ -181,8 +181,8 @@ func emitEnum(b *strings.Builder, e Enum) {
 	}
 	fmt.Fprintf(b, ")\n\n")
 
-	fmt.Fprintf(b, "// All%ss returns every value this build knows, in declaration order.\n", name)
-	fmt.Fprintf(b, "func All%ss() []%s {\n\treturn []%s{\n", name, name, name)
+	fmt.Fprintf(b, "// %s returns every value this build knows, in declaration order.\n", all)
+	fmt.Fprintf(b, "func %s() []%s {\n\treturn []%s{\n", all, name, name)
 	for _, v := range e.Values {
 		fmt.Fprintf(b, "\t\t%s%s,\n", name, goConstSuffix(v))
 	}
@@ -193,7 +193,7 @@ func emitEnum(b *strings.Builder, e Enum) {
 	fmt.Fprintf(b, "// A false result is not necessarily an error: a newer server may send a value\n")
 	fmt.Fprintf(b, "// added after this SDK was built. It IS a reason not to branch on the value as\n")
 	fmt.Fprintf(b, "// though it were one of the known ones.\n")
-	fmt.Fprintf(b, "func (v %s) Valid() bool {\n\tfor _, known := range All%ss() {\n\t\tif known == v {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\n", name, name)
+	fmt.Fprintf(b, "func (v %s) Valid() bool {\n\tfor _, known := range %s() {\n\t\tif known == v {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\n", name, all)
 }
 
 func emitType(b *strings.Builder, s *Surface, t Type, validated map[string]bool) error {
@@ -238,7 +238,7 @@ func emitType(b *strings.Builder, s *Surface, t Type, validated map[string]bool)
 // happily and builds requests the server refuses, which is the least useful
 // place for a caller to find out.
 func emitValidate(b *strings.Builder, name string, t Type, validated map[string]bool) {
-	if !typeHasValidate(t) {
+	if !validated[t.Name] {
 		return
 	}
 
@@ -300,14 +300,66 @@ func emitValidate(b *strings.Builder, name string, t Type, validated map[string]
 	fmt.Fprintf(b, "\treturn nil\n}\n\n")
 }
 
-// typeHasValidate decides, in one place, whether a type gets a Validate.
+// computeValidated decides, for every type at once, which ones get a Validate.
 //
-// It is shared by the emitter and by the NESTED-call emission below. Two copies
-// of this judgement would be the bug this whole file exists to avoid: a parent
-// calling Validate on a child that has none does not compile, and a parent
-// SKIPPING a child that has one is a validator that reports OK on a request the
-// server refuses.
-func typeHasValidate(t Type) bool {
+// It is a FIXED POINT rather than a per-type predicate because the reasons
+// compose: a type with no required member of its own still needs a Validate
+// when it carries a member whose type has one. Without that step the local
+// checks were asymmetric -- an envelope nil-checked its singular's subject and
+// never called the subject's own validator, so a subject whose type was left at
+// the Go zero value went out as "type": "" and came back as a refusal, which is
+// precisely the round trip these validators exist to save.
+//
+// One map, computed before any emission, is also what keeps the two emission
+// sites in step: a parent calling Validate on a child that has none does not
+// compile, and a parent SKIPPING a child that has one is a validator that
+// reports OK on a request the server refuses.
+func computeValidated(s *Surface) map[string]bool {
+	validated := map[string]bool{}
+	for _, t := range s.Types {
+		if typeHasOwnValidate(t) {
+			validated[t.Name] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, t := range s.Types {
+			if validated[t.Name] {
+				continue
+			}
+			for _, f := range t.Fields {
+				if ref, ok := validatableRef(f.Type); ok && validated[ref] {
+					validated[t.Name] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return validated
+}
+
+// validatableRef names the type a field would recurse into, for exactly the two
+// shapes emitValidate knows how to emit a call for.
+//
+// Keeping this predicate and that emission in one correspondence is the point:
+// a reason to have a Validate that the emitter cannot act on would produce a
+// validator whose body checks nothing.
+func validatableRef(tr TypeRef) (string, bool) {
+	switch tr.Kind {
+	case "ref":
+		return tr.Ref, true
+	case "array":
+		if tr.Items != nil && tr.Items.Kind == "ref" {
+			return tr.Items.Ref, true
+		}
+	}
+	return "", false
+}
+
+// typeHasOwnValidate reports whether a type needs a Validate on its own account,
+// before any member's type is considered.
+func typeHasOwnValidate(t Type) bool {
 	if len(t.ExactlyOneOf) > 0 || hasMemberRequirements(t) {
 		return true
 	}
@@ -393,6 +445,58 @@ func goType(s *Surface, tr TypeRef, optional bool) (string, error) {
 // require choosing a new convention under time pressure.
 func goTypeName(artifactName string) string {
 	return "AuthZEN" + pascal(strings.TrimPrefix(artifactName, "authzen_"))
+}
+
+// irregularPlurals covers the words the rules in pluralTypeName get wrong.
+//
+// Each entry is a word whose plural those rules would form regularly and
+// incorrectly; anything they already handle stays out, because a table entry
+// duplicating a rule is a second place to keep in step.
+var irregularPlurals = map[string]string{
+	"Index":     "Indices",
+	"Vertex":    "Vertices",
+	"Matrix":    "Matrices",
+	"Criterion": "Criteria",
+}
+
+// pluralTypeName names the All<...> accessor for an enum type.
+//
+// The rule was name+"s", which produced AllAuthZENCategorys. That name is
+// EXPORTED, so it is a compatibility commitment for as long as the surface
+// lives, and the same emitter shape ships in four sibling SDKs -- the cheapest
+// moment to be right about it is before any of them inherits it.
+//
+// The rules below the table are what stop this becoming a list somebody has to
+// remember to extend: a later enum named authzen_severity pluralises correctly
+// without an entry.
+func pluralTypeName(name string) string {
+	head, last := splitLastWord(name)
+	if p, ok := irregularPlurals[last]; ok {
+		return head + p
+	}
+	lower := strings.ToLower(last)
+	switch {
+	// A consonant before the y: Category -> Categories, but Key -> Keys.
+	case len(lower) >= 2 && strings.HasSuffix(lower, "y") &&
+		!strings.ContainsRune("aeiou", rune(lower[len(lower)-2])):
+		return head + last[:len(last)-1] + "ies"
+	case strings.HasSuffix(lower, "s"), strings.HasSuffix(lower, "x"), strings.HasSuffix(lower, "z"),
+		strings.HasSuffix(lower, "ch"), strings.HasSuffix(lower, "sh"):
+		return head + last + "es"
+	default:
+		return head + last + "s"
+	}
+}
+
+// splitLastWord separates a PascalCase name's final word, which is the only one
+// the plural applies to: AuthZENCategory pluralises Category, not AuthZEN.
+func splitLastWord(name string) (head, last string) {
+	for i := len(name) - 1; i > 0; i-- {
+		if name[i] >= 'A' && name[i] <= 'Z' {
+			return name[:i], name[i:]
+		}
+	}
+	return "", name
 }
 
 func goFieldName(wire string) string {
