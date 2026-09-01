@@ -252,7 +252,7 @@ func (c *AxonFlowClient) maybeSendHeartbeatAsync() {
 // heartbeat gate.
 //
 // IMPORTANT: This wrapper must NOT be called from telemetry code itself
-// (sendTelemetryPingNow, detectPlatformVersion). Those use raw http.Client
+// (sendTelemetryPingNow, probePlatformHealth). Those use raw http.Client
 // instances to avoid recursive heartbeat triggering.
 func (c *AxonFlowClient) doHttpRequest(httpClient *http.Client, req *http.Request) (*http.Response, error) {
 	c.maybeSendHeartbeatAsync()

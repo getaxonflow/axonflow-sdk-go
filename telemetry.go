@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -56,6 +57,45 @@ type telemetryPayload struct {
 	// sentinel. Always emitted. See axonflow-landing/content/privacy.html
 	// for the customer-facing commitment that covers this field.
 	OrgID string `json:"org_id"`
+	// LicenseTier is the licence tier the connected platform reported on
+	// its own /health response ("community", "evaluation", "Enterprise",
+	// the csaas "Plus" alias for EnterprisePlus, or the transient
+	// "starting"). Coarse adoption signal only — no licence key, no
+	// expiry, no seat count, no customer name. Issue #3619.
+	//
+	// THREE SIMILARLY-NAMED CONCEPTS LIVE NEARBY. Do not merge them:
+	//
+	//  1. DeploymentMode (this struct, `deployment_mode`) — SDK-derived
+	//     TOPOLOGY: self_hosted | community_saas | unknown, classified
+	//     from the endpoint URL. Says where the platform runs.
+	//  2. The platform's own DEPLOYMENT_MODE env var — a server-side
+	//     setting that decides which schema/tables the binary uses. Never
+	//     read by this SDK and never sent on this field.
+	//  3. LicenseTier (this field, `license_tier`) — what the platform
+	//     REPORTED about its own licensing, for adoption analytics.
+	//
+	// ITEM 3 IS NOT AN ENTITLEMENT FACT. This SDK relays whatever /health
+	// returned, and the receiver cannot verify the relay: whoever operates
+	// the endpoint the client was pointed at controls the value completely.
+	// It must never gate entitlement, unlock a feature, or enter any
+	// authorization or billing decision. See axonflow-enterprise#3619.
+	//
+	// A community-mode binary can run on any topology and vice versa, so
+	// neither field is derivable from the other.
+	//
+	// Sent verbatim: the value is reported exactly as /health returned it.
+	// Casing and alias folding is the receiver's job (checkpoint-service
+	// NormalizeLicenseTier), deliberately NOT duplicated here — a client
+	// that folded locally would silently mask a platform emitting a tier
+	// this SDK build predates.
+	//
+	// nil (omitted from the wire) means NOT LEARNED — /health unreachable,
+	// non-2xx, unparseable, or carrying no "tier" key. Absent must never
+	// become a known value: emitting "community" for a platform we could
+	// not reach would be a false claim about a customer's deployment. The
+	// receiver preserves omission for legacy pings, so an omitted field
+	// reads as "unknown", not as any particular tier.
+	LicenseTier *string `json:"license_tier,omitempty"`
 }
 
 // DeploymentMode classifications for telemetry (v1 schema, axonflow-enterprise#2008).
@@ -165,44 +205,90 @@ type telemetryResponse struct {
 	LatestVersion string `json:"latest_version"`
 }
 
-// healthVersionResponse is a minimal struct for extracting the version from /health.
-type healthVersionResponse struct {
-	Version string `json:"version"`
+// healthProbe carries what a single /health fetch established. Each field is
+// INDEPENDENT: a response that carries one but not the other yields a
+// partially-populated result rather than discarding both. A nil field means
+// "not learned" and is omitted from the wire — it never degrades to a
+// default (see telemetryPayload.LicenseTier).
+type healthProbe struct {
+	PlatformVersion *string
+	LicenseTier     *string
 }
 
-// detectPlatformVersion calls the agent's /health endpoint to get the platform
-// version. Returns nil on any failure. The caller's context controls the
-// deadline so the health probe and the checkpoint POST share one budget —
-// preventing the two 3-second timeouts from stacking into ~6s of blocking on
-// unreachable endpoints (see issue #1693).
-func detectPlatformVersion(ctx context.Context, endpoint string) *string {
+// maxHealthBodyBytes bounds the /health response the probe will parse.
+// The real response is a few hundred bytes; 1 MiB is orders of magnitude
+// above any legitimate body while capping how much a misbehaving or hostile
+// endpoint can make the telemetry goroutine buffer. Exceeding it fails the
+// decode, which fails open exactly like every other health-probe failure —
+// both fields stay nil and the ping is still sent without them.
+const maxHealthBodyBytes = 1 << 20
+
+// probePlatformHealth calls the agent's /health endpoint ONCE and extracts
+// every telemetry dimension it carries. Returns a zero healthProbe (both
+// fields nil) on any failure — unreachable endpoint, non-2xx, unparseable
+// body — so telemetry degrades to omitting the fields and never fails the
+// ping or surfaces an error to the caller.
+//
+// The caller's context controls the deadline so the health probe and the
+// checkpoint POST share one budget — preventing the two 3-second timeouts
+// from stacking into ~6s of blocking on unreachable endpoints (issue #1693).
+//
+// This is the SDK's only /health fetch on the telemetry path; the licence
+// tier rides along on the response already being fetched for the version.
+// Adding a second request here would double the telemetry path's blocking
+// budget and its failure surface — do not.
+func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 	if endpoint == "" {
-		return nil
+		return healthProbe{}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/health", nil)
 	if err != nil {
-		return nil
+		return healthProbe{}
 	}
 
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
-		return nil
+		return healthProbe{}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil
+		return healthProbe{}
 	}
 
-	var health healthVersionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
-		return nil
+	// Decoded into a generic map rather than a typed struct ON PURPOSE.
+	//
+	// With a struct carrying both `version` and `tier`, ONE badly-typed
+	// member fails the WHOLE decode — so a platform answering
+	// {"version":"10.3.0","tier":42} would have made this return nothing and
+	// silently dropped platform_version, a field that worked before the tier
+	// was added. A new dimension must not be able to regress an existing one.
+	//
+	// Decoding per-field also matches the Python, TypeScript and Java SDKs,
+	// which all type-check each member individually. Bounded by
+	// maxHealthBodyBytes above, so the map cannot grow unbounded.
+	var health map[string]any
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxHealthBodyBytes)).Decode(&health); err != nil {
+		return healthProbe{}
 	}
-	if health.Version == "" {
-		return nil
+
+	// Each field is promoted independently, and only when it is a non-empty
+	// STRING. An absent key, a non-string value, and an explicit "" are all
+	// "not learned" — the pointer stays nil rather than becoming a pointer to
+	// "", which would put a meaningless empty value on the wire despite
+	// omitempty, or a coerced value that misrepresents what the platform said.
+	var probe healthProbe
+	if v, ok := health["version"].(string); ok && v != "" {
+		probe.PlatformVersion = &v
 	}
-	return &health.Version
+	if t, ok := health["tier"].(string); ok && t != "" {
+		// Verbatim, including the transient "starting" the agent returns
+		// before its licence is validated. "starting" is a real signal the
+		// receiver buckets deliberately, not an error to filter client-side.
+		probe.LicenseTier = &t
+	}
+	return probe
 }
 
 // generateInstanceID creates a random UUID v4 string without external dependencies.
@@ -283,8 +369,12 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	// community_saas | unknown.
 	deploymentMode := ClassifyDeploymentMode(c.config.Endpoint)
 
-	// Detect platform version from health endpoint (uses the shared deadline).
-	platformVersion := detectPlatformVersion(ctx, c.config.Endpoint)
+	// One /health fetch supplies both platform_version and license_tier
+	// (uses the shared deadline). Re-read on every heartbeat rather than
+	// cached for the process lifetime: a licence can be applied to, or
+	// expire on, a running platform, and a cached tier would keep
+	// reporting the pre-change tier for as long as the client lives.
+	probe := probePlatformHealth(ctx, c.config.Endpoint)
 
 	// Stream classifier: sandbox-mode clients self-tag so analytics can
 	// distinguish dev/test pings from production. Production-mode clients
@@ -300,7 +390,7 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		TelemetryType:   "sdk",
 		SDK:             "go",
 		SDKVersion:      Version,
-		PlatformVersion: platformVersion,
+		PlatformVersion: probe.PlatformVersion,
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
 		RuntimeVersion:  strings.TrimPrefix(runtime.Version(), "go"),
@@ -310,6 +400,7 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		InstanceID:      generateInstanceID(),
 		Stream:          stream,
 		OrgID:           telemetryOrgID(),
+		LicenseTier:     probe.LicenseTier,
 	}
 
 	body, err := json.Marshal(payload)
