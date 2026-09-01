@@ -2,6 +2,7 @@ package axonflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -663,5 +664,284 @@ func TestSendTelemetryPing_OrgIDAlwaysPresent(t *testing.T) {
 
 	if !strings.Contains(string(rawBody), `"org_id":"local-dev-org"`) {
 		t.Errorf("expected wire body to ALWAYS contain org_id (sentinel when env unset), got: %s", string(rawBody))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// license_tier telemetry field (#3619)
+//
+// Contract under test: the platform's licence tier rides along on the /health
+// response the SDK ALREADY fetches for platform_version, is forwarded to the
+// checkpoint receiver verbatim, and is OMITTED — never defaulted — whenever it
+// could not be learned.
+// ---------------------------------------------------------------------------
+
+// newTierHealthServer starts a stand-in platform whose /health returns the
+// supplied raw JSON body and status code. Returns the base endpoint the SDK
+// should be configured with.
+func newTierHealthServer(t *testing.T, status int, body string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// captureTelemetryWire runs one ping against a capturing checkpoint receiver
+// with the client pointed at platformEndpoint, and returns the raw wire body.
+func captureTelemetryWire(t *testing.T, platformEndpoint string) []byte {
+	t.Helper()
+	t.Setenv("AXONFLOW_TELEMETRY", "")
+
+	var rawBody atomic.Value
+	rawBody.Store([]byte{})
+	checkpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		rawBody.Store(b)
+		_ = json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+	}))
+	defer checkpoint.Close()
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", checkpoint.URL)
+
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode:         "production",
+			ClientID:     "id",
+			ClientSecret: "sec",
+			Endpoint:     platformEndpoint,
+		},
+	}
+	client.sendTelemetryPing()
+	return rawBody.Load().([]byte)
+}
+
+// TestTelemetryWireCarriesTierVerbatimForEveryPlatformEmittedValue asserts
+// that each value the platform's currentLicenseTier() can produce reaches the
+// wire byte-for-byte, with no client-side case folding or alias mapping —
+// normalization is the receiver's job (checkpoint-service
+// NormalizeLicenseTier), and folding here would mask a tier this SDK build
+// predates.
+func TestTelemetryWireCarriesTierVerbatimForEveryPlatformEmittedValue(t *testing.T) {
+	// Exactly the values platform/agent/run.go currentLicenseTier() can
+	// return, plus the csaas "Plus" alias its health serializer emits.
+	cases := []string{
+		"community",  // unlicensed default
+		"evaluation", // trial licence
+		"Enterprise", // paid tier
+		"Plus",       // csaas alias for EnterprisePlus
+		"starting",   // transient pre-init — a real signal, not an error
+	}
+
+	for _, tier := range cases {
+		t.Run(tier, func(t *testing.T) {
+			endpoint := newTierHealthServer(t, http.StatusOK,
+				`{"status":"healthy","version":"10.3.0","tier":"`+tier+`"}`)
+
+			body := captureTelemetryWire(t, endpoint)
+
+			// Wire-level assertion on the literal JSON, not on a struct
+			// decode: a mutation dropping the `json:"license_tier"` tag
+			// would otherwise be silently re-attached by Go's field-name
+			// fallback and the test would still pass.
+			want := `"license_tier":"` + tier + `"`
+			if !strings.Contains(string(body), want) {
+				t.Errorf("wire body missing %s\ngot: %s", want, string(body))
+			}
+		})
+	}
+}
+
+// TestTelemetryWireOmitsTierWheneverHealthDidNotYieldOne is the load-bearing
+// fail-open assertion. For every way the health probe can fail, the ping must
+// still be delivered and the field must be ABSENT from the JSON — never ""
+// and never a substituted default. Emitting "community" for a platform we
+// could not reach would be a false claim about a customer's deployment.
+func TestTelemetryWireOmitsTierWheneverHealthDidNotYieldOne(t *testing.T) {
+	unreachable := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	unreachableURL := unreachable.URL
+	unreachable.Close() // nothing is listening at this address any more
+
+	cases := []struct {
+		name     string
+		endpoint func(t *testing.T) string
+	}{
+		{
+			name:     "endpoint not configured",
+			endpoint: func(*testing.T) string { return "" },
+		},
+		{
+			name:     "platform unreachable (connection refused)",
+			endpoint: func(*testing.T) string { return unreachableURL },
+		},
+		{
+			name: "health returns 500",
+			endpoint: func(t *testing.T) string {
+				return newTierHealthServer(t, http.StatusInternalServerError, `{"tier":"Enterprise"}`)
+			},
+		},
+		{
+			name: "health returns malformed JSON",
+			endpoint: func(t *testing.T) string {
+				return newTierHealthServer(t, http.StatusOK, `{"tier":"Enterprise"`)
+			},
+		},
+		{
+			name: "health returns JSON without a tier key",
+			endpoint: func(t *testing.T) string {
+				return newTierHealthServer(t, http.StatusOK, `{"status":"healthy","version":"10.3.0"}`)
+			},
+		},
+		{
+			name: "health returns an empty tier value",
+			endpoint: func(t *testing.T) string {
+				return newTierHealthServer(t, http.StatusOK, `{"version":"10.3.0","tier":""}`)
+			},
+		},
+		{
+			name: "health returns a body over the parse cap",
+			endpoint: func(t *testing.T) string {
+				oversized := `{"tier":"Enterprise","pad":"` + strings.Repeat("x", maxHealthBodyBytes+1) + `"}`
+				return newTierHealthServer(t, http.StatusOK, oversized)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := captureTelemetryWire(t, tc.endpoint(t))
+
+			// The ping itself must still have been delivered — telemetry
+			// degrades, it does not stop.
+			if len(body) == 0 {
+				t.Fatalf("no ping delivered; the health-probe failure must not suppress the ping")
+			}
+			if !strings.Contains(string(body), `"telemetry_type":"sdk"`) {
+				t.Errorf("ping body is not a well-formed sdk ping: %s", string(body))
+			}
+			// The field must be absent entirely, not present-and-empty.
+			if strings.Contains(string(body), "license_tier") {
+				t.Errorf("license_tier must be OMITTED when not learned, got: %s", string(body))
+			}
+		})
+	}
+}
+
+// TestHealthProbeLearnsVersionAndTierIndependently pins that one field's
+// absence never discards the other. The pre-#3619 probe returned early when
+// `version` was empty; had the tier been read after that guard, a platform
+// answering with a tier but no version would have reported no tier at all.
+func TestHealthProbeLearnsVersionAndTierIndependently(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		wantVersion *string
+		wantTier    *string
+	}{
+		{
+			name:        "both present",
+			body:        `{"version":"10.3.0","tier":"Enterprise"}`,
+			wantVersion: strPtr("10.3.0"),
+			wantTier:    strPtr("Enterprise"),
+		},
+		{
+			name:        "tier present, version absent",
+			body:        `{"tier":"Enterprise"}`,
+			wantVersion: nil,
+			wantTier:    strPtr("Enterprise"),
+		},
+		{
+			name:        "version present, tier absent",
+			body:        `{"version":"10.3.0"}`,
+			wantVersion: strPtr("10.3.0"),
+			wantTier:    nil,
+		},
+		{
+			name:        "neither present",
+			body:        `{"status":"healthy"}`,
+			wantVersion: nil,
+			wantTier:    nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint := newTierHealthServer(t, http.StatusOK, tc.body)
+			ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
+			defer cancel()
+
+			probe := probePlatformHealth(ctx, endpoint)
+
+			assertStrPtr(t, "PlatformVersion", probe.PlatformVersion, tc.wantVersion)
+			assertStrPtr(t, "LicenseTier", probe.LicenseTier, tc.wantTier)
+		})
+	}
+}
+
+// TestTierProbeDoesNotStackASecondTimeoutOntoTheTelemetryBudget guards issue
+// #1693: the health probe and the checkpoint POST share ONE caller-supplied
+// deadline. Reading the tier must not introduce a second request or a second
+// timeout. A slow /health therefore consumes the shared budget and the whole
+// ping returns within it, rather than blocking for probe+POST back to back.
+func TestTierProbeDoesNotStackASecondTimeoutOntoTheTelemetryBudget(t *testing.T) {
+	// A platform that accepts the connection and then never answers.
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer slow.Close()
+
+	budget := 400 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+
+	start := time.Now()
+	probe := probePlatformHealth(ctx, slow.URL)
+	elapsed := time.Since(start)
+
+	if probe.LicenseTier != nil || probe.PlatformVersion != nil {
+		t.Errorf("a stalled /health must yield nothing, got %+v", probe)
+	}
+	// Bounded by the shared deadline, not by an independent per-probe
+	// timeout. Generous slack for CI scheduling, but far below the ~2x
+	// that a stacked second timeout would produce.
+	if elapsed > budget+300*time.Millisecond {
+		t.Errorf("probe took %v, exceeds the shared %v budget — a second timeout is stacking", elapsed, budget)
+	}
+}
+
+// TestLicenseTierDoesNotAlterDeploymentMode pins that the three
+// similarly-named concepts stay separate: the SDK's endpoint-derived
+// TOPOLOGY dimension must be byte-identical whether or not the platform
+// reported an edition.
+func TestLicenseTierDoesNotAlterDeploymentMode(t *testing.T) {
+	withTier := newTierHealthServer(t, http.StatusOK, `{"version":"10.3.0","tier":"Enterprise"}`)
+	withoutTier := newTierHealthServer(t, http.StatusOK, `{"version":"10.3.0"}`)
+
+	for _, endpoint := range []string{withTier, withoutTier} {
+		body := captureTelemetryWire(t, endpoint)
+		// Both stand-ins are 127.0.0.1 httptest servers => self_hosted.
+		if !strings.Contains(string(body), `"deployment_mode":"`+DeploymentModeSelfHosted+`"`) {
+			t.Errorf("deployment_mode changed by the tier field; body: %s", string(body))
+		}
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+func assertStrPtr(t *testing.T, field string, got, want *string) {
+	t.Helper()
+	switch {
+	case want == nil && got != nil:
+		t.Errorf("%s = %q, want nil (not learned)", field, *got)
+	case want != nil && got == nil:
+		t.Errorf("%s = nil, want %q", field, *want)
+	case want != nil && got != nil && *got != *want:
+		t.Errorf("%s = %q, want %q", field, *got, *want)
 	}
 }
