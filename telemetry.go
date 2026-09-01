@@ -71,8 +71,14 @@ type telemetryPayload struct {
 	//  2. The platform's own DEPLOYMENT_MODE env var — a server-side
 	//     setting that decides which schema/tables the binary uses. Never
 	//     read by this SDK and never sent on this field.
-	//  3. LicenseTier (this field, `license_tier`) — the platform's
-	//     EDITION/entitlement. Says what the platform is licensed for.
+	//  3. LicenseTier (this field, `license_tier`) — what the platform
+	//     REPORTED about its own licensing, for adoption analytics.
+	//
+	// ITEM 3 IS NOT AN ENTITLEMENT FACT. This SDK relays whatever /health
+	// returned, and the receiver cannot verify the relay: whoever operates
+	// the endpoint the client was pointed at controls the value completely.
+	// It must never gate entitlement, unlock a feature, or enter any
+	// authorization or billing decision. See axonflow-enterprise#3619.
 	//
 	// A community-mode binary can run on any topology and vice versa, so
 	// neither field is derivable from the other.
@@ -367,7 +373,7 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	// (uses the shared deadline). Re-read on every heartbeat rather than
 	// cached for the process lifetime: a licence can be applied to, or
 	// expire on, a running platform, and a cached tier would keep
-	// reporting the pre-change edition for as long as the client lives.
+	// reporting the pre-change tier for as long as the client lives.
 	probe := probePlatformHealth(ctx, c.config.Endpoint)
 
 	// Stream classifier: sandbox-mode clients self-tag so analytics can

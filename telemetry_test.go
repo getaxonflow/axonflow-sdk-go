@@ -1012,7 +1012,7 @@ func TestTheWholePingHonoursOneDeadlineWhenHealthStalls(t *testing.T) {
 // TestLicenseTierDoesNotAlterDeploymentMode pins that the three
 // similarly-named concepts stay separate: the SDK's endpoint-derived
 // TOPOLOGY dimension must be byte-identical whether or not the platform
-// reported an edition.
+// reported a tier.
 func TestLicenseTierDoesNotAlterDeploymentMode(t *testing.T) {
 	withTier := newTierHealthServer(t, http.StatusOK, `{"version":"10.3.0","tier":"Enterprise"}`)
 	withoutTier := newTierHealthServer(t, http.StatusOK, `{"version":"10.3.0"}`)
@@ -1023,6 +1023,56 @@ func TestLicenseTierDoesNotAlterDeploymentMode(t *testing.T) {
 		if !strings.Contains(string(body), `"deployment_mode":"`+DeploymentModeSelfHosted+`"`) {
 			t.Errorf("deployment_mode changed by the tier field; body: %s", string(body))
 		}
+	}
+}
+
+// newCountingTierHealthServer starts a stand-in platform whose /health
+// returns the supplied 200 body, and additionally counts every GET /health it
+// serves. Returns the base endpoint and the live counter.
+func newCountingTierHealthServer(t *testing.T, body string) (string, *atomic.Int64) {
+	t.Helper()
+	var served atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		served.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, &served
+}
+
+// TestExactlyOneHealthRequestPerPing pins the headline contract of this
+// change: the tier rides along on the /health response ALREADY fetched for
+// platform_version, so adding it costs NO new network call.
+//
+// Nothing else in this suite counts requests, so a second probe added to the
+// telemetry path would leave every other test green while doubling the
+// telemetry path's blocking budget and its failure surface. The Java SDK pins
+// the same contract in TelemetryLicenseTierTest.exactlyOneHealthRequestPerPing;
+// this is that test's Go twin.
+func TestExactlyOneHealthRequestPerPing(t *testing.T) {
+	endpoint, healthRequests := newCountingTierHealthServer(t,
+		`{"status":"healthy","version":"10.3.0","tier":"Enterprise"}`)
+
+	body := captureTelemetryWire(t, endpoint)
+
+	// Anti-vacuity: a count is only evidence if a complete ping actually ran.
+	// Without this, a change that stopped probing altogether would report
+	// zero requests and could be mistaken for a passing "no extra call".
+	if !strings.Contains(string(body), `"license_tier":"Enterprise"`) {
+		t.Fatalf("the ping did not carry the probed tier, so the request count "+
+			"below would prove nothing; body: %s", string(body))
+	}
+
+	if got := healthRequests.Load(); got != 1 {
+		t.Errorf("GET /health served %d times for one ping, want exactly 1 — "+
+			"the licence tier must come from the response already fetched for "+
+			"platform_version, never from a second request", got)
 	}
 }
 
