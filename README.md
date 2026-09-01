@@ -245,6 +245,120 @@ if resp.Blocked {
 > Pings are tagged `stream="sandbox"` server-side so dev/test usage is
 > distinguishable from production heartbeat.
 
+## AuthZEN Authorization (v10.3.0+)
+
+The AuthZEN-native surface: ask whether a subject may perform an action on a
+resource, and get back a decision your enforcement point can act on.
+
+```go
+dec, err := client.Evaluate(ctx, axonflow.AuthZENRequest{
+    Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
+    Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
+    Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
+    Context: map[string]any{
+        "args": map[string]any{"query": userPrompt},
+    },
+})
+if err != nil {
+    return err // fail closed: an error is never a permit
+}
+if !dec.Allowed() {
+    return fmt.Errorf("blocked: %s", dec.State())
+}
+```
+
+**Write new integrations against this surface.** The existing decision surface
+stays wire-stable through all of v11 and is not deprecated. At v11 the engine
+behind `Evaluate` changes to the ADR-065 Policy Decision Point with **no wire
+change**, so an integration written against it migrates once rather than twice.
+
+### The one thing to know before you call it
+
+The server **refuses what it cannot evaluate** rather than evaluating around it.
+Send a subject property, an unrecognised context member, or an argument beside
+the query, and you get a typed refusal naming the exact member — not a decision
+computed without it:
+
+```go
+dec, err := client.Evaluate(ctx, req)
+if azErr, ok := axonflow.AsAuthZENError(err); ok {
+    // azErr.Pointer: "/evaluation/subject/properties"
+    // azErr.Code:    "unevaluable_attribute"
+    log.Printf("fix %s: %s", azErr.Pointer, azErr.Message)
+    if azErr.Code.Retryable() {
+        // only evaluation_unavailable is worth retrying; every other code
+        // names something about the request that a retry will not change.
+    }
+}
+```
+
+This is deliberate. A decision that silently ignored an attribute would report
+that the attribute was weighed when it was not, and every audit of that decision
+would inherit the claim.
+
+### Several preconditions of one operation
+
+`EvaluateAll` asks about several resources at once and returns **one** decision,
+not one per entry. The entries are preconditions of a single operation, so they
+combine to the least permissive outcome: one denied entry denies the operation.
+Anything an entry omits is inherited from the shared base.
+
+```go
+dec, err := client.EvaluateAll(ctx, axonflow.AuthZENBulk{
+    Subject: &axonflow.AuthZENSubject{Type: "gateway", ID: "llm-gateway-01"},
+    Action:  &axonflow.AuthZENAction{Name: "tool.call"},
+    Context: map[string]any{"args": map[string]any{"query": userPrompt}},
+    Evaluations: []axonflow.AuthZENRequest{
+        {Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/move_issue"}},
+        {Resource: &axonflow.AuthZENResource{Type: "tool", ID: "jira/update_project"}},
+    },
+})
+```
+
+### Obligations
+
+An allow can carry instructions the enforcement point must discharge. A
+**mandatory** obligation that cannot be discharged means the operation must not
+proceed, even though `Allowed()` reported true.
+
+```go
+for _, o := range dec.Obligations() {
+    if o.Mandatory && !canDischarge(o.Type) {
+        return fmt.Errorf("cannot discharge %s; refusing to proceed", o.Type)
+    }
+}
+```
+
+### What is evaluable today
+
+| Field | Accepted |
+|---|---|
+| `Subject.Type` | `gateway` |
+| `Action.Name` | `llm.completion`, `tool.call`, `agent.invoke` |
+| `Resource.Type` / `ID` | `llm` + `provider/model`; `tool` + `server/tool`; `agent` + `agent` |
+| `Context` | `args.query` (the content to evaluate), `correlation` (string values) |
+
+Anything else is refused by name. An **end-user subject** (`Subject.Type` other
+than `gateway`) is not evaluable yet: it would have to be trusted from
+caller-supplied JSON, which is an impersonation surface. It arrives with the
+identity plane at v11.
+
+### Types are generated, not written
+
+`authzen_types_gen.go` is generated from `testdata/authzen-surface.json`, which
+the platform publishes from its canonical decision contract. All five AxonFlow
+SDKs generate from that one artifact, so no two of them can disagree about which
+fields are optional. Regenerate with:
+
+```bash
+go run ./scripts/gen_authzen_types
+```
+
+CI regenerates and diffs, so editing either file without the other fails.
+
+See [`examples/authzen`](examples/authzen) for a runnable walkthrough of the
+happy path and every refusal.
+
 ## Features
 
 ### ✅ Retry Logic with Exponential Backoff
