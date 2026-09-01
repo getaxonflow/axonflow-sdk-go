@@ -868,6 +868,53 @@ func TestHealthProbeLearnsVersionAndTierIndependently(t *testing.T) {
 			wantVersion: nil,
 			wantTier:    nil,
 		},
+		// The rows that matter most: a badly-TYPED member must not take the
+		// other field down with it. With a typed struct carrying both fields,
+		// one bad member fails the whole decode — so adding the tier would
+		// have silently regressed platform_version, a field that worked
+		// before. These pin that it cannot happen again.
+		{
+			name:        "numeric tier does not discard a good version",
+			body:        `{"version":"10.3.0","tier":42}`,
+			wantVersion: strPtr("10.3.0"),
+			wantTier:    nil,
+		},
+		{
+			name:        "object tier does not discard a good version",
+			body:        `{"version":"10.3.0","tier":{"name":"Enterprise"}}`,
+			wantVersion: strPtr("10.3.0"),
+			wantTier:    nil,
+		},
+		{
+			name:        "array tier does not discard a good version",
+			body:        `{"version":"10.3.0","tier":["Enterprise"]}`,
+			wantVersion: strPtr("10.3.0"),
+			wantTier:    nil,
+		},
+		{
+			name:        "numeric version does not discard a good tier",
+			body:        `{"version":42,"tier":"Enterprise"}`,
+			wantVersion: nil,
+			wantTier:    strPtr("Enterprise"),
+		},
+		{
+			name:        "boolean tier is not coerced onto the wire",
+			body:        `{"version":"10.3.0","tier":true}`,
+			wantVersion: strPtr("10.3.0"),
+			wantTier:    nil,
+		},
+		{
+			name:        "null tier is not learned",
+			body:        `{"version":"10.3.0","tier":null}`,
+			wantVersion: strPtr("10.3.0"),
+			wantTier:    nil,
+		},
+		{
+			name:        "a JSON array body yields nothing",
+			body:        `[1,2,3]`,
+			wantVersion: nil,
+			wantTier:    nil,
+		},
 	}
 
 	for _, tc := range cases {
@@ -912,6 +959,53 @@ func TestTierProbeDoesNotStackASecondTimeoutOntoTheTelemetryBudget(t *testing.T)
 	// that a stacked second timeout would produce.
 	if elapsed > budget+300*time.Millisecond {
 		t.Errorf("probe took %v, exceeds the shared %v budget — a second timeout is stacking", elapsed, budget)
+	}
+}
+
+// TestTheWholePingHonoursOneDeadlineWhenHealthStalls exercises the CALL SITE,
+// not just the probe. TestTierProbeDoesNotStackASecondTimeoutOntoTheTelemetryBudget
+// hands probePlatformHealth a budget directly, so it stays green even if
+// sendTelemetryPingNow stops passing the shared ctx — the exact mutation that
+// would restore issue #1693. Testing the predicate is not testing the wiring.
+//
+// probePlatformHealth uses an http.Client with NO timeout of its own, so ctx is
+// the only bound: a call site that passed context.Background() would block
+// forever against a blackholed /health.
+func TestTheWholePingHonoursOneDeadlineWhenHealthStalls(t *testing.T) {
+	t.Setenv("AXONFLOW_TELEMETRY", "")
+
+	// A platform that accepts the connection and never answers.
+	stalled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer stalled.Close()
+
+	checkpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(telemetryResponse{LatestVersion: Version})
+	}))
+	defer checkpoint.Close()
+	t.Setenv("AXONFLOW_CHECKPOINT_URL", checkpoint.URL)
+
+	client := &AxonFlowClient{
+		config: AxonFlowConfig{
+			Mode:         "production",
+			ClientID:     "id",
+			ClientSecret: "sec",
+			Endpoint:     stalled.URL,
+		},
+	}
+
+	budget := 500 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+
+	start := time.Now()
+	_ = client.sendTelemetryPingNow(ctx)
+	elapsed := time.Since(start)
+
+	if elapsed > budget+500*time.Millisecond {
+		t.Errorf("the whole ping took %v against a %v budget — the call site is not "+
+			"passing the shared deadline into the health probe (issue #1693)", elapsed, budget)
 	}
 }
 

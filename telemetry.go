@@ -199,20 +199,6 @@ type telemetryResponse struct {
 	LatestVersion string `json:"latest_version"`
 }
 
-// healthProbeResponse is a minimal struct for extracting the telemetry
-// dimensions the SDK reads from the agent's /health response. The endpoint
-// returns considerably more (status, service, timestamp, capabilities,
-// sdk_compatibility, plugin_compatibility); only these two are read, and
-// only these two are ever forwarded.
-type healthProbeResponse struct {
-	Version string `json:"version"`
-	// Tier is the platform's runtime-effective licence tier. Emitted by
-	// the agent's readinessAwareHealthHandler as `tier` — unauthenticated,
-	// same as `version`. This SDK gains no access to anything /health does
-	// not already return to any caller.
-	Tier string `json:"tier"`
-}
-
 // healthProbe carries what a single /health fetch established. Each field is
 // INDEPENDENT: a response that carries one but not the other yields a
 // partially-populated result rather than discarding both. A nil field means
@@ -265,25 +251,35 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 		return healthProbe{}
 	}
 
-	var health healthProbeResponse
+	// Decoded into a generic map rather than a typed struct ON PURPOSE.
+	//
+	// With a struct carrying both `version` and `tier`, ONE badly-typed
+	// member fails the WHOLE decode — so a platform answering
+	// {"version":"10.3.0","tier":42} would have made this return nothing and
+	// silently dropped platform_version, a field that worked before the tier
+	// was added. A new dimension must not be able to regress an existing one.
+	//
+	// Decoding per-field also matches the Python, TypeScript and Java SDKs,
+	// which all type-check each member individually. Bounded by
+	// maxHealthBodyBytes above, so the map cannot grow unbounded.
+	var health map[string]any
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxHealthBodyBytes)).Decode(&health); err != nil {
 		return healthProbe{}
 	}
 
-	// Each field is promoted independently and only when non-empty. An
-	// absent key and an explicit "" are both "not learned" — the pointer
-	// stays nil rather than becoming a pointer to "", which would put a
-	// meaningless empty value on the wire despite omitempty.
+	// Each field is promoted independently, and only when it is a non-empty
+	// STRING. An absent key, a non-string value, and an explicit "" are all
+	// "not learned" — the pointer stays nil rather than becoming a pointer to
+	// "", which would put a meaningless empty value on the wire despite
+	// omitempty, or a coerced value that misrepresents what the platform said.
 	var probe healthProbe
-	if health.Version != "" {
-		v := health.Version
+	if v, ok := health["version"].(string); ok && v != "" {
 		probe.PlatformVersion = &v
 	}
-	if health.Tier != "" {
+	if t, ok := health["tier"].(string); ok && t != "" {
 		// Verbatim, including the transient "starting" the agent returns
 		// before its licence is validated. "starting" is a real signal the
 		// receiver buckets deliberately, not an error to filter client-side.
-		t := health.Tier
 		probe.LicenseTier = &t
 	}
 	return probe
