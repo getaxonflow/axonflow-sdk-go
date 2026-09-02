@@ -15,7 +15,10 @@
 
 package axonflow
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // AuthZENProfileV1 is the profile a Policy Enforcement Point negotiates to
 // receive anything beyond the boolean decision.
@@ -341,6 +344,48 @@ type AuthZENApprovalClause struct {
 	Eligible []AuthZENIdentifier `json:"eligible"`
 }
 
+// UnmarshalJSON decodes v and REFUSES a payload that omits, or explicitly
+// nulls, a required member whose zero value the wire may legitimately carry:
+// quorum.
+//
+// Absent and false, absent and 0, are the same bytes to encoding/json and
+// different statements on the wire. Silently reading the first as the second
+// is a fail-open wherever the member decides an enforcement question — an
+// obligation that lost `mandatory` in transit reads as advisory, an approval
+// clause that lost `quorum` reads as needing nobody. Validate cannot close
+// this: it runs after the decode, by which point the distinction is gone.
+//
+// An explicit null is refused alongside an absent member because it decodes
+// to the same zero value while being present in the object — a presence test
+// that only looked for the key would pass it straight through.
+func (v *AuthZENApprovalClause) UnmarshalJSON(data []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return fmt.Errorf("AuthZENApprovalClause: %w", err)
+	}
+	for _, member := range []string{"quorum"} {
+		raw, ok := members[member]
+		if !ok {
+			return fmt.Errorf("AuthZENApprovalClause: required member %q is absent; "+
+				"it would decode to its zero value, which is a value this member may legitimately carry, "+
+				"so the absence cannot be recovered after decoding", member)
+		}
+		if string(raw) == "null" {
+			return fmt.Errorf("AuthZENApprovalClause: required member %q is null; "+
+				"it would decode to its zero value, indistinguishable from a sent one", member)
+		}
+	}
+	// The alias sheds this method, so the second pass is the ordinary
+	// field-by-field decode rather than an infinite recursion into here.
+	type plain AuthZENApprovalClause
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return fmt.Errorf("AuthZENApprovalClause: %w", err)
+	}
+	*v = AuthZENApprovalClause(decoded)
+	return nil
+}
+
 // Validate reports whether v carries what the server requires.
 //
 // Calling it is optional: the server enforces the same rules and answers with
@@ -371,6 +416,48 @@ type AuthZENApprovalRequirement struct {
 	SeparationOfDuties bool `json:"separation_of_duties"`
 
 	ExpiresAt string `json:"expires_at"`
+}
+
+// UnmarshalJSON decodes v and REFUSES a payload that omits, or explicitly
+// nulls, a required member whose zero value the wire may legitimately carry:
+// separation_of_duties.
+//
+// Absent and false, absent and 0, are the same bytes to encoding/json and
+// different statements on the wire. Silently reading the first as the second
+// is a fail-open wherever the member decides an enforcement question — an
+// obligation that lost `mandatory` in transit reads as advisory, an approval
+// clause that lost `quorum` reads as needing nobody. Validate cannot close
+// this: it runs after the decode, by which point the distinction is gone.
+//
+// An explicit null is refused alongside an absent member because it decodes
+// to the same zero value while being present in the object — a presence test
+// that only looked for the key would pass it straight through.
+func (v *AuthZENApprovalRequirement) UnmarshalJSON(data []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return fmt.Errorf("AuthZENApprovalRequirement: %w", err)
+	}
+	for _, member := range []string{"separation_of_duties"} {
+		raw, ok := members[member]
+		if !ok {
+			return fmt.Errorf("AuthZENApprovalRequirement: required member %q is absent; "+
+				"it would decode to its zero value, which is a value this member may legitimately carry, "+
+				"so the absence cannot be recovered after decoding", member)
+		}
+		if string(raw) == "null" {
+			return fmt.Errorf("AuthZENApprovalRequirement: required member %q is null; "+
+				"it would decode to its zero value, indistinguishable from a sent one", member)
+		}
+	}
+	// The alias sheds this method, so the second pass is the ordinary
+	// field-by-field decode rather than an infinite recursion into here.
+	type plain AuthZENApprovalRequirement
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return fmt.Errorf("AuthZENApprovalRequirement: %w", err)
+	}
+	*v = AuthZENApprovalRequirement(decoded)
+	return nil
 }
 
 // Validate reports whether v carries what the server requires.
@@ -640,6 +727,48 @@ type AuthZENResponse struct {
 	Context *AuthZENResponseContext `json:"context,omitempty"`
 }
 
+// UnmarshalJSON decodes v and REFUSES a payload that omits, or explicitly
+// nulls, a required member whose zero value the wire may legitimately carry:
+// decision.
+//
+// Absent and false, absent and 0, are the same bytes to encoding/json and
+// different statements on the wire. Silently reading the first as the second
+// is a fail-open wherever the member decides an enforcement question — an
+// obligation that lost `mandatory` in transit reads as advisory, an approval
+// clause that lost `quorum` reads as needing nobody. Validate cannot close
+// this: it runs after the decode, by which point the distinction is gone.
+//
+// An explicit null is refused alongside an absent member because it decodes
+// to the same zero value while being present in the object — a presence test
+// that only looked for the key would pass it straight through.
+func (v *AuthZENResponse) UnmarshalJSON(data []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return fmt.Errorf("AuthZENResponse: %w", err)
+	}
+	for _, member := range []string{"decision"} {
+		raw, ok := members[member]
+		if !ok {
+			return fmt.Errorf("AuthZENResponse: required member %q is absent; "+
+				"it would decode to its zero value, which is a value this member may legitimately carry, "+
+				"so the absence cannot be recovered after decoding", member)
+		}
+		if string(raw) == "null" {
+			return fmt.Errorf("AuthZENResponse: required member %q is null; "+
+				"it would decode to its zero value, indistinguishable from a sent one", member)
+		}
+	}
+	// The alias sheds this method, so the second pass is the ordinary
+	// field-by-field decode rather than an infinite recursion into here.
+	type plain AuthZENResponse
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return fmt.Errorf("AuthZENResponse: %w", err)
+	}
+	*v = AuthZENResponse(decoded)
+	return nil
+}
+
 // Validate reports whether v carries what the server requires.
 //
 // Calling it is optional: the server enforces the same rules and answers with
@@ -788,6 +917,48 @@ type AuthZENObligation struct {
 	SourcePolicy string `json:"source_policy"`
 
 	SchemaVersion int `json:"schema_version"`
+}
+
+// UnmarshalJSON decodes v and REFUSES a payload that omits, or explicitly
+// nulls, a required member whose zero value the wire may legitimately carry:
+// mandatory, schema_version.
+//
+// Absent and false, absent and 0, are the same bytes to encoding/json and
+// different statements on the wire. Silently reading the first as the second
+// is a fail-open wherever the member decides an enforcement question — an
+// obligation that lost `mandatory` in transit reads as advisory, an approval
+// clause that lost `quorum` reads as needing nobody. Validate cannot close
+// this: it runs after the decode, by which point the distinction is gone.
+//
+// An explicit null is refused alongside an absent member because it decodes
+// to the same zero value while being present in the object — a presence test
+// that only looked for the key would pass it straight through.
+func (v *AuthZENObligation) UnmarshalJSON(data []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return fmt.Errorf("AuthZENObligation: %w", err)
+	}
+	for _, member := range []string{"mandatory", "schema_version"} {
+		raw, ok := members[member]
+		if !ok {
+			return fmt.Errorf("AuthZENObligation: required member %q is absent; "+
+				"it would decode to its zero value, which is a value this member may legitimately carry, "+
+				"so the absence cannot be recovered after decoding", member)
+		}
+		if string(raw) == "null" {
+			return fmt.Errorf("AuthZENObligation: required member %q is null; "+
+				"it would decode to its zero value, indistinguishable from a sent one", member)
+		}
+	}
+	// The alias sheds this method, so the second pass is the ordinary
+	// field-by-field decode rather than an infinite recursion into here.
+	type plain AuthZENObligation
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return fmt.Errorf("AuthZENObligation: %w", err)
+	}
+	*v = AuthZENObligation(decoded)
+	return nil
 }
 
 // Validate reports whether v carries what the server requires.

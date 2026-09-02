@@ -71,9 +71,39 @@ type ExplainRule struct {
 // ============================================================================
 
 // ExplainDecision fetches the full explanation for a previously-made
-// policy decision. The caller must either own the decision (user_email
-// match) or belong to the same tenant. Returns a 404-equivalent error
-// when the decision is past retention.
+// policy decision.
+//
+// # Which decisions this returns (platform #2922)
+//
+// The read is scoped to the per-user identity the caller presents, NOT to the
+// tenant credential. On an enterprise stack:
+//
+//   - a tenant-wide role (admin, owner, policy_admin) explains any decision in
+//     the tenant;
+//   - any other identity (developer, viewer) explains only the decisions
+//     attributed to it — another user's decision answers exactly like a
+//     decision that does not exist;
+//   - a caller presenting NO identity explains nothing at all. Every call
+//     answers not-found, whatever the decision id.
+//
+// Community and Community-SaaS deployments are single-operator and read
+// tenant-wide with no identity needed.
+//
+// Present the identity with AxonFlowConfig.UserToken (client-wide) or
+// axonflow.WithUserToken (this call only).
+//
+// # Telling the three misses apart
+//
+// A miss is returned as *ReadScopeError whenever the platform's
+// X-Axonflow-Read-Scope header says the caller's scope decided it — so
+// "not yours" and "you presented nothing" are distinguishable from "past
+// retention", instead of all three arriving as the same 404:
+//
+//	exp, err := client.ExplainDecision(ctx, id)
+//	if rse, ok := axonflow.AsReadScopeError(err); ok {
+//	    if rse.IdentityMissing() { /* configure UserToken */ }
+//	    /* else: the decision belongs to someone else */
+//	}
 //
 // Context cancellation is honored; the underlying HTTP request is bound
 // to the given ctx.
@@ -85,10 +115,11 @@ type ExplainRule struct {
 //	if exp.OverrideAvailable {
 //	    // offer the user a "override this for 10 minutes" action
 //	}
-func (c *AxonFlowClient) ExplainDecision(ctx context.Context, decisionID string) (*DecisionExplanation, error) {
+func (c *AxonFlowClient) ExplainDecision(ctx context.Context, decisionID string, opts ...ReadOption) (*DecisionExplanation, error) {
 	if decisionID == "" {
 		return nil, fmt.Errorf("decisionID is required")
 	}
+	ctx = applyReadOptions(ctx, opts...)
 
 	// Path-escape the decision ID — platform-generated IDs are usually
 	// filesystem-safe, but nothing in ADR-043 guarantees it, and IDs that
@@ -115,6 +146,20 @@ func (c *AxonFlowClient) ExplainDecision(ctx context.Context, decisionID string)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// A scoped miss reports WHY it missed. readScopeErrorFor returns nil
+		// for a tenant-wide caller (a real miss), for a platform that stated
+		// no scope, and for a scope this build does not recognise — in all
+		// three the plain HTTP error is the honest answer.
+		//
+		// Only 404 is interpreted. The scope header is stamped before the
+		// handler writes its status, so it also rides a 500 from further down
+		// the handler; explaining a server fault as a scoping outcome would be
+		// exactly the confident-wrong-diagnosis this type exists to prevent.
+		if resp.StatusCode == http.StatusNotFound {
+			if rse := readScopeErrorFor("decision", decisionID, readScopeOf(resp), resp.StatusCode); rse != nil {
+				return nil, rse
+			}
+		}
 		return nil, &httpError{
 			statusCode: resp.StatusCode,
 			message:    string(body),
@@ -213,11 +258,32 @@ func (e *RateLimitError) Error() string {
 		e.Envelope.Tier, e.Envelope.LimitType, e.Envelope.Error)
 }
 
-// ListDecisions returns recent policy decisions for the caller's tenant
-// (slim 5-field DecisionSummary rows). The platform applies a tier-gated
-// cap; passing a Limit above the cap yields *RateLimitError carrying the
-// V1 upgrade envelope. Filters compose; zero-valued fields are omitted
-// from the URL.
+// ListDecisions returns recent policy decisions visible to the identity the
+// caller presents (slim 5-field DecisionSummary rows). The platform applies a
+// tier-gated cap; passing a Limit above the cap yields *RateLimitError
+// carrying the V1 upgrade envelope. Filters compose; zero-valued fields are
+// omitted from the URL.
+//
+// # Which decisions this returns (platform #2922)
+//
+// Not "the caller's tenant" — the caller's SCOPE. On an enterprise stack a
+// tenant-wide role (admin, owner, policy_admin) lists the whole tenant, any
+// other identity lists only its own rows, and a caller presenting NO identity
+// lists nothing whatsoever. See AxonFlowConfig.UserToken and WithUserToken.
+//
+// # The empty list that was never true
+//
+// That last case used to return an empty slice and a nil error, which reads
+// as "your tenant has made no decisions" and is a different statement from
+// what happened. When the platform reports X-Axonflow-Read-Scope: none and the
+// result is empty, this method now returns *ReadScopeError instead — the read
+// could not have returned a row, so its emptiness is not evidence about the
+// data. Callers upgrading from an earlier SDK on an enterprise stack will see
+// this error exactly where they were being told nothing was there; the remedy
+// is to present an identity.
+//
+// A genuinely empty own-rows or tenant-wide read is NOT an error: those
+// callers could have seen rows and there were none.
 //
 // Example:
 //
@@ -229,7 +295,11 @@ func (e *RateLimitError) Error() string {
 //	if errors.As(err, &rle) {
 //	    fmt.Println("upgrade to:", rle.Envelope.Upgrade.BuyURL)
 //	}
-func (c *AxonFlowClient) ListDecisions(ctx context.Context, opts ListDecisionsOptions) ([]DecisionSummary, error) {
+//	if rse, ok := axonflow.AsReadScopeError(err); ok && rse.IdentityMissing() {
+//	    fmt.Println("set AxonFlowConfig.UserToken — this read was unscoped")
+//	}
+func (c *AxonFlowClient) ListDecisions(ctx context.Context, opts ListDecisionsOptions, readOpts ...ReadOption) ([]DecisionSummary, error) {
+	ctx = applyReadOptions(ctx, readOpts...)
 	fullURL := c.config.Endpoint + "/api/v1/decisions"
 	if qs := buildListDecisionsQuery(opts); qs != "" {
 		fullURL += "?" + qs
@@ -272,6 +342,23 @@ func (c *AxonFlowClient) ListDecisions(ctx context.Context, opts ListDecisionsOp
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return nil, fmt.Errorf("failed to decode list_decisions response: %w", err)
+	}
+
+	// An empty page under ReadScopeNone is the fail-closed shape, not a
+	// finding: the platform returned zero rows because it had no identity to
+	// scope on, so the page says nothing about what exists. Guarded on
+	// len == 0 as well as on the scope so a non-empty page is never turned
+	// into an error, whatever the header says.
+	//
+	// Only ReadScopeNone refuses. ReadScopeOwnRows with zero rows is a real
+	// answer ("you have made no decisions matching this filter"), and turning
+	// it into an error would replace one wrong report with another.
+	if len(envelope.Decisions) == 0 && readScopeOf(resp) == ReadScopeNone {
+		return nil, &ReadScopeError{
+			Resource:   "decisions",
+			Scope:      ReadScopeNone,
+			StatusCode: resp.StatusCode,
+		}
 	}
 	return envelope.Decisions, nil
 }

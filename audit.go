@@ -549,6 +549,13 @@ func (c *AxonFlowClient) GetAuditLogsByTenant(ctx context.Context, tenantID stri
 // don't have to re-decode Basic auth. The agent's apiAuthMiddleware
 // overwrites the header with its auth-derived value, so any caller-
 // supplied X-Client-ID is harmless (no spoofing surface).
+//
+// It also stamps the per-user READ identity (X-User-Token) via
+// applyReadIdentity. This is the SDK's ONE identity site: every method that
+// builds a request calls this helper, and the platform likewise reads the
+// header once in the middleware in front of every proxied route rather than
+// per route. Adding it in a method instead would be a second copy of a
+// decision that is made in one place on both sides. See read_identity.go.
 func (c *AxonFlowClient) addAuthHeaders(req *http.Request) {
 	effectiveClientID := c.config.ClientID
 	if effectiveClientID == "" {
@@ -559,4 +566,5 @@ func (c *AxonFlowClient) addAuthHeaders(req *http.Request) {
 	)
 	req.Header.Set("Authorization", "Basic "+credentials)
 	req.Header.Set("X-Client-ID", effectiveClientID)
+	c.applyReadIdentity(req)
 }

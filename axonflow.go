@@ -34,6 +34,30 @@ type AxonFlowConfig struct {
 	Retry                 RetryConfig   // Retry configuration
 	Cache                 CacheConfig   // Cache configuration
 	InsecureSkipTLSVerify bool          // Disable TLS cert verification (dev/testing only). Also settable via NODE_TLS_REJECT_UNAUTHORIZED=0.
+
+	// UserToken is the per-user identity this client presents on the READ
+	// path, sent as the X-User-Token header on every request.
+	//
+	// ClientID/ClientSecret authenticate the ORGANIZATION; this authenticates
+	// the PERSON. Since platform #2922 the role-scoped reads (ExplainDecision,
+	// ListDecisions, the audit and override reads) are answered from this
+	// identity: an enterprise stack scopes a developer or viewer to their own
+	// rows, gives a tenant-wide role (admin / owner / policy_admin) the whole
+	// tenant, and returns ZERO rows to a caller that presents no identity at
+	// all. Leaving this empty against an enterprise stack is therefore not a
+	// neutral default — it is the configuration under which every scoped read
+	// answers nothing, which the SDK now reports as a *ReadScopeError rather
+	// than as an empty result.
+	//
+	// The value is a per-user JWT: minted by the customer portal's user-token
+	// API, or for local testing by scripts/generate-jwt.sh --kind user. It is
+	// NOT the tenant JWT and not ClientSecret.
+	//
+	// Community deployments need none of this: there is one operator, the
+	// platform scopes their reads tenant-wide, and this field is ignored.
+	//
+	// Override per call with axonflow.WithUserToken. See read_identity.go.
+	UserToken string
 }
 
 // RetryConfig configures retry behavior

@@ -11,7 +11,32 @@
 //	AXONFLOW_AGENT_URL          (default: http://localhost:8080)
 //	AXONFLOW_CLIENT_ID
 //	AXONFLOW_CLIENT_SECRET
-//	AXONFLOW_DECISION_ID        the decision to explain
+//	AXONFLOW_USER_TOKEN         the PER-USER identity this read is scoped to
+//	                            (see below — required on an enterprise stack)
+//
+// Optional:
+//
+//	AXONFLOW_DECISION_ID        the decision to explain. When unset the example
+//	                            asks the platform for the most recent decision
+//	                            THIS identity can see and explains that one.
+//
+// # Why AXONFLOW_USER_TOKEN is not optional here (platform #2922)
+//
+// ClientID/ClientSecret say which ORGANIZATION is asking. Explain answers from
+// who is asking. On an enterprise stack a developer or viewer explains only
+// their own decisions, a tenant-wide role (admin/owner/policy_admin) explains
+// the whole tenant, and a caller presenting NO identity explains NOTHING — the
+// endpoint answers not-found for every id, including ids that plainly exist.
+// That is why this example failed on every enterprise stack until the SDK grew
+// a read-path identity: it was asking anonymously.
+//
+// Mint one the way the E2E workflow does:
+//
+//	export AXONFLOW_USER_TOKEN=$(./scripts/generate-jwt.sh --kind user \
+//	    --email dev@acme.com --org-id "$AXONFLOW_CLIENT_ID" --role developer --quiet)
+//
+// (./scripts/setup-e2e-testing.sh already exports exactly this variable.)
+// Community deployments are single-operator and need none of it.
 //
 // Get a decision_id quickly by hitting a known-blocked policy:
 //
@@ -38,17 +63,48 @@ func main() {
 	clientSecret := getEnv("AXONFLOW_CLIENT_SECRET", "")
 	decisionID := getEnv("AXONFLOW_DECISION_ID", "")
 
-	if decisionID == "" {
-		log.Fatal("AXONFLOW_DECISION_ID must be set (a decision_id from a recent blocked call)")
+	fmt.Printf("Initializing AxonFlow client at %s...\n", agentURL)
+	client := axonflow.NewClient(axonflow.AxonFlowConfig{
+		Endpoint:     agentURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		// The read-path identity. Empty is legal and means "ask
+		// anonymously", which on an enterprise stack explains nothing.
+		UserToken: os.Getenv("AXONFLOW_USER_TOKEN"),
+	})
+	if os.Getenv("AXONFLOW_USER_TOKEN") == "" {
+		fmt.Println("note: AXONFLOW_USER_TOKEN is unset — this read is unscoped. " +
+			"On an enterprise stack it will explain nothing; see the package comment.")
 	}
 
-	fmt.Printf("Initializing AxonFlow client at %s...\n", agentURL)
-	client := axonflow.NewClientSimple(agentURL, clientID, clientSecret)
+	ctx := context.Background()
+
+	// No id given: ask for one this identity can actually see, so the example
+	// explains a real decision rather than failing on a placeholder.
+	if decisionID == "" {
+		fmt.Println("AXONFLOW_DECISION_ID is unset — looking up the most recent visible decision...")
+		recent, err := client.ListDecisions(ctx, axonflow.ListDecisionsOptions{Limit: 1})
+		if err != nil {
+			log.Fatalf("could not find a decision to explain: %v", explainScopeHint(err))
+		}
+		if len(recent) == 0 {
+			log.Fatal("no decisions are visible to this identity yet — make a governed call first " +
+				"(see the curl in the package comment), then re-run")
+		}
+		decisionID = recent[0].DecisionID
+		fmt.Printf("  using decision_id=%s\n", decisionID)
+	}
 
 	fmt.Printf("Explaining decision %s...\n\n", decisionID)
-	exp, err := client.ExplainDecision(context.Background(), decisionID)
+	exp, err := client.ExplainDecision(ctx, decisionID)
 	if err != nil {
-		log.Fatalf("ExplainDecision failed: %v", err)
+		log.Fatalf("ExplainDecision failed: %v", explainScopeHint(err))
+	}
+
+	// An explanation that came back without the id it was asked about is not
+	// an explanation — fail loudly rather than print an empty report.
+	if exp.DecisionID == "" {
+		log.Fatalf("the platform returned an explanation with no decision_id for %s", decisionID)
 	}
 
 	fmt.Println("=== Decision Explanation ===")
@@ -111,4 +167,21 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// explainScopeHint turns the SDK's typed scope refusal into the sentence a
+// reader of this example actually needs, and passes everything else through
+// unchanged. Without it the three distinct causes behind "not found" arrive
+// looking identical.
+func explainScopeHint(err error) error {
+	rse, ok := axonflow.AsReadScopeError(err)
+	if !ok {
+		return err
+	}
+	if rse.IdentityMissing() {
+		return fmt.Errorf("%w\n\n  → This read presented no per-user identity, so the platform "+
+			"returned nothing by construction. Set AXONFLOW_USER_TOKEN (see the package comment).", err)
+	}
+	return fmt.Errorf("%w\n\n  → The identity in AXONFLOW_USER_TOKEN is scoped to its own rows and "+
+		"this decision is not one of them. Use an admin, owner or policy_admin token to read the whole tenant.", err)
 }
