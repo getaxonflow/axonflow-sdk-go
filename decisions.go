@@ -92,12 +92,17 @@ type ExplainRule struct {
 // Present the identity with AxonFlowConfig.UserToken (client-wide) or
 // axonflow.WithUserToken (this call only).
 //
-// # Telling the three misses apart
+// # Telling the misses apart, as far as the platform allows
 //
 // A miss is returned as *ReadScopeError whenever the platform's
-// X-Axonflow-Read-Scope header says the caller's scope decided it — so
-// "not yours" and "you presented nothing" are distinguishable from "past
-// retention", instead of all three arriving as the same 404:
+// X-Axonflow-Read-Scope header says the caller's scope was what decided it, so
+// "the platform resolved no identity for you" stops being indistinguishable
+// from "past retention".
+//
+// It does NOT separate "not yours" from "not there": under own-rows the
+// platform answers both with the same 404 on purpose, so that a miss cannot be
+// used to probe for another user's rows. The error reports the scope the read
+// ran under, which is the honest thing this SDK can say:
 //
 //	exp, err := client.ExplainDecision(ctx, id)
 //	if rse, ok := axonflow.AsReadScopeError(err); ok {

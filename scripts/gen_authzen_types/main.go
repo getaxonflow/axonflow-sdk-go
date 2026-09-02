@@ -155,6 +155,9 @@ const AuthZENContractSchemaVersion = %q
 	// remember to update a flag. encoding/json joins it on the same terms: only
 	// a surface with a required primitive produces an UnmarshalJSON.
 	var imports []string
+	if strings.Contains(body.String(), "bytes.") {
+		imports = append(imports, `"bytes"`)
+	}
 	if strings.Contains(body.String(), "json.") {
 		imports = append(imports, `"encoding/json"`)
 	}
@@ -302,10 +305,28 @@ func emitPresenceUnmarshal(b *strings.Builder, name string, t Type) {
 	fmt.Fprintf(b, "// An explicit null is refused alongside an absent member because it decodes\n")
 	fmt.Fprintf(b, "// to the same zero value while being present in the object — a presence test\n")
 	fmt.Fprintf(b, "// that only looked for the key would pass it straight through.\n")
+	fmt.Fprintf(b, "//\n")
+	fmt.Fprintf(b, "// The second pass decodes STRICTLY, and that is load-bearing rather than\n")
+	fmt.Fprintf(b, "// tidy. encoding/json hands a json.Unmarshaler the raw bytes and applies\n")
+	fmt.Fprintf(b, "// none of the enclosing Decoder's settings inside it, so the moment a type\n")
+	fmt.Fprintf(b, "// on this surface grows an UnmarshalJSON, a caller's outer\n")
+	fmt.Fprintf(b, "// DisallowUnknownFields stops reaching this subtree — silently. authzen.go\n")
+	fmt.Fprintf(b, "// sets exactly that on the response path, and its reason applies here\n")
+	fmt.Fprintf(b, "// verbatim: an unknown member in a decision is a server speaking a profile\n")
+	fmt.Fprintf(b, "// this build does not understand, and quietly dropping it means acting on a\n")
+	fmt.Fprintf(b, "// partial reading of an authorization decision. Re-asserting strictness on\n")
+	fmt.Fprintf(b, "// the inner decoder keeps the guard continuous through every nested type\n")
+	fmt.Fprintf(b, "// that has one of these methods, instead of leaving a hole shaped like\n")
+	fmt.Fprintf(b, "// whichever types happened to need a presence check.\n")
 	fmt.Fprintf(b, "func (v *%s) UnmarshalJSON(data []byte) error {\n", name)
 	fmt.Fprintf(b, "\tvar members map[string]json.RawMessage\n")
 	fmt.Fprintf(b, "\tif err := json.Unmarshal(data, &members); err != nil {\n")
 	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: %%w\", err)\n\t}\n", name)
+	fmt.Fprintf(b, "\t// A whole-object null decodes to a NIL map, not an empty one, and every\n")
+	fmt.Fprintf(b, "\t// member below would then be reported as \\\"absent\\\" — naming a cause this\n")
+	fmt.Fprintf(b, "\t// code did not observe. Say the thing that is actually true.\n")
+	fmt.Fprintf(b, "\tif members == nil {\n")
+	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: the value is null, not an object\")\n\t}\n", name)
 	fmt.Fprintf(b, "\tfor _, member := range []string{%s} {\n", strings.Join(quoted, ", "))
 	fmt.Fprintf(b, "\t\traw, ok := members[member]\n")
 	fmt.Fprintf(b, "\t\tif !ok {\n")
@@ -322,7 +343,9 @@ func emitPresenceUnmarshal(b *strings.Builder, name string, t Type) {
 	fmt.Fprintf(b, "\t// field-by-field decode rather than an infinite recursion into here.\n")
 	fmt.Fprintf(b, "\ttype plain %s\n", name)
 	fmt.Fprintf(b, "\tvar decoded plain\n")
-	fmt.Fprintf(b, "\tif err := json.Unmarshal(data, &decoded); err != nil {\n")
+	fmt.Fprintf(b, "\tdec := json.NewDecoder(bytes.NewReader(data))\n")
+	fmt.Fprintf(b, "\tdec.DisallowUnknownFields()\n")
+	fmt.Fprintf(b, "\tif err := dec.Decode(&decoded); err != nil {\n")
 	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: %%w\", err)\n\t}\n", name)
 	fmt.Fprintf(b, "\t*v = %s(decoded)\n", name)
 	fmt.Fprintf(b, "\treturn nil\n}\n\n")

@@ -481,17 +481,82 @@ func TestEnvelopeValidationRecursesIntoItsMembers(t *testing.T) {
 }
 
 func TestEvaluateRefusesAnUnknownResponseMember(t *testing.T) {
+	// The response carries a COMPLETE profile context on purpose. Without one
+	// the handler refuses on the missing-context branch instead, and this test
+	// reports green while asserting nothing about strictness — which is
+	// exactly what happened once the generated types grew an UnmarshalJSON
+	// (encoding/json applies none of an enclosing Decoder's settings inside a
+	// json.Unmarshaler, so the outer DisallowUnknownFields stopped reaching
+	// this subtree, silently). The fixture must reach the decode.
+	const body = `{"decision":true,"advice":"proceed","context":{` +
+		`"profile":"axonflow-authzen-profile-2026-08-29","state":"allow",` +
+		`"category":"data_access","decision_id":"d1","schema_version":"2026-08-29"}}`
+
 	c := authzenServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"decision":true,"advice":"proceed"}`))
+		_, _ = w.Write([]byte(body))
 	})
 
 	dec, err := c.Evaluate(context.Background(), okRequest())
 	if err == nil {
 		t.Fatalf("an unknown response member was accepted: %+v", dec)
 	}
+	if !strings.Contains(err.Error(), "advice") {
+		t.Errorf("the refusal does not name the unknown member; it may be refusing for an "+
+			"unrelated reason and asserting nothing about strictness: %v", err)
+	}
 	if dec.Allowed() {
 		t.Error("an undecodable response produced an allowed decision")
+	}
+}
+
+// TestGeneratedTypesDecodeStrictly pins that strictness survives the generated
+// UnmarshalJSON methods, on the types that have one AND on a nested type that
+// does not.
+//
+// It asserts on plain json.Unmarshal rather than through Evaluate, because the
+// property is about the TYPES: once a type carries an UnmarshalJSON, no caller
+// — this SDK's response path, a user's own decode, a nested decode one level
+// up — can impose strictness on it from outside.
+func TestGeneratedTypesDecodeStrictly(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload string
+		target  func() any
+		unknown string
+	}{
+		{
+			name:    "on a type that carries a presence check",
+			payload: `{"decision":true,"advice":"proceed"}`,
+			target:  func() any { return new(AuthZENResponse) },
+			unknown: "advice",
+		},
+		{
+			name: "on a nested type that does not",
+			payload: `{"decision":true,"context":{"profile":"p","state":"allow","category":"c",` +
+				`"decision_id":"d","schema_version":"2026-08-29","deny_after":"2026-01-01T00:00:00Z"}}`,
+			target:  func() any { return new(AuthZENResponse) },
+			unknown: "deny_after",
+		},
+		{
+			name: "on an obligation reached through its parent",
+			payload: `{"profile":"p","state":"allow","category":"c","decision_id":"d",` +
+				`"schema_version":"2026-08-29","obligations":[{"type":"redact","mandatory":true,` +
+				`"source_policy":"p1","schema_version":1,"severity":"high"}]}`,
+			target:  func() any { return new(AuthZENResponseContext) },
+			unknown: "severity",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := json.Unmarshal([]byte(tc.payload), tc.target())
+			if err == nil {
+				t.Fatalf("the unknown member %q was silently dropped; acting on a partial reading "+
+					"of an authorization decision is the failure this strictness exists to prevent", tc.unknown)
+			}
+			if !strings.Contains(err.Error(), tc.unknown) {
+				t.Errorf("the refusal does not name %q: %v", tc.unknown, err)
+			}
+		})
 	}
 }
 

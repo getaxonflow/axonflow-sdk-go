@@ -53,10 +53,19 @@ type AxonFlowConfig struct {
 	// API, or for local testing by scripts/generate-jwt.sh --kind user. It is
 	// NOT the tenant JWT and not ClientSecret.
 	//
+	// SETTING THIS AFFECTS MORE THAN READS. The header rides every request,
+	// and the agent VALIDATES it on every route it proxies — not only the
+	// scoped reads. A stale or rotated token therefore turns ListConnectors,
+	// InstallConnector, GetPlanStatus and policy CRUD into 401s rather than
+	// merely unscoping a read. Fail-closed is the right direction, but it puts
+	// this value in the same rotation story as ClientSecret. See
+	// read_identity.go for the route census.
+	//
 	// Community deployments need none of this: there is one operator, the
 	// platform scopes their reads tenant-wide, and this field is ignored.
 	//
-	// Override per call with axonflow.WithUserToken. See read_identity.go.
+	// Override per call with axonflow.WithUserToken, or derive a client bound
+	// to one person with AsUser. See read_identity.go.
 	UserToken string
 }
 
@@ -684,10 +693,15 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 		httpClient: &http.Client{
 			Timeout:   config.Timeout,
 			Transport: uaTransport,
+			// The per-user identity must not follow a redirect off-host; see
+			// stripIdentityOnCrossHostRedirect for why net/http's own
+			// sensitive-header list is not enough here.
+			CheckRedirect: stripIdentityOnCrossHostRedirect,
 		},
 		mapHttpClient: &http.Client{
-			Timeout:   config.MapTimeout,
-			Transport: uaTransport,
+			Timeout:       config.MapTimeout,
+			Transport:     uaTransport,
+			CheckRedirect: stripIdentityOnCrossHostRedirect,
 		},
 	}
 

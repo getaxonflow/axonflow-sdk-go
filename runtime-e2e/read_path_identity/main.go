@@ -17,9 +17,11 @@
 //	 1. WRITE      three decisions through the real /decide plane as dev-a,
 //	                attributed to dev-a's validated identity.
 //	 2. LIST       as dev-a: the page must contain AT LEAST the three ids this
-//	                run wrote and must contain each one BY ID. The floor is
-//	                derived from what this test itself wrote, so it cannot be
-//	                satisfied by a stale row or by a lucky non-empty page.
+//	                run wrote and must contain each one BY ID — a floor derived
+//	                from what this test itself wrote, so a stale row or a lucky
+//	                non-empty page cannot satisfy it. Then DEV-B writes one and
+//	                dev-a's page must NOT grow, which is what separates own-rows
+//	                from a broken narrowing that returns the whole tenant.
 //	 3. EXPLAIN    as dev-a: the explanation must carry the decision id asked
 //	                for AND the context keys THIS RUN chose — a field the test
 //	                controls, so a populated-looking stub cannot satisfy it.
@@ -33,15 +35,19 @@
 //	                narrowing in 5 is a scoping decision, not a broken read).
 //	 8. NO LEAK    the token must appear in NO captured log line and in NO
 //	                request reaching the telemetry collector this driver hosts.
+//	                Debug is ON and a positive control asserts SDK output IS in
+//	                the capture first, so the greps are not run over an empty
+//	                haystack (where "absent" is true of every string).
 //	 9. OBSERVABLE the platform must leave a record of the unscoped read.
 //
 // # Run
 //
 //	Bring up an ENTERPRISE stack per
 //	axonflow-internal-docs/engineering/E2E_EXAMPLES_TESTING_WORKFLOW.md
-//	(./scripts/setup-e2e-testing.sh enterprise), then:
+//	(from the axonflow-enterprise checkout:
+//	./scripts/setup-e2e-testing.sh enterprise), then, FROM THIS REPO:
 //
-//	  source /tmp/axonflow-e2e-env.sh
+//	  set -a; source /tmp/axonflow-e2e-env.sh; set +a
 //	  go run runtime-e2e/read_path_identity/main.go
 //
 //	Env: AXONFLOW_AGENT_URL, AXONFLOW_CLIENT_ID, AXONFLOW_CLIENT_SECRET,
@@ -111,7 +117,8 @@ func main() {
 	// runs out of real checkpoint data); here the ping is the thing under
 	// test, and it is pointed at a listener this process owns.
 	os.Setenv("AXONFLOW_TELEMETRY", "on")
-	clearHeartbeatStamp()
+	restoreStamp := parkHeartbeatStamp()
+	defer restoreStamp()
 
 	// ---- Identities. Claim shape mirrors scripts/generate-jwt.sh --kind user
 	// exactly (iss/sub/email/jti/org_id/exp), which is what the platform's
@@ -164,6 +171,22 @@ func main() {
 	if len(rows) < wrote {
 		fail("step 2: dev-a's page has %d rows, want at least the %d this run wrote — "+
 			"a page smaller than what we just wrote cannot be a correctly-scoped read", len(rows), wrote)
+	}
+	// The floor alone cannot tell own-rows from tenant-wide: a broken
+	// narrowing that returned the WHOLE tenant would clear it comfortably.
+	// dev-b writes one row of its own, and dev-a's page must not contain it.
+	if _, err := decideAs(endpoint, clientID, clientSecret, devB, 99); err != nil {
+		fail("step 2: writing dev-b's control decision: %v", err)
+	}
+	time.Sleep(3 * time.Second)
+	rowsAfter, err := asDevA.ListDecisions(ctx, axonflow.ListDecisionsOptions{Limit: 50})
+	if err != nil {
+		fail("step 2: re-listing as dev-a: %v", err)
+	}
+	if len(rowsAfter) != len(rows) {
+		fail("step 2: dev-a's page grew from %d to %d rows after DEV-B wrote one — the read is "+
+			"not narrowed to dev-a's own rows, so every scoping assertion below is vacuous",
+			len(rows), len(rowsAfter))
 	}
 	seen := map[string]bool{}
 	for _, r := range rows {
@@ -277,11 +300,20 @@ func main() {
 	// forced on before any client existed), and every read since has gone
 	// through the SDK's own transport carrying a token.
 
+	// POSITIVE CONTROL. Without it the greps below are a negative assertion
+	// over a haystack that may be empty, which passes for every string.
+	captured := logs.String()
+	if !strings.Contains(captured, "[AxonFlow]") {
+		fail("step 8: the captured log contains no SDK output at all (%d bytes), so asserting "+
+			"the token is absent from it asserts nothing. Debug must be on and the clients must "+
+			"have logged.", len(captured))
+	}
+
 	for _, tok := range []struct {
 		name  string
 		value string
 	}{{"dev-a", devA}, {"dev-b", devB}, {"admin", admin}} {
-		if strings.Contains(logs.String(), tok.value) {
+		if strings.Contains(captured, tok.value) {
 			fail("step 8: the %s token appears in the SDK's log output — a per-user credential must never be logged", tok.name)
 		}
 		for i, req := range collectorSeen() {
@@ -294,8 +326,8 @@ func main() {
 		fail("step 8: the telemetry collector received NOTHING, so its leak assertions asserted nothing. " +
 			"Set AXONFLOW_TELEMETRY=on for this driver")
 	}
-	fmt.Printf("step 8 PASS: no token in %d captured log bytes or in any of %d telemetry requests\n",
-		len(logs.String()), len(collectorSeen()))
+	fmt.Printf("step 8 PASS: no token in %d captured log bytes (SDK output present) or in any of %d telemetry requests\n",
+		len(captured), len(collectorSeen()))
 
 	// =========================================================== 9. OBSERVABLE
 	// A fail-closed read the platform leaves no trace of is a read nobody can
@@ -314,52 +346,51 @@ func client(endpoint, clientID, secret, userToken string) *axonflow.AxonFlowClie
 		ClientSecret: secret,
 		UserToken:    userToken,
 		Timeout:      30 * time.Second,
+		// Debug is ON deliberately, and step 8 depends on it. Every log line
+		// in this SDK is behind this flag, so with it off the "the token does
+		// not appear in the log" grep runs against a stream containing no SDK
+		// output at all — a negative assertion over an empty haystack, which is
+		// true of every string. Step 8 also asserts a positive control before
+		// the grep, so the haystack is known non-empty.
+		Debug: true,
 	})
 }
 
-// decideAs drives the real /decide plane as a given per-user identity. That
-// endpoint reads identity from the request BODY (`user_token`), not from
-// X-User-Token — the write path and the read path are deliberately different
-// seams, which is exactly why the read path needed its own surface.
+// decideAs drives the real /decide plane THROUGH THE SDK, as a given per-user
+// identity.
+//
+// Through client.Decide rather than a hand-rolled POST, because a driver that
+// hand-posts the write leg is testing curl on that leg: the SDK's own request
+// shape, headers and encoding go unexercised. It also makes this the evidence
+// for the corrected "inert on the write path" docstring — /api/v1/decide is
+// not proxied, so the X-User-Token this client stamps is genuinely ignored
+// there and identity comes from the BODY's user_token, which is what the two
+// seams being different means in practice.
 func decideAs(endpoint, clientID, secret, userToken string, i int) (string, error) {
-	body := map[string]any{
-		"stage":      "llm",
-		"query":      fmt.Sprintf("summarize support ticket %d for run %s", i, runTag),
-		"user_token": userToken,
-		"target":     map[string]any{"type": "llm", "model": "gpt-4", "provider": "openai"},
-		"context": map[string]any{
+	// A client with NO client-level identity: the write path must be driven by
+	// the body token alone, or this leg would silently prove nothing about
+	// which seam carries the attribution.
+	c := client(endpoint, clientID, secret, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := c.Decide(ctx, axonflow.DecideRequest{
+		Stage:     "llm",
+		Query:     fmt.Sprintf("summarize support ticket %d for run %s", i, runTag),
+		UserToken: userToken,
+		Target:    axonflow.DecisionTarget{Type: "llm", Model: "gpt-4", Provider: "openai"},
+		Context: map[string]any{
 			"x-session-id": runTag,
 			"x-ai-agent":   "read-path-identity-e2e",
 		},
-	}
-	buf, _ := json.Marshal(body)
-	req, err := http.NewRequest("POST", endpoint+"/api/v1/decide", bytes.NewReader(buf))
+	})
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Client-ID", clientID)
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(clientID+":"+secret)))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
+	if resp.DecisionID == "" {
+		return "", fmt.Errorf("the /decide response carried no decision_id (verdict=%q)", resp.Verdict)
 	}
-	defer resp.Body.Close()
-	rb, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("decide HTTP %d: %s", resp.StatusCode, rb)
-	}
-	var out struct {
-		DecisionID string `json:"decision_id"`
-	}
-	if err := json.Unmarshal(rb, &out); err != nil {
-		return "", err
-	}
-	if out.DecisionID == "" {
-		return "", fmt.Errorf("no decision_id in /decide response: %s", rb)
-	}
-	return out.DecisionID, nil
+	return resp.DecisionID, nil
 }
 
 // waitForVisible polls until the asynchronous audit write has landed, so a
@@ -468,14 +499,33 @@ func assertPlatformRecordedTheUnscopedRead() {
 	fmt.Println("step 9 PASS: the orchestrator recorded the unscoped read ([read-scope] diagnostic present)")
 }
 
-// clearHeartbeatStamp removes the 7-day telemetry stamp so this process's
-// first client actually sends a ping. Mirrors heartbeat.go resolveStampPath.
-func clearHeartbeatStamp() {
+// parkHeartbeatStamp moves the 7-day telemetry stamp aside for the duration of
+// this run, so the first client actually sends a ping, and returns a function
+// that puts it back.
+//
+// PARKED, not deleted. The stamp lives in the developer's real user cache dir;
+// deleting it would make their next unrelated SDK run fire a genuine ping at
+// the production checkpoint — a test reaching outside its own sandbox to change
+// the machine's state.
+//
+// And parked rather than redirected via HOME/XDG_CACHE_HOME, which was the
+// first attempt and does not work: heartbeat.go resolves the path in a
+// PACKAGE-LEVEL initialiser (`sharedHeartbeat = newHeartbeatState()`), so it is
+// fixed before main() can set an environment variable. The symptom was a
+// silently empty collector and a step 8 that asserted nothing — which is why
+// step 8 fails loudly on an empty collector rather than passing.
+func parkHeartbeatStamp() func() {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		return
+		return func() {}
 	}
-	_ = os.Remove(filepath.Join(cacheDir, "axonflow", "go-telemetry-last-sent"))
+	stamp := filepath.Join(cacheDir, "axonflow", "go-telemetry-last-sent")
+	parked := stamp + ".s3-parked"
+	if err := os.Rename(stamp, parked); err != nil {
+		// No stamp to park (first run on this machine, or already gone).
+		return func() {}
+	}
+	return func() { _ = os.Rename(parked, stamp) }
 }
 
 func getenv(k, def string) string {

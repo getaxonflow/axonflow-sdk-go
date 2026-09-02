@@ -103,11 +103,20 @@ const (
 
 // readScopeOf extracts the scope the platform reported on a response.
 // A nil response, or one without the header, is ReadScopeAbsent.
+//
+// Trimmed and lower-cased, for the same reason the platform's own header
+// helpers are (sharedidentity.AdminAuthorityFromHeader uses EqualFold): a
+// proxy that normalises header casing or appends whitespace must not silently
+// change the answer. Here the cost of getting that wrong is one-sided and
+// quiet — a scope spelled "None" would fall to the unrecognised branch, and
+// the vacuous empty page it describes would come back as data again, which is
+// the whole defect this file exists to remove. An unrecognised value is
+// otherwise unchanged, so it still round-trips to the caller.
 func readScopeOf(resp *http.Response) ReadScope {
 	if resp == nil {
 		return ReadScopeAbsent
 	}
-	return ReadScope(strings.TrimSpace(resp.Header.Get(headerReadScope)))
+	return ReadScope(strings.ToLower(strings.TrimSpace(resp.Header.Get(headerReadScope))))
 }
 
 // ============================================================================
@@ -143,8 +152,66 @@ type ReadOption func(context.Context) context.Context
 // nothing — see ReadScopeNone).
 func WithUserToken(token string) ReadOption {
 	return func(ctx context.Context) context.Context {
-		return context.WithValue(ctx, userTokenCtxKey{}, strings.TrimSpace(token))
+		return ContextWithUserToken(ctx, token)
 	}
+}
+
+// ContextWithUserToken returns ctx carrying token as the per-user identity for
+// requests made with it.
+//
+// This is the ambient form of WithUserToken, for the methods that take a
+// context but no ReadOption. Use it when a per-request identity has to travel
+// through code that does not know about this SDK — a middleware chain, a
+// worker that is handed a context and a job.
+//
+// # What it reaches, exactly
+//
+// Only the methods that thread YOUR context into the outbound request. Roughly
+// two thirds of this SDK's methods do; the rest build their request with
+// http.NewRequest and no context (all of masfeat.go, execution_replay.go,
+// policies.go, code_governance.go, and several in axonflow.go), and some take
+// no context at all. On those, a token planted here is NOT seen and the client
+// -level AxonFlowConfig.UserToken applies instead.
+//
+// That fallback is to a BROADER identity, which is the direction that matters:
+// a gateway acting for Alice that plants her token on a context and then calls
+// a non-context method gets the client's own identity, not hers. So for a
+// process acting on behalf of several people, prefer AsUser, which binds the
+// identity to the client and therefore reaches every method with no such
+// carve-out. Reach for this only where a client per user is genuinely
+// impractical, and only on the read methods, which do thread the context.
+func ContextWithUserToken(ctx context.Context, token string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, userTokenCtxKey{}, strings.TrimSpace(token))
+}
+
+// AsUser returns a client identical to c but presenting token as its per-user
+// identity, for a process acting on behalf of several people.
+//
+// This is the recommended shape for a gateway or a bot: unlike the
+// context-carried identity, it reaches EVERY method, because it is resolved
+// from the client rather than from a context the method may not thread. There
+// is no carve-out to remember and no path on which the identity silently
+// widens back to the process's own.
+//
+//	forAlice := client.AsUser(aliceToken)
+//	rows, err := forAlice.ListDecisions(ctx, axonflow.ListDecisionsOptions{})
+//
+// The returned client SHARES the underlying HTTP clients and cache with c —
+// it is a view, not a new connection pool — so deriving one per request is
+// cheap. Only the identity differs.
+//
+// An empty token returns a client that presents no identity at all, which on
+// an enterprise stack reads nothing (see ReadScopeNone).
+func (c *AxonFlowClient) AsUser(token string) *AxonFlowClient {
+	if c == nil {
+		return nil
+	}
+	derived := *c
+	derived.config.UserToken = strings.TrimSpace(token)
+	return &derived
 }
 
 // applyReadOptions folds opts onto ctx. A nil ctx is treated as Background so
@@ -183,9 +250,28 @@ func (c *AxonFlowClient) effectiveUserToken(ctx context.Context) string {
 // reads X-User-Token once, in the middleware in front of every proxied route
 // (platform/agent/proxy.go), and the routes themselves never look at it.
 //
-// On the routes that do not consume it (the body-`user_token` write path,
-// /health) the header is inert — the agent's write path reads identity from
-// the request body, not from this header.
+// # The header is NOT inert on the routes that are not reads
+//
+// It is validated on every route the agent proxies, which is nearly all of
+// them. platform/agent/proxy.go proxyAuthMiddleware resolves X-User-Token
+// before dispatch and answers 401 "invalid user token" for a
+// present-but-INVALID one — on /api/v1/plans, /api/v1/policies,
+// /api/v1/connectors, /api/v1/process, /api/v1/budgets, /api/v1/cost,
+// /api/v1/executions and the rest, not only on the scoped reads. A validated
+// one also overrides the X-User-Email attribution those writes are recorded
+// under.
+//
+// So a stale or rotated UserToken does not degrade to "unscoped reads"; it
+// turns ListConnectors, InstallConnector, GetPlanStatus and policy CRUD into
+// 401s. That is the correct direction — a credential the platform rejects must
+// not be silently ignored — but it is a real operational consequence of
+// setting this client-wide, and it is why the value belongs in the same
+// rotation story as ClientSecret rather than being treated as a read-only
+// convenience.
+//
+// Genuinely inert, because the agent does not proxy them: /api/request,
+// /api/v1/decide (the write path reads identity from the request BODY's
+// user_token, not from this header) and /health.
 //
 // The token is a CREDENTIAL. It is written to the header and nowhere else: it
 // is never logged (including under Debug), never carried in an error message,
@@ -226,9 +312,13 @@ func (c *AxonFlowClient) applyReadIdentity(req *http.Request) {
 //     identity (AxonFlowConfig.UserToken / WithUserToken) whose address is a
 //     real person's — see ReadScopeNone for why a valid token can still
 //     resolve to nothing.
-//   - ReadScopeOwnRows — an identity WAS resolved and the row is not among
-//     the rows attributed to it. Remedy: none for this identity; a tenant-wide
-//     role (admin / owner / policy_admin) sees the whole tenant.
+//   - ReadScopeOwnRows — an identity WAS resolved, and the row is not among
+//     the ones attributed to it. That does NOT mean the row exists and belongs
+//     to somebody else: the platform answers "not attributed to you" and "not
+//     there at all" with the identical 404, deliberately, so that a miss cannot
+//     be used to probe for another user's rows. This error therefore reports
+//     the scope, not a claim about what exists. Remedy: a tenant-wide role
+//     (admin / owner / policy_admin) sees the whole tenant.
 //
 // The presented token is never included in Error(): the message is safe to
 // log, which is the point of putting the diagnosis in a type rather than in a
@@ -269,8 +359,11 @@ func (e *ReadScopeError) Error() string {
 			e.StatusCode, subject, headerReadScope, e.Scope)
 	}
 	return fmt.Sprintf(
-		"HTTP %d: %s is not visible to the identity presented: the platform reports %s: %s, "+
-			"so the read was narrowed to that identity's own rows. A tenant-wide role "+
+		"HTTP %d: %s was not found among the rows this identity can see: the platform reports "+
+			"%s: %s, so the read was narrowed to the identity's own rows. It is either not "+
+			"attributed to this identity or not there at all — the platform answers both the "+
+			"same way ON PURPOSE, so that a miss cannot be used to probe for the existence of "+
+			"another user's rows, and this SDK cannot tell them apart either. A tenant-wide role "+
 			"(admin, owner or policy_admin) reads the whole tenant (platform #2922).",
 		e.StatusCode, subject, headerReadScope, e.Scope)
 }
@@ -291,6 +384,66 @@ func readScopeErrorFor(resource, id string, scope ReadScope, status int) *ReadSc
 	default:
 		return nil
 	}
+}
+
+// refuseVacuousScopedPage returns the typed refusal when a scoped read came
+// back EMPTY under a scope that could not have returned a row, and nil in
+// every other case.
+//
+// One helper rather than a check at each read, because "the page is empty and
+// the scope is none" is one rule and the reads that need it decode their body
+// on more than one path each. A rule copied per return site is a rule that
+// ends up applied on some of them.
+//
+// The emptiness guard is as load-bearing as the scope guard: a non-empty page
+// is never turned into an error, whatever the header says. And only
+// ReadScopeNone refuses — an own-rows or tenant-wide read that legitimately
+// found nothing is a real answer, and replacing it with an error would swap
+// one wrong report for another.
+func refuseVacuousScopedPage(resp *http.Response, resource string, rows int) error {
+	if rows > 0 {
+		return nil
+	}
+	if readScopeOf(resp) != ReadScopeNone {
+		return nil
+	}
+	status := 0
+	if resp != nil {
+		status = resp.StatusCode
+	}
+	return &ReadScopeError{Resource: resource, Scope: ReadScopeNone, StatusCode: status}
+}
+
+// stripIdentityOnCrossHostRedirect is the http.Client CheckRedirect policy for
+// every client this SDK builds.
+//
+// net/http already strips Authorization, WWW-Authenticate, Cookie and Cookie2
+// when a redirect changes host — sensitive headers must not follow a request
+// somewhere the caller did not choose. That list is fixed and X-User-Token is
+// not on it, so without this the SDK forwards a per-user credential to a host
+// the caller never named, on a hop where the TENANT credential is dropped.
+// Measured: an origin at localhost answering 302 to 127.0.0.1 saw
+// Authorization="" and X-User-Token intact at the far end. Two lines from any
+// endpoint that 301s http→https through a third party.
+//
+// The same-host rule is net/http's own (Request.isSameOrigin / the
+// stripSensitiveHeaders path in redirectBehavior): host equality, which
+// includes the port, so a redirect to a different port on the same name is
+// also a different origin. Subdomains are NOT trusted, deliberately: this
+// header is an identity assertion, not a session cookie, and "close enough"
+// is not a property an identity should have.
+//
+// The redirect itself is still followed — dropping the identity is enough,
+// because a scoped read that arrives unscoped now REFUSES visibly
+// (ReadScopeError) instead of quietly answering nothing.
+func stripIdentityOnCrossHostRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+		req.Header.Del(headerUserToken)
+	}
+	return nil
 }
 
 // AsReadScopeError unwraps err and returns the typed ReadScopeError if the

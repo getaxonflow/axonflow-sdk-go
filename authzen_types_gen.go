@@ -16,6 +16,7 @@
 package axonflow
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -358,10 +359,29 @@ type AuthZENApprovalClause struct {
 // An explicit null is refused alongside an absent member because it decodes
 // to the same zero value while being present in the object — a presence test
 // that only looked for the key would pass it straight through.
+//
+// The second pass decodes STRICTLY, and that is load-bearing rather than
+// tidy. encoding/json hands a json.Unmarshaler the raw bytes and applies
+// none of the enclosing Decoder's settings inside it, so the moment a type
+// on this surface grows an UnmarshalJSON, a caller's outer
+// DisallowUnknownFields stops reaching this subtree — silently. authzen.go
+// sets exactly that on the response path, and its reason applies here
+// verbatim: an unknown member in a decision is a server speaking a profile
+// this build does not understand, and quietly dropping it means acting on a
+// partial reading of an authorization decision. Re-asserting strictness on
+// the inner decoder keeps the guard continuous through every nested type
+// that has one of these methods, instead of leaving a hole shaped like
+// whichever types happened to need a presence check.
 func (v *AuthZENApprovalClause) UnmarshalJSON(data []byte) error {
 	var members map[string]json.RawMessage
 	if err := json.Unmarshal(data, &members); err != nil {
 		return fmt.Errorf("AuthZENApprovalClause: %w", err)
+	}
+	// A whole-object null decodes to a NIL map, not an empty one, and every
+	// member below would then be reported as \"absent\" — naming a cause this
+	// code did not observe. Say the thing that is actually true.
+	if members == nil {
+		return fmt.Errorf("AuthZENApprovalClause: the value is null, not an object")
 	}
 	for _, member := range []string{"quorum"} {
 		raw, ok := members[member]
@@ -379,7 +399,9 @@ func (v *AuthZENApprovalClause) UnmarshalJSON(data []byte) error {
 	// field-by-field decode rather than an infinite recursion into here.
 	type plain AuthZENApprovalClause
 	var decoded plain
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&decoded); err != nil {
 		return fmt.Errorf("AuthZENApprovalClause: %w", err)
 	}
 	*v = AuthZENApprovalClause(decoded)
@@ -432,10 +454,29 @@ type AuthZENApprovalRequirement struct {
 // An explicit null is refused alongside an absent member because it decodes
 // to the same zero value while being present in the object — a presence test
 // that only looked for the key would pass it straight through.
+//
+// The second pass decodes STRICTLY, and that is load-bearing rather than
+// tidy. encoding/json hands a json.Unmarshaler the raw bytes and applies
+// none of the enclosing Decoder's settings inside it, so the moment a type
+// on this surface grows an UnmarshalJSON, a caller's outer
+// DisallowUnknownFields stops reaching this subtree — silently. authzen.go
+// sets exactly that on the response path, and its reason applies here
+// verbatim: an unknown member in a decision is a server speaking a profile
+// this build does not understand, and quietly dropping it means acting on a
+// partial reading of an authorization decision. Re-asserting strictness on
+// the inner decoder keeps the guard continuous through every nested type
+// that has one of these methods, instead of leaving a hole shaped like
+// whichever types happened to need a presence check.
 func (v *AuthZENApprovalRequirement) UnmarshalJSON(data []byte) error {
 	var members map[string]json.RawMessage
 	if err := json.Unmarshal(data, &members); err != nil {
 		return fmt.Errorf("AuthZENApprovalRequirement: %w", err)
+	}
+	// A whole-object null decodes to a NIL map, not an empty one, and every
+	// member below would then be reported as \"absent\" — naming a cause this
+	// code did not observe. Say the thing that is actually true.
+	if members == nil {
+		return fmt.Errorf("AuthZENApprovalRequirement: the value is null, not an object")
 	}
 	for _, member := range []string{"separation_of_duties"} {
 		raw, ok := members[member]
@@ -453,7 +494,9 @@ func (v *AuthZENApprovalRequirement) UnmarshalJSON(data []byte) error {
 	// field-by-field decode rather than an infinite recursion into here.
 	type plain AuthZENApprovalRequirement
 	var decoded plain
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&decoded); err != nil {
 		return fmt.Errorf("AuthZENApprovalRequirement: %w", err)
 	}
 	*v = AuthZENApprovalRequirement(decoded)
@@ -741,10 +784,29 @@ type AuthZENResponse struct {
 // An explicit null is refused alongside an absent member because it decodes
 // to the same zero value while being present in the object — a presence test
 // that only looked for the key would pass it straight through.
+//
+// The second pass decodes STRICTLY, and that is load-bearing rather than
+// tidy. encoding/json hands a json.Unmarshaler the raw bytes and applies
+// none of the enclosing Decoder's settings inside it, so the moment a type
+// on this surface grows an UnmarshalJSON, a caller's outer
+// DisallowUnknownFields stops reaching this subtree — silently. authzen.go
+// sets exactly that on the response path, and its reason applies here
+// verbatim: an unknown member in a decision is a server speaking a profile
+// this build does not understand, and quietly dropping it means acting on a
+// partial reading of an authorization decision. Re-asserting strictness on
+// the inner decoder keeps the guard continuous through every nested type
+// that has one of these methods, instead of leaving a hole shaped like
+// whichever types happened to need a presence check.
 func (v *AuthZENResponse) UnmarshalJSON(data []byte) error {
 	var members map[string]json.RawMessage
 	if err := json.Unmarshal(data, &members); err != nil {
 		return fmt.Errorf("AuthZENResponse: %w", err)
+	}
+	// A whole-object null decodes to a NIL map, not an empty one, and every
+	// member below would then be reported as \"absent\" — naming a cause this
+	// code did not observe. Say the thing that is actually true.
+	if members == nil {
+		return fmt.Errorf("AuthZENResponse: the value is null, not an object")
 	}
 	for _, member := range []string{"decision"} {
 		raw, ok := members[member]
@@ -762,7 +824,9 @@ func (v *AuthZENResponse) UnmarshalJSON(data []byte) error {
 	// field-by-field decode rather than an infinite recursion into here.
 	type plain AuthZENResponse
 	var decoded plain
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&decoded); err != nil {
 		return fmt.Errorf("AuthZENResponse: %w", err)
 	}
 	*v = AuthZENResponse(decoded)
@@ -933,10 +997,29 @@ type AuthZENObligation struct {
 // An explicit null is refused alongside an absent member because it decodes
 // to the same zero value while being present in the object — a presence test
 // that only looked for the key would pass it straight through.
+//
+// The second pass decodes STRICTLY, and that is load-bearing rather than
+// tidy. encoding/json hands a json.Unmarshaler the raw bytes and applies
+// none of the enclosing Decoder's settings inside it, so the moment a type
+// on this surface grows an UnmarshalJSON, a caller's outer
+// DisallowUnknownFields stops reaching this subtree — silently. authzen.go
+// sets exactly that on the response path, and its reason applies here
+// verbatim: an unknown member in a decision is a server speaking a profile
+// this build does not understand, and quietly dropping it means acting on a
+// partial reading of an authorization decision. Re-asserting strictness on
+// the inner decoder keeps the guard continuous through every nested type
+// that has one of these methods, instead of leaving a hole shaped like
+// whichever types happened to need a presence check.
 func (v *AuthZENObligation) UnmarshalJSON(data []byte) error {
 	var members map[string]json.RawMessage
 	if err := json.Unmarshal(data, &members); err != nil {
 		return fmt.Errorf("AuthZENObligation: %w", err)
+	}
+	// A whole-object null decodes to a NIL map, not an empty one, and every
+	// member below would then be reported as \"absent\" — naming a cause this
+	// code did not observe. Say the thing that is actually true.
+	if members == nil {
+		return fmt.Errorf("AuthZENObligation: the value is null, not an object")
 	}
 	for _, member := range []string{"mandatory", "schema_version"} {
 		raw, ok := members[member]
@@ -954,7 +1037,9 @@ func (v *AuthZENObligation) UnmarshalJSON(data []byte) error {
 	// field-by-field decode rather than an infinite recursion into here.
 	type plain AuthZENObligation
 	var decoded plain
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&decoded); err != nil {
 		return fmt.Errorf("AuthZENObligation: %w", err)
 	}
 	*v = AuthZENObligation(decoded)
