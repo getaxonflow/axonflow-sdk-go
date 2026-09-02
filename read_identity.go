@@ -205,6 +205,12 @@ func ContextWithUserToken(ctx context.Context, token string) context.Context {
 //
 // An empty token returns a client that presents no identity at all, which on
 // an enterprise stack reads nothing (see ReadScopeNone).
+//
+// One value is copied rather than shared: the customer-portal session cookie.
+// A LoginToPortal on either client after the derivation is invisible to the
+// other, so derive AFTER logging in if the derived client needs the portal
+// plane. That plane authenticates with the cookie rather than with this
+// identity, so the two are independent by design.
 func (c *AxonFlowClient) AsUser(token string) *AxonFlowClient {
 	if c == nil {
 		return nil
@@ -269,9 +275,31 @@ func (c *AxonFlowClient) effectiveUserToken(ctx context.Context) string {
 // rotation story as ClientSecret rather than being treated as a read-only
 // convenience.
 //
-// Genuinely inert, because the agent does not proxy them: /api/request,
-// /api/v1/decide (the write path reads identity from the request BODY's
-// user_token, not from this header) and /health.
+// # Where it IS inert
+//
+// Only two seams read X-User-Token at all — platform/agent/proxy.go
+// (proxyAuthMiddleware, in front of the proxied routes) and
+// mcp_identity.go (the MCP-server plane) — so it is inert on every route the
+// AGENT SERVES ITSELF. Enumerated from the agent router rather than sampled,
+// because replacing one wrong census with a shorter wrong census is not a fix:
+//
+//	/api/request                    ProxyLLMCall / ProxyLLMCallWithMedia
+//	/api/v1/decide                  Decide / DecideAndFulfill — identity comes
+//	                                from the request BODY's user_token here,
+//	                                which is the whole reason the read path
+//	                                needed a surface of its own
+//	/api/v1/access/evaluation       Evaluate (AuthZEN)
+//	/api/v1/static-policies/*       the system-policy family
+//	/api/v1/circuit-breaker/*
+//	/api/v1/hitl/*
+//	/api/v1/mcp/check-input         PreCheck
+//	/api/v1/mcp/check-output
+//	/api/v1/register                RegisterTry (mints the credential)
+//	/api/policy/pre-check
+//	/api/audit/llm-call
+//	/health                         HealthCheck / the telemetry probe
+//
+// Everything else this SDK calls is proxied, and therefore validates it.
 //
 // The token is a CREDENTIAL. It is written to the header and nowhere else: it
 // is never logged (including under Debug), never carried in an error message,
@@ -426,12 +454,19 @@ func refuseVacuousScopedPage(resp *http.Response, resource string, rows int) err
 // Authorization="" and X-User-Token intact at the far end. Two lines from any
 // endpoint that 301s http→https through a third party.
 //
-// The same-host rule is net/http's own (Request.isSameOrigin / the
-// stripSensitiveHeaders path in redirectBehavior): host equality, which
-// includes the port, so a redirect to a different port on the same name is
-// also a different origin. Subdomains are NOT trusted, deliberately: this
-// header is an identity assertion, not a session cookie, and "close enough"
-// is not a property an identity should have.
+// The rule here is deliberately STRICTER than net/http's own. net/http
+// compares Hostname() — port-insensitive — so it forwards Authorization
+// across a port change on the same name; measured, a 127.0.0.1:A -> 127.0.0.1:B
+// redirect kept Basic auth while this policy dropped the identity. Full host
+// equality (name AND port) is the right rule for an identity assertion:
+// a different port is a different service. Subdomains are not trusted either,
+// for the same reason — this header is an identity assertion, not a session
+// cookie, and "close enough" is not a property an identity should have.
+//
+// A same-name, different-port redirect therefore strips the identity and the
+// scoped read that follows REFUSES visibly, which is the intended outcome:
+// better a caller who is told their read was unscoped than one silently handed
+// a credential to another service.
 //
 // The redirect itself is still followed — dropping the identity is enough,
 // because a scoped read that arrives unscoped now REFUSES visibly
@@ -442,6 +477,12 @@ func stripIdentityOnCrossHostRedirect(req *http.Request, via []*http.Request) er
 	}
 	if len(via) > 0 && req.URL.Host != via[0].URL.Host {
 		req.Header.Del(headerUserToken)
+		// Not a secret — the tenant SECRET rides Authorization, which net/http
+		// strips itself — but these two name the caller to whoever receives
+		// them, and there is no reason for a host the caller never chose to
+		// learn it. Dropped on the same hop, for the same reason.
+		req.Header.Del("X-Client-ID")
+		req.Header.Del("X-Axonflow-Client")
 	}
 	return nil
 }

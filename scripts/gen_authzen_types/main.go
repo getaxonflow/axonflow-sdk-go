@@ -323,7 +323,7 @@ func emitPresenceUnmarshal(b *strings.Builder, name string, t Type) {
 	fmt.Fprintf(b, "\tif err := json.Unmarshal(data, &members); err != nil {\n")
 	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: %%w\", err)\n\t}\n", name)
 	fmt.Fprintf(b, "\t// A whole-object null decodes to a NIL map, not an empty one, and every\n")
-	fmt.Fprintf(b, "\t// member below would then be reported as \\\"absent\\\" — naming a cause this\n")
+	fmt.Fprintf(b, "\t// member below would then be reported as absent - naming a cause this\n")
 	fmt.Fprintf(b, "\t// code did not observe. Say the thing that is actually true.\n")
 	fmt.Fprintf(b, "\tif members == nil {\n")
 	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: the value is null, not an object\")\n\t}\n", name)

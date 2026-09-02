@@ -378,7 +378,7 @@ func (v *AuthZENApprovalClause) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("AuthZENApprovalClause: %w", err)
 	}
 	// A whole-object null decodes to a NIL map, not an empty one, and every
-	// member below would then be reported as \"absent\" — naming a cause this
+	// member below would then be reported as absent - naming a cause this
 	// code did not observe. Say the thing that is actually true.
 	if members == nil {
 		return fmt.Errorf("AuthZENApprovalClause: the value is null, not an object")
@@ -473,7 +473,7 @@ func (v *AuthZENApprovalRequirement) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("AuthZENApprovalRequirement: %w", err)
 	}
 	// A whole-object null decodes to a NIL map, not an empty one, and every
-	// member below would then be reported as \"absent\" — naming a cause this
+	// member below would then be reported as absent - naming a cause this
 	// code did not observe. Say the thing that is actually true.
 	if members == nil {
 		return fmt.Errorf("AuthZENApprovalRequirement: the value is null, not an object")
@@ -803,7 +803,7 @@ func (v *AuthZENResponse) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("AuthZENResponse: %w", err)
 	}
 	// A whole-object null decodes to a NIL map, not an empty one, and every
-	// member below would then be reported as \"absent\" — naming a cause this
+	// member below would then be reported as absent - naming a cause this
 	// code did not observe. Say the thing that is actually true.
 	if members == nil {
 		return fmt.Errorf("AuthZENResponse: the value is null, not an object")
@@ -1016,7 +1016,7 @@ func (v *AuthZENObligation) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("AuthZENObligation: %w", err)
 	}
 	// A whole-object null decodes to a NIL map, not an empty one, and every
-	// member below would then be reported as \"absent\" — naming a cause this
+	// member below would then be reported as absent - naming a cause this
 	// code did not observe. Say the thing that is actually true.
 	if members == nil {
 		return fmt.Errorf("AuthZENObligation: the value is null, not an object")

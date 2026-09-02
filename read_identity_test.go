@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -1046,5 +1047,115 @@ func TestAuthZENDecode_NullObjectSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "null") {
 		t.Errorf("the refusal does not say what it actually saw: %v", err)
+	}
+}
+
+// unauthenticatedByDesign are the functions that build a request to the
+// platform and deliberately send NO credentials. Each needs a reason, because
+// the whole value of the census below is that adding a name to it is a
+// conscious act rather than a way to make a test pass.
+var unauthenticatedByDesign = map[string]string{
+	"HealthCheck":             "/health is unauthenticated by contract — it is what a load balancer polls",
+	"HealthCheckDetailed":     "same route, richer body; still unauthenticated",
+	"RegisterTryWithEndpoint": "community-SaaS registration MINTS the credential; there is none to send yet",
+	"LoginToPortal":           "exchanges org+password for a session cookie; sending Basic auth would be a different plane",
+	"LogoutFromPortal":        "cookie-authed, same plane as LoginToPortal",
+	"probePlatformHealth":     "the telemetry /health probe — deliberately carries nothing, see the leak tests",
+	"sendTelemetryPingNow": "the checkpoint POST goes to a THIRD PARTY and must carry no credential " +
+		"of ours at all",
+	"portalRequest": "customer-portal plane: authenticates with the session COOKIE from " +
+		"LoginToPortal, not with the tenant credential",
+	"portalRequestRaw": "same plane as portalRequest",
+	"doHttpRequest": "the send helper itself — it is the site every caller goes THROUGH, " +
+		"not a caller",
+}
+
+// TestEveryAuthenticatedRequestAddsAuthHeaders is the structural claim behind
+// "one transport site": a function that sends a request to the platform and
+// does NOT call addAuthHeaders has silently opted out of the credential, the
+// client id, and the per-user identity all at once.
+//
+// It exists because exactly that had happened: MASFEATRetireSystem built its
+// DELETE and went straight to doHttpRequest, sending no credentials at all —
+// and the docstrings this change added claimed the opposite in three places.
+// A claim about every method needs a test over every method, not prose.
+func TestEveryAuthenticatedRequestAddsAuthHeaders(t *testing.T) {
+	fset := token.NewFileSet()
+	pkg, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("parsing the package: %v", err)
+	}
+
+	var offenders []string
+	unusedAllowlist := map[string]bool{}
+	for name := range unauthenticatedByDesign {
+		unusedAllowlist[name] = true
+	}
+
+	for _, p := range pkg {
+		for path, file := range p.Files {
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				var sends, authorizes bool
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok {
+						return true
+					}
+					switch sel.Sel.Name {
+					case "doHttpRequest", "Do":
+						// Both send shapes. `Do` is included because three
+						// functions bypass doHttpRequest and drive an
+						// http.Client directly; a census that only knew the
+						// helper would report them clean while they carry
+						// nothing — the guard would be exactly as wide as the
+						// syntax it happened to match.
+						sends = true
+					case "addAuthHeaders":
+						authorizes = true
+					}
+					return true
+				})
+				if !sends || authorizes {
+					continue
+				}
+				if _, allowed := unauthenticatedByDesign[fn.Name.Name]; allowed {
+					delete(unusedAllowlist, fn.Name.Name)
+					continue
+				}
+				offenders = append(offenders,
+					fmt.Sprintf("%s:%d %s", path, fset.Position(fn.Pos()).Line, fn.Name.Name))
+			}
+		}
+	}
+
+	sort.Strings(offenders)
+	if len(offenders) != 0 {
+		t.Errorf("these methods send a request to the platform without calling addAuthHeaders, so "+
+			"they carry no tenant credential, no client id and no per-user identity:\n  %s\n"+
+			"Add the call, or add the name to unauthenticatedByDesign with the reason it sends nothing.",
+			strings.Join(offenders, "\n  "))
+	}
+
+	// A stale allowlist is the quiet way this guard rots: an entry for a
+	// function that no longer exists, or that now authenticates, makes the
+	// list look considered while covering nothing.
+	if len(unusedAllowlist) != 0 {
+		var stale []string
+		for name := range unusedAllowlist {
+			stale = append(stale, name)
+		}
+		sort.Strings(stale)
+		t.Errorf("unauthenticatedByDesign names %v, which no longer match an unauthenticated "+
+			"request-sending function; remove them so the list keeps meaning something", stale)
 	}
 }

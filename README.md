@@ -937,13 +937,20 @@ a cause:
 
 ```go
 decisions, err := client.ListDecisions(ctx, axonflow.ListDecisionsOptions{})
-if rse, ok := axonflow.AsReadScopeError(err); ok {
-    if rse.IdentityMissing() {
-        // The platform resolved no identity, so it returned zero rows by
-        // construction. The empty answer was never evidence about your data.
-    } else {
-        // An identity WAS resolved; these rows belong to someone else.
-    }
+if rse, ok := axonflow.AsReadScopeError(err); ok && rse.IdentityMissing() {
+    // The platform resolved no identity, so it returned zero rows by
+    // construction. The empty answer was never evidence about your data.
+}
+
+// ExplainDecision is where the other scope shows up. Under own-rows the
+// platform answers "not attributed to you" and "not there at all" with the
+// same 404, deliberately — so that a miss cannot be used to probe for another
+// user's rows. The error reports the scope the read ran under, never a claim
+// about what exists.
+exp, err := client.ExplainDecision(ctx, id)
+if rse, ok := axonflow.AsReadScopeError(err); ok && !rse.IdentityMissing() {
+    // Not among the rows this identity can see. A tenant-wide role
+    // (admin, owner, policy_admin) reads the whole tenant.
 }
 ```
 

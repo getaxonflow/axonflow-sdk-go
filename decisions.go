@@ -358,12 +358,8 @@ func (c *AxonFlowClient) ListDecisions(ctx context.Context, opts ListDecisionsOp
 	// Only ReadScopeNone refuses. ReadScopeOwnRows with zero rows is a real
 	// answer ("you have made no decisions matching this filter"), and turning
 	// it into an error would replace one wrong report with another.
-	if len(envelope.Decisions) == 0 && readScopeOf(resp) == ReadScopeNone {
-		return nil, &ReadScopeError{
-			Resource:   "decisions",
-			Scope:      ReadScopeNone,
-			StatusCode: resp.StatusCode,
-		}
+	if scopeErr := refuseVacuousScopedPage(resp, "decisions", len(envelope.Decisions)); scopeErr != nil {
+		return nil, scopeErr
 	}
 	return envelope.Decisions, nil
 }
