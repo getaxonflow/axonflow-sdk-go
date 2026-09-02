@@ -96,6 +96,41 @@ type telemetryPayload struct {
 	// receiver preserves omission for legacy pings, so an omitted field
 	// reads as "unknown", not as any particular tier.
 	LicenseTier *string `json:"license_tier,omitempty"`
+	// Edition is the BUILD the connected platform reported on its own /health:
+	// "community" or "enterprise". Relayed verbatim, and it rides the SAME
+	// /health response the version and the tier already come from - no new
+	// request. Issue axonflow-enterprise#3660.
+	//
+	// IT IS NOT AN ENTITLEMENT FACT, for the reason spelled out on LicenseTier
+	// above: whoever operates the endpoint this client was pointed at controls
+	// the value completely, and this SDK relays it unverified. Adoption
+	// analytics only - never gate a feature, an authorization decision or a
+	// billing decision on it.
+	//
+	// It is also NOT derivable from anything else here. The Community-SaaS
+	// fleet runs the ENTERPRISE build against the community-saas schema, so
+	// neither DeploymentMode nor LicenseTier implies it.
+	//
+	// nil (omitted) means NOT LEARNED - /health unreachable, non-2xx,
+	// unparseable, or carrying no "edition" key. Absent must never become a
+	// value: emitting "community" for a platform we could not reach would be a
+	// false claim about a customer's deployment.
+	Edition *string `json:"edition,omitempty"`
+	// PlatformDeploymentMode is the connected platform's OWN DEPLOYMENT_MODE
+	// setting, as it reported it on /health under the member name
+	// `deployment_mode`.
+	//
+	// READ THE FIELD NAMES CAREFULLY - THIS IS THE TRAP THIS CONTRACT IS MOST
+	// LIKELY TO BE GOT WRONG ON. The /health member is called
+	// `deployment_mode` because there the platform is describing ITSELF. On
+	// this ping, `deployment_mode` (the field above) already means something
+	// else entirely: the TOPOLOGY bucket this SDK derives from the endpoint URL
+	// it was configured with. They are different dimensions, and mapping
+	// /health's member onto the topology field would overwrite a value every
+	// existing dashboard reads.
+	//
+	// Same trust boundary and same nil semantics as Edition.
+	PlatformDeploymentMode *string `json:"platform_deployment_mode,omitempty"`
 }
 
 // DeploymentMode classifications for telemetry (v1 schema, axonflow-enterprise#2008).
@@ -213,6 +248,16 @@ type telemetryResponse struct {
 type healthProbe struct {
 	PlatformVersion *string
 	LicenseTier     *string
+	// Edition / PlatformDeploymentMode - the platform-identity members added in
+	// axonflow-enterprise#3660. Independent of the two above and of each other:
+	// a platform that reports some of them and not others yields a partially
+	// populated probe rather than nothing.
+	Edition *string
+	// PlatformDeploymentMode is read from the /health member named
+	// `deployment_mode` and travels to the ping field named
+	// `platform_deployment_mode`. The rename is the whole point - see the
+	// telemetryPayload field doc.
+	PlatformDeploymentMode *string
 }
 
 // maxHealthBodyBytes bounds the /health response the probe will parse.
@@ -287,6 +332,18 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 		// before its licence is validated. "starting" is a real signal the
 		// receiver buckets deliberately, not an error to filter client-side.
 		probe.LicenseTier = &t
+	}
+	if e, ok := health["edition"].(string); ok && e != "" {
+		probe.Edition = &e
+	}
+	// NOTE THE NAME CHANGE, AND THAT IT IS DELIBERATE. The /health member is
+	// `deployment_mode` (the platform describing itself); the wire field is
+	// `platform_deployment_mode`. This SDK's OWN `deployment_mode` is a
+	// different dimension - the topology it derives from its endpoint URL - and
+	// promoting /health's member into it would overwrite a value every existing
+	// dashboard reads.
+	if m, ok := health["deployment_mode"].(string); ok && m != "" {
+		probe.PlatformDeploymentMode = &m
 	}
 	return probe
 }
@@ -401,6 +458,12 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		Stream:          stream,
 		OrgID:           telemetryOrgID(),
 		LicenseTier:     probe.LicenseTier,
+		// Forwarded verbatim, omitted when not learned. NOTE that /health's
+		// `deployment_mode` member lands on `platform_deployment_mode` here,
+		// NOT on DeploymentMode above, which is the topology this SDK derived
+		// from its own endpoint URL. See the field docs.
+		Edition:                probe.Edition,
+		PlatformDeploymentMode: probe.PlatformDeploymentMode,
 	}
 
 	body, err := json.Marshal(payload)
