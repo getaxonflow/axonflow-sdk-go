@@ -72,8 +72,8 @@ Demonstrates:
 | `AXONFLOW_AGENT_URL` | Yes | AxonFlow Agent endpoint URL |
 | `AXONFLOW_CLIENT_ID` | Yes | Your client identifier |
 | `AXONFLOW_CLIENT_SECRET` | Yes | Your AxonFlow license key (format: AXON-{TIER}-{ORG}-{EXPIRY}-{SIG}) |
-| `AMADEUS_API_KEY` | No | For connector examples |
-| `AMADEUS_API_SECRET` | No | For connector examples |
+| `AXONFLOW_REDIS_HOST` | No | Redis host as seen from the platform (default: `redis`, the docker-compose service) |
+| `AXONFLOW_REDIS_PORT` | No | Redis port (default: `6379`) |
 
 ## Authentication
 

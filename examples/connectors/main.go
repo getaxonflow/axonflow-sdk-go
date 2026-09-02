@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/getaxonflow/axonflow-sdk-go/v9"
 )
@@ -22,10 +22,25 @@ func main() {
 	// platform (tenants.tenant_id). On local/dev stacks the tenant id matches
 	// the client id (org), so default to that.
 	tenantID := getEnv("AXONFLOW_TENANT_ID", clientID)
+	// The Redis connector connects FROM the platform (orchestrator), not from
+	// this process. On the docker-compose stack the Redis service is reachable
+	// as "redis"; override for other topologies.
+	redisHost := getEnv("AXONFLOW_REDIS_HOST", "redis")
+	redisPort, err := strconv.Atoi(getEnv("AXONFLOW_REDIS_PORT", "6379"))
+	if err != nil {
+		log.Fatalf("AXONFLOW_REDIS_PORT must be a number: %v", err)
+	}
 
 	if clientID == "" || clientSecret == "" {
 		log.Fatal("AXONFLOW_CLIENT_ID and AXONFLOW_CLIENT_SECRET must be set")
 	}
+
+	failed := false
+	// Community-edition stacks run connectors from config files and have no
+	// DB persistence for marketplace installs (migration 021 is
+	// enterprise-conditional), so the install→query arc is skipped there
+	// rather than failed.
+	installArc := true
 
 	// Initialize client
 	fmt.Println("Initializing AxonFlow client...")
@@ -42,6 +57,7 @@ func main() {
 	}
 
 	fmt.Printf("Found %d connectors:\n\n", len(connectors))
+	redisInstalled := false
 	for i, conn := range connectors {
 		fmt.Printf("%d. %s (%s)\n", i+1, conn.Name, conn.Type)
 		fmt.Printf("   Description: %s\n", conn.Description)
@@ -50,94 +66,69 @@ func main() {
 		if conn.Installed {
 			fmt.Printf("   Instance Name: %s\n", conn.InstanceName)
 		}
+		if conn.Type == "redis" && conn.Installed {
+			redisInstalled = true
+		}
 		fmt.Println()
 	}
 
-	// Install a connector (example: Amadeus Travel API)
+	// Install a connector. Redis ships with the docker-compose stack, so the
+	// install→query arc runs end-to-end with no external service or paid
+	// credentials. (Earlier revisions installed the Amadeus travel connector
+	// here; Amadeus decommissioned its self-service APIs on 2026-07-17, so an
+	// example pinned to it can never succeed again.)
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Println("Step 2: Install Amadeus Travel Connector")
+	fmt.Println("Step 2: Install Redis Connector")
 	fmt.Println(strings.Repeat("=", 60))
 
-	// Check if Amadeus credentials are available
-	amadeusKey := os.Getenv("AMADEUS_API_KEY")
-	amadeusSecret := os.Getenv("AMADEUS_API_SECRET")
-
-	if amadeusKey == "" || amadeusSecret == "" {
-		fmt.Println("⚠ Skipping connector installation (AMADEUS_API_KEY and AMADEUS_API_SECRET not set)")
-		fmt.Println("To install a connector, set the required credentials:")
-		fmt.Println("  export AMADEUS_API_KEY=your-key")
-		fmt.Println("  export AMADEUS_API_SECRET=your-secret")
+	if redisInstalled {
+		// Keep the example re-runnable: the platform rejects duplicate
+		// registrations, so don't re-install an already-installed connector.
+		fmt.Println("✓ Redis connector already installed — skipping install")
 	} else {
-		fmt.Println("Installing Amadeus connector...")
+		fmt.Printf("Installing Redis connector (host=%s port=%d)...\n", redisHost, redisPort)
 
 		err = client.InstallConnector(axonflow.ConnectorInstallRequest{
-			ConnectorID: "amadeus-travel",
-			Name:        "amadeus-travel",
+			ConnectorID: "redis-cache",
+			Name:        "redis-cache",
 			TenantID:    tenantID,
 			Options: map[string]interface{}{
-				// Amadeus issues self-service keys for the "test" environment;
-				// switch to "production" only with production Amadeus keys.
-				"environment": "test",
-				"region":      "europe",
-			},
-			Credentials: map[string]string{
-				"api_key":    amadeusKey,
-				"api_secret": amadeusSecret,
+				"host": redisHost,
+				"port": redisPort,
 			},
 		})
 
 		if err != nil {
-			if strings.Contains(err.Error(), "already registered") {
+			switch {
+			case strings.Contains(err.Error(), "already registered"):
 				fmt.Println("✓ Connector already installed, continuing")
-			} else {
-				log.Printf("Failed to install connector: %v", err)
+			case strings.Contains(err.Error(), "Failed to persist connector config"):
+				// Community-edition stack: no connector_configs table by
+				// design. Not a failure — the arc just isn't available here.
+				fmt.Println("⚠ This stack cannot persist connector installs (community edition")
+				fmt.Println("  runs connectors from config files) — skipping the install/query arc")
+				installArc = false
+			default:
+				fmt.Printf("⚠ Failed to install connector: %v\n", err)
+				failed = true
 			}
 		} else {
 			fmt.Println("✓ Connector installed successfully!")
 		}
 	}
 
-	// Query an installed connector
+	// Query the installed connector through the governed gateway path.
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("Step 3: Query Connector")
 	fmt.Println(strings.Repeat("=", 60))
 
-	// Example 1: Query Amadeus for flight data
-	if amadeusKey != "" {
-		fmt.Println("Querying Amadeus connector for flights...")
-
-		// Amadeus connector operations: search_flights, search_hotels,
-		// lookup_airport (parameters carry the search criteria).
-		departureDate := time.Now().AddDate(0, 1, 0).Format("2006-01-02")
-		resp, err := client.QueryConnector(
-			userToken,        // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
-			"amadeus-travel", // query by connector ID (the marketplace ID used at install time)
-			"search_flights",
-			map[string]interface{}{
-				"origin":         "CDG",
-				"destination":    "AMS",
-				"departure_date": departureDate,
-				"adults":         1,
-				"max":            2,
-			},
-		)
-
-		if err != nil {
-			log.Printf("Connector query failed: %v", err)
-		} else if !resp.Success {
-			fmt.Printf("Query failed: %s\n", resp.Error)
-		} else if resp.Error != "" || resp.Data == nil {
-			// Success=true with an Error set means the SDK failed open
-			// (production mode, AxonFlow unavailable) — don't report data.
-			fmt.Printf("⚠ No flight data (governed call did not reach the connector): %s\n", resp.Error)
-		} else {
-			fmt.Println("✓ Flight data retrieved:")
-			fmt.Printf("%v\n", resp.Data)
-		}
+	if !installArc {
+		fmt.Println("Skipped (connector install is not available on this stack).")
+		fmt.Println("\n✅ Connector examples completed (listing only on this edition)")
+		return
 	}
 
-	// Example 2: Query Redis connector (if available)
-	fmt.Println("\nQuerying Redis connector...")
+	fmt.Println("Querying Redis connector...")
 
 	redisResp, err := client.QueryConnector(
 		userToken, // AXONFLOW_USER_TOKEN (JWT) on enterprise stacks; empty ("anonymous") is fine on community stacks.
@@ -151,17 +142,22 @@ func main() {
 	)
 
 	if err != nil {
-		fmt.Printf("⚠ Redis query failed (expected if not installed): %v\n", err)
+		fmt.Printf("⚠ Redis query failed: %v\n", err)
+		failed = true
 	} else if !redisResp.Success {
 		fmt.Printf("⚠ Redis query failed: %s\n", redisResp.Error)
+		failed = true
 	} else if redisResp.Error != "" || redisResp.Data == nil {
+		// Success=true with an Error set means the SDK failed open
+		// (production mode, AxonFlow unavailable) — don't report data.
 		fmt.Printf("⚠ No Redis data (governed call did not reach the connector): %s\n", redisResp.Error)
+		failed = true
 	} else {
 		fmt.Println("✓ Redis data retrieved:")
 		fmt.Printf("%v\n", redisResp.Data)
 	}
 
-	// Example 3: List connectors again to see installed status
+	// List connectors again to see installed status
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("Step 4: Verify Installed Connectors")
 	fmt.Println(strings.Repeat("=", 60))
@@ -184,6 +180,16 @@ func main() {
 	}
 
 	fmt.Printf("\nTotal installed connectors: %d\n", installedCount)
+	if installedCount == 0 {
+		fmt.Println("⚠ Expected at least the Redis connector to be installed")
+		failed = true
+	}
+
+	if failed {
+		fmt.Println("\n⚠ Connector examples completed with failures")
+		os.Exit(1)
+	}
+	fmt.Println("\n✅ Connector examples completed")
 }
 
 // getEnv retrieves environment variable or returns default value
