@@ -38,7 +38,7 @@ Enterprise-grade Go SDK for AxonFlow AI governance platform. Add invisible AI go
 
 This SDK is a client library for interacting with a running AxonFlow control plane. It is used from application or agent code to send execution context, policies, and requests at runtime.
 
-A deployed AxonFlow platform (self-hosted or cloud) is required for end-to-end AI governance. SDKs alone are not sufficient-the platform and SDKs are designed to be used together.
+A deployed AxonFlow platform (self-hosted or cloud) is required for end-to-end AI governance. SDKs alone are not sufficient—the platform and SDKs are designed to be used together.
 
 ### See AxonFlow in Action
 
@@ -65,18 +65,18 @@ Need more capacity than Community without moving to Enterprise? Evaluation uses 
 | Audit retention | 3 days | 14 days | 3650 days |
 | Concurrent executions | 5 | 25 | Unlimited |
 | Pending execution approvals | 5 | 25 | Unlimited |
-| Evidence export (CSV / JSON) | - | 5,000 records · 14d window · 3/day | Unlimited |
-| Policy simulation | - | 300 / day | Unlimited |
+| Evidence export (CSV / JSON) | — | 5,000 records · 14d window · 3/day | Unlimited |
+| Policy simulation | — | 300 / day | Unlimited |
 
 Concurrent executions applies to MAP and WCP executions per tenant. Pending execution approvals applies to MAP confirm/step mode and WCP approval queues.
 
-> **Note:** Evidence export and policy simulation are licensed AxonFlow platform capabilities available alongside the SDK on your deployed platform - not language-specific SDK helpers. Access them via the platform API or customer portal. The SDK row is included to show what your licensed deployment unlocks at each tier.
+> **Note:** Evidence export and policy simulation are licensed AxonFlow platform capabilities available alongside the SDK on your deployed platform — not language-specific SDK helpers. Access them via the platform API or customer portal. The SDK row is included to show what your licensed deployment unlocks at each tier.
 
 [Get a free Evaluation license](https://getaxonflow.com/evaluation-license?utm_source=readme_sdk_go_eval) · [Run a paid production program](https://getaxonflow.com/design-partner?utm_source=readme_sdk_go_eval) · [Full feature matrix](https://docs.getaxonflow.com/docs/features/community-vs-enterprise?utm_source=readme_sdk_go_eval)
 
 ## Try Without Installing
 
-Skip local setup entirely - try AxonFlow instantly at [**try.getaxonflow.com**](https://docs.getaxonflow.com/docs/deployment/community-saas):
+Skip local setup entirely — try AxonFlow instantly at [**try.getaxonflow.com**](https://docs.getaxonflow.com/docs/deployment/community-saas):
 
 ```bash
 # 1. Register (30 seconds)
@@ -225,7 +225,7 @@ docker-compose up
 ### Sandbox Mode (Local Testing)
 
 ```go
-// Quick sandbox client for local testing - defaults to http://localhost:8080.
+// Quick sandbox client for local testing — defaults to http://localhost:8080.
 client := axonflow.Sandbox("demo-client", "demo-secret")
 
 resp, err := client.ProxyLLMCall(
@@ -240,7 +240,7 @@ if resp.Blocked {
 }
 ```
 
-> Sandbox-mode clients fire telemetry like every other client - anonymous SDK
+> Sandbox-mode clients fire telemetry like every other client — anonymous SDK
 > heartbeat, classification-only payload, opt-out via `AXONFLOW_TELEMETRY=off`.
 > Pings are tagged `stream="sandbox"` server-side so dev/test usage is
 > distinguishable from production heartbeat.
@@ -276,7 +276,7 @@ change**, so an integration written against it migrates once rather than twice.
 
 The server **refuses what it cannot evaluate** rather than evaluating around it.
 Send a subject property, an unrecognised context member, or an argument beside
-the query, and you get a typed refusal naming the exact member - not a decision
+the query, and you get a typed refusal naming the exact member — not a decision
 computed without it:
 
 ```go
@@ -366,7 +366,13 @@ an attribute as weighed that nobody ever read. The SDK refuses that request
 before it exists on the wire, with a typed `*AuthZENUnresolvedError` that is
 distinguishable from a server refusal (`*AuthZENError`) and from a transport
 error, and is never retryable. The rule holds at every depth of every bag,
-including inside slices and the plural envelope's shared base and entries.
+including inside slices and the plural envelope's shared base and entries. The
+one exception is an attribute nested inside your own struct, which neither you
+nor the SDK can rebuild with a member left out: there `known` still encodes as
+its value and `unknown` still refuses, but `absent` degrades to a refusal (the
+encode fails with an error naming the limitation, and nothing is sent) instead
+of an omission - put the attribute in a `map[string]any` bag if it must be
+omissible.
 
 ### What is evaluable today
 
@@ -981,7 +987,7 @@ The API surface between v1 and v5 is substantially different. Check the release 
 go get github.com/getaxonflow/axonflow-sdk-go/v9
 ```
 
-Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface changes are required for the v4 → v5 bump itself - the major version increment reflects a policy break in how plan-scoped HITL responses are returned. See the [v5.0.0 release notes](https://github.com/getaxonflow/axonflow-sdk-go/releases/tag/v5.0.0) for the specifics.
+Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface changes are required for the v4 → v5 bump itself — the major version increment reflects a policy break in how plan-scoped HITL responses are returned. See the [v5.0.0 release notes](https://github.com/getaxonflow/axonflow-sdk-go/releases/tag/v5.0.0) for the specifics.
 
 ### Migrating from v3 to v4
 
@@ -1014,7 +1020,7 @@ req := axonflow.CreateWorkflowRequest{
 // Before (v3): defaulted to "query"
 resp, _ := client.MCPCheckInput(ctx, req)
 
-// After (v4): defaults to "execute" - pass explicitly if needed
+// After (v4): defaults to "execute" — pass explicitly if needed
 req.Operation = "query"
 resp, _ := client.MCPCheckInput(ctx, req)
 ```
@@ -1137,22 +1143,22 @@ they're distinguishable from production heartbeat).
 
 ### Scope of `AXONFLOW_TELEMETRY=off`
 
-`AXONFLOW_TELEMETRY=off` disables the anonymous SDK heartbeat (version, OS, architecture). On **self-hosted** and **in-VPC** deployments, that heartbeat is the only data the SDK sends to AxonFlow, so setting `=off` means we receive nothing. On **Community SaaS** (`try.getaxonflow.com`) the hosted service also processes operational data - registrations, audit logs, policy enforcement records, workflow state, plan data, and request-header metadata aggregated for usage analytics - as part of running the platform; that operational data flow is governed by the [Privacy Policy](https://getaxonflow.com/privacy/), not by `AXONFLOW_TELEMETRY`.
+`AXONFLOW_TELEMETRY=off` disables the anonymous SDK heartbeat (version, OS, architecture). On **self-hosted** and **in-VPC** deployments, that heartbeat is the only data the SDK sends to AxonFlow, so setting `=off` means we receive nothing. On **Community SaaS** (`try.getaxonflow.com`) the hosted service also processes operational data — registrations, audit logs, policy enforcement records, workflow state, plan data, and request-header metadata aggregated for usage analytics — as part of running the platform; that operational data flow is governed by the [Privacy Policy](https://getaxonflow.com/privacy/), not by `AXONFLOW_TELEMETRY`.
 
 ### Platform licence tier (`license_tier`)
 
-Each heartbeat also reports the licence tier of the AxonFlow platform the SDK is configured to talk to - for example `community`, `evaluation`, `Enterprise`, or the transient `starting` while a platform is still booting. This lets us tell an enterprise-licensed deployment apart from an unlicensed community one in aggregate adoption figures, which the heartbeat previously could not distinguish.
+Each heartbeat also reports the licence tier of the AxonFlow platform the SDK is configured to talk to — for example `community`, `evaluation`, `Enterprise`, or the transient `starting` while a platform is still booting. This lets us tell an enterprise-licensed deployment apart from an unlicensed community one in aggregate adoption figures, which the heartbeat previously could not distinguish.
 
 What is and is not collected:
 
 - **Collected:** the coarse tier string only.
 - **Not collected:** your licence key, its expiry, its seat or node count, your organisation's name, and any other licence detail. The SDK never reads your licence key.
 
-The value is read from the `tier` field of the platform's own `/health` response - the same response the heartbeat already fetches to report the platform version, and an endpoint that returns this field to any caller without authentication. **No additional network request is made, and the SDK gains no access to anything `/health` does not already return.**
+The value is read from the `tier` field of the platform's own `/health` response — the same response the heartbeat already fetches to report the platform version, and an endpoint that returns this field to any caller without authentication. **No additional network request is made, and the SDK gains no access to anything `/health` does not already return.**
 
 **This is an adoption-analytics signal, not an entitlement one.** The value is whatever the platform at your configured endpoint reported about itself, relayed unchanged: the SDK derives nothing and verifies nothing, and the receiver cannot verify the relay either. Whoever operates that endpoint controls the value completely, so it must never gate entitlement, unlock a feature, or enter any authorization or billing decision. It is used only for aggregate adoption figures.
 
-The field is **omitted entirely** whenever the tier could not be determined - the platform is unreachable, returns an error, returns an unparseable body, or returns no `tier` field. It is never defaulted to a guessed value, so an absent field means "not known", never "community".
+The field is **omitted entirely** whenever the tier could not be determined — the platform is unreachable, returns an error, returns an unparseable body, or returns no `tier` field. It is never defaulted to a guessed value, so an absent field means "not known", never "community".
 
 `AXONFLOW_TELEMETRY=off` suppresses this field along with the rest of the heartbeat.
 

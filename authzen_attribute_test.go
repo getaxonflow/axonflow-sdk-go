@@ -369,6 +369,87 @@ func TestAuthZENMarkerDocumentIsRecognisedAcrossAJSONBoundary(t *testing.T) {
 	}
 }
 
+// TestAuthZENMarkerMustBeBooleanTrueToBeAnAttribute pins the recogniser's
+// `!= true` strictness, which a presence-only check would erase: a document
+// carrying the marker KEY with any value other than boolean true is not an
+// attribute declaration, it is the caller's own data - whatever its other
+// members say - and it goes to the wire unchanged. Python (`is True`) and
+// TypeScript (`!== true`) draw the same line. Without this, a bag that merely
+// mentions the marker key (a log of attribute traffic, a doc example, a
+// schema) would be swallowed by the resolver, and a `state:"unknown"` member
+// beside it would refuse a request the caller never framed as unresolved.
+func TestAuthZENMarkerMustBeBooleanTrueToBeAnAttribute(t *testing.T) {
+	for name, markerValue := range map[string]any{
+		"number 1":      1,
+		"boolean false": false,
+		"string true":   "true",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, raw := capturingAuthzenServer(t)
+			doc := map[string]any{
+				AuthZENAttributeMarker: markerValue,
+				"state":                "unknown",
+				"reason":               "not an attribute, just data that mentions the key",
+			}
+			req := okRequest()
+			req.Context = map[string]any{
+				"args": map[string]any{"query": "q"},
+				"dept": doc,
+			}
+			if _, err := c.Evaluate(context.Background(), req); err != nil {
+				t.Fatalf("a document whose marker is %v (%T) was refused; only boolean true declares an attribute: %v",
+					markerValue, markerValue, err)
+			}
+			ctx := wireContext(t, *raw)
+			got, err := json.Marshal(ctx["dept"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := json.Marshal(doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(want) {
+				t.Fatalf("the document was not sent byte-for-byte as data:\n got %s\nwant %s", got, want)
+			}
+		})
+	}
+}
+
+// TestAuthZENAbsentInACallerStructRefusesTheEncodeWithZeroRequests: the one
+// place ABSENT cannot mean omission. The resolver rebuilds maps and slices
+// with the member left out, but it cannot rebuild a caller's struct, and the
+// MarshalJSON backstop cannot omit the member it is being asked to encode -
+// encoding null instead would turn "there is no value" into the value null.
+// So absent inside a caller-owned struct degrades to a refusal: the encode
+// fails with a wrapped error naming the limitation, and nothing is sent.
+func TestAuthZENAbsentInACallerStructRefusesTheEncodeWithZeroRequests(t *testing.T) {
+	type payload struct {
+		Dept AuthZENAttribute `json:"dept"`
+	}
+	c, requests := countingAuthzenServer(t)
+	req := okRequest()
+	req.Context = map[string]any{
+		"args": map[string]any{"query": "q"},
+		"blob": payload{Dept: AuthZENAbsent()},
+	}
+	_, err := c.Evaluate(context.Background(), req)
+	if err == nil {
+		t.Fatal("no error: a struct-borne ABSENT attribute was encoded (as null?) and sent")
+	}
+	if _, ok := AsAuthZENUnresolvedError(err); ok {
+		t.Fatalf("the absent-in-a-struct refusal came back as *AuthZENUnresolvedError; that type means UNKNOWN (re-resolve), and this attribute IS resolved: %v", err)
+	}
+	for _, fragment := range []string{"ABSENT", "resolver", "struct"} {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Errorf("the error does not name the limitation (missing %q): %v", fragment, err)
+		}
+	}
+	if n := requests.Load(); n != 0 {
+		t.Fatalf("%d HTTP request(s) were sent; a failed encode must send nothing", n)
+	}
+}
+
 // TestAuthZENAttributeInACallerStructIsCaughtByTheEncoderBackstop: the
 // resolver does not walk a caller's own structs, so the encoder is the last
 // line - a known value is sent as its value, and an unknown one still refuses

@@ -90,7 +90,9 @@ const (
 // the same typed refusal every other unresolvable bag gets. 64 is far past
 // anything a policy attribute path plausibly nests (the platform's own
 // attribute paths are three or four segments) and far short of the stack. The
-// sibling SDKs use the same bound.
+// sibling SDKs that walk untyped bags (Python, TypeScript) use the same bound;
+// Java and Rust build requests from typed models and have no untyped walk to
+// bound.
 const maxAuthZENAttributeDepth = 64
 
 // AuthZENAttribute is one policy-visible attribute in exactly one of three
@@ -125,6 +127,11 @@ func AuthZENAbsent() AuthZENAttribute {
 // just the effect; use one of the AuthZENUnknown* reason constants or free
 // text. An empty reason is recorded as "no reason given" rather than
 // weakening the state - an unknown with no reason still refuses the request.
+//
+// Construction is stricter in the siblings: Python raises and TypeScript
+// throws on an empty reason, where Go rewrites it and Java accepts "" as-is.
+// Code ported from those SDKs behaves the same here (a non-empty reason is
+// relayed unchanged); code relying on Go's leniency does not port back.
 func AuthZENUnknown(reason string) AuthZENAttribute {
 	if strings.TrimSpace(reason) == "" {
 		reason = "no reason given"
@@ -302,6 +309,14 @@ func AsAuthZENUnresolvedError(err error) (*AuthZENUnresolvedError, bool) {
 // data: it was declared to be an attribute, and the fail-open reading of a
 // declaration this build cannot parse is exactly the collapse the type
 // prevents.
+//
+// The siblings DIVERGE here, and this side is the deliberate one: Python and
+// TypeScript currently treat a marker document with an unrecognised state as
+// NOT-an-attribute and send it on the wire as data, marker and all - the
+// fail-open reading. Go refuses. The sibling fail-open issues were filed
+// 2026-09-02; until they land, an attribute round-tripped through a boundary
+// by a NEWER build (one that knows more states) is refused by Go and silently
+// sent by Python/TS.
 func authzenAttributeParts(v any) (state AuthZENAttributeState, value any, reason string, ok bool) {
 	switch a := v.(type) {
 	case AuthZENAttribute:
