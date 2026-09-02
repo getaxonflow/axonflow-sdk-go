@@ -594,15 +594,14 @@ for _, conn := range connectors {
 
 ```go
 err := client.InstallConnector(axonflow.ConnectorInstallRequest{
-    ConnectorID: "amadeus-travel",
-    Name:        "amadeus-prod",
+    ConnectorID: "redis-cache",
+    Name:        "redis-cache",
     TenantID:    "your-tenant-id",
     Options: map[string]interface{}{
-        "environment": "production",
-    },
-    Credentials: map[string]string{
-        "api_key":    "your-amadeus-key",
-        "api_secret": "your-amadeus-secret",
+        // Host/port as seen from the platform (orchestrator), not from
+        // this process — "redis" on the docker-compose stack.
+        "host": "redis",
+        "port": 6379,
     },
 })
 
@@ -616,15 +615,14 @@ fmt.Println("Connector installed successfully!")
 ### Query a Connector
 
 ```go
-// Query the Amadeus connector for flight information
+// Query the Redis connector. Redis connector queries are command
+// statements (GET / EXISTS / TTL / KEYS) with the key in params.
 resp, err := client.QueryConnector(
     "user-session-token",  // User token for authentication and audit trail
-    "amadeus-prod",
-    "Find flights from Paris to Amsterdam on Dec 15",
+    "redis-cache",
+    "GET",
     map[string]interface{}{
-        "origin":      "CDG",
-        "destination": "AMS",
-        "date":        "2025-12-15",
+        "key": "user:123:preferences",
     },
 )
 
@@ -633,7 +631,7 @@ if err != nil {
 }
 
 if resp.Success {
-    fmt.Printf("Flight data: %v\n", resp.Data)
+    fmt.Printf("Redis data: %v\n", resp.Data)
 } else {
     fmt.Printf("Query failed: %s\n", resp.Error)
 }
