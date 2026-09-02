@@ -181,6 +181,20 @@ func (c *AxonFlowClient) EvaluateAll(ctx context.Context, bulk AuthZENBulk) (*Au
 
 // evaluateEnvelope is the one transport path both entry points share.
 func (c *AxonFlowClient) evaluateEnvelope(ctx context.Context, env AuthZENEnvelope) (*AuthZENResponse, error) {
+	// Tri-state attributes are resolved FIRST, before validation and before
+	// any bytes exist to send: a known attribute becomes its value, an absent
+	// one is omitted, and an UNKNOWN one refuses the whole envelope with a
+	// typed *AuthZENUnresolvedError naming its JSON Pointer. Unlike the
+	// validation below, this IS a safety boundary rather than a convenience:
+	// the server cannot perform it, because an unknown attribute has no wire
+	// representation -- sent without it, the request is indistinguishable from
+	// one whose attribute is absent, and the decision would record an
+	// attribute as weighed that nobody ever read. See authzen_attribute.go.
+	env, err := resolveAuthZENEnvelope(env)
+	if err != nil {
+		return nil, err
+	}
+
 	// Validated before the round trip. The server enforces the same rules and
 	// answers with a typed refusal, so this is a convenience rather than a
 	// safety boundary -- but a caller that mis-built an envelope learns it from
@@ -191,6 +205,13 @@ func (c *AxonFlowClient) evaluateEnvelope(ctx context.Context, env AuthZENEnvelo
 
 	body, err := json.Marshal(env)
 	if err != nil {
+		// The encoder is the backstop under the resolver: an attribute that
+		// reached it inside a container the resolver does not walk (a
+		// caller's own struct) refuses the request here instead of being
+		// sent. Surface that as the same typed refusal the resolver gives.
+		if unresolved, ok := AsAuthZENUnresolvedError(err); ok {
+			return nil, unresolved
+		}
 		return nil, fmt.Errorf("failed to encode the AuthZEN request: %w", err)
 	}
 

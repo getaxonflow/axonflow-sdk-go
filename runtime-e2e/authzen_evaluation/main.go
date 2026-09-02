@@ -196,6 +196,80 @@ func main() {
 		check(fmt.Sprintf("agreement with /api/v1/decide (allowed=%v)", legacyAllowed), nil)
 	}
 
+	// -- 5. the tri-state attribute: unknown refuses LOCALLY, absent and known
+	// resolve to a wire the live server accepts ------------------------------
+	//
+	// The unresolved leg's whole claim is that NO HTTP request is made, and a
+	// driver that may not stand up a stub has to observe that differently: the
+	// second client below points at an endpoint nothing listens on. Had the
+	// SDK sent (or even attempted) the request, the error would be a transport
+	// error out of that dead address; the only way to receive the LOCAL typed
+	// *AuthZENUnresolvedError - a type no server response path constructs - is
+	// for the refusal to happen before any request exists. Zero HTTP requests,
+	// observed without a mock.
+	unresolvable := axonflow.AuthZENRequest{
+		Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "runtime-e2e-gateway"},
+		Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
+		Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
+		Context: map[string]any{
+			"args": map[string]any{"query": axonflow.AuthZENUnknown(axonflow.AuthZENUnknownResolutionFailed)},
+		},
+	}
+
+	deadClient := axonflow.NewClientSimple("http://127.0.0.1:9", clientID, clientSecret)
+	_, deadErr := deadClient.Evaluate(ctx, unresolvable)
+	if unres, ok := axonflow.AsAuthZENUnresolvedError(deadErr); !ok {
+		check("an unknown attribute refuses locally with zero HTTP requests",
+			fmt.Errorf("got %T (%v); a transport error here would mean the SDK attempted the request", deadErr, deadErr))
+	} else if unres.Pointer != "/evaluation/context/args/query" {
+		check("an unknown attribute refuses locally with zero HTTP requests",
+			fmt.Errorf("pointer=%q", unres.Pointer))
+	} else if unres.Retryable() {
+		check("an unknown attribute refuses locally with zero HTTP requests",
+			fmt.Errorf("the local refusal reports itself retryable; resending the identical request cannot succeed"))
+	} else {
+		check("an unknown attribute refuses locally with zero HTTP requests", nil)
+	}
+
+	// The same refusal on the LIVE client, and it must be distinguishable from
+	// a server refusal: not recoverable as *AuthZENError.
+	_, liveUnresErr := client.Evaluate(ctx, unresolvable)
+	if _, ok := axonflow.AsAuthZENUnresolvedError(liveUnresErr); !ok {
+		check("the live client gives the same local refusal", fmt.Errorf("got %T (%v)", liveUnresErr, liveUnresErr))
+	} else if _, isServer := axonflow.AsAuthZENError(liveUnresErr); isServer {
+		check("the live client gives the same local refusal",
+			fmt.Errorf("the local refusal is also recoverable as a server *AuthZENError"))
+	} else {
+		check("the live client gives the same local refusal", nil)
+	}
+
+	// Known and absent, proven on the real wire by the SERVER's own strictness:
+	// this deployment refuses any `args` member beside `query` (leg 3 above
+	// proves it refuses invented members by name). So if the SDK sent the
+	// absent member as null, or as a marker document, the server would refuse
+	// it - an ALLOW is only reachable if `trace` was truly omitted and the
+	// known attribute truly collapsed to its value.
+	resolvedReq := axonflow.AuthZENRequest{
+		Subject:  &axonflow.AuthZENSubject{Type: "gateway", ID: "runtime-e2e-gateway"},
+		Action:   &axonflow.AuthZENAction{Name: "llm.completion"},
+		Resource: &axonflow.AuthZENResource{Type: "llm", ID: "llm"},
+		Context: map[string]any{
+			"args": map[string]any{
+				"query": axonflow.AuthZENKnown(benign),
+				"trace": axonflow.AuthZENAbsent(),
+			},
+		},
+	}
+	resolvedDec, resolvedErr := client.Evaluate(ctx, resolvedReq)
+	if resolvedErr != nil {
+		check("known resolves to its value and absent is omitted on the live wire", resolvedErr)
+	} else if !resolvedDec.Allowed() {
+		check("known resolves to its value and absent is omitted on the live wire",
+			fmt.Errorf("state=%s; the resolved request should be the benign allow from leg 1", resolvedDec.State()))
+	} else {
+		check("known resolves to its value and absent is omitted on the live wire", nil)
+	}
+
 	fmt.Println()
 	if failures > 0 {
 		fmt.Printf("%d check(s) failed\n", failures)
