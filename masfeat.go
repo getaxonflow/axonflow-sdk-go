@@ -659,6 +659,12 @@ func (c *AxonFlowClient) MASFEATRetireSystem(systemID string) (*AISystemRegistry
 	if err != nil {
 		return nil, fmt.Errorf("failed to create retire system request: %w", err)
 	}
+	// This call was missing, so the DELETE went out with NO credentials at all
+	// and 401'd on every authenticated stack. Pinned now by
+	// TestEveryAuthenticatedRequestAddsAuthHeaders, which is what turns "every
+	// request-building method funnels through addAuthHeaders" from a docstring
+	// into a checkable claim.
+	c.addAuthHeaders(httpReq)
 
 	resp, err := c.doHttpRequest(c.httpClient, httpReq)
 	if err != nil {

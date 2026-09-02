@@ -153,6 +153,10 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
     Debug:        true,          // Enable debug logging
     Timeout:      60 * time.Second,
 
+    // Per-user identity for the READ path (see "Reading decisions" below).
+    // ClientID/ClientSecret say which ORGANIZATION is asking; this says WHO.
+    UserToken: os.Getenv("AXONFLOW_USER_TOKEN"),
+
     // Retry configuration (exponential backoff)
     Retry: axonflow.RetryConfig{
         Enabled:      true,
@@ -878,6 +882,84 @@ client := axonflow.NewClient(axonflow.AxonFlowConfig{
 **Network Latency Characteristics:**
 - Public endpoint: Higher latency (internet routing overhead)
 - VPC private endpoint: Lower latency (intra-VPC routing)
+
+## Reading decisions: who is asking decides what comes back
+
+`ExplainDecision` and `ListDecisions` - and the audit and override reads - are
+scoped to the **per-user identity** you present, not to the tenant credential.
+Since platform #2922:
+
+| What you present | What an enterprise stack returns |
+|---|---|
+| a tenant-wide role (`admin`, `owner`, `policy_admin`) | the whole tenant |
+| any other identity (`developer`, `viewer`) | only the rows attributed to it |
+| **no identity** | **nothing at all** - every list is empty, every explain is not-found |
+
+`ClientID`/`ClientSecret` authenticate the **organization**. They do not say who
+is asking, so on their own they land in the third row. Community and
+Community-SaaS deployments are single-operator and read tenant-wide with no
+identity needed.
+
+```go
+client := axonflow.NewClient(axonflow.AxonFlowConfig{
+    Endpoint:     "http://localhost:8080",
+    ClientID:     os.Getenv("AXONFLOW_CLIENT_ID"),
+    ClientSecret: os.Getenv("AXONFLOW_CLIENT_SECRET"),
+    UserToken:    os.Getenv("AXONFLOW_USER_TOKEN"), // ← the per-user identity
+})
+
+// Per call:
+exp, err := client.ExplainDecision(ctx, id, axonflow.WithUserToken(usersToken))
+
+// Or, for a process acting on behalf of several people, derive a client bound
+// to one person. Unlike the per-call and context forms, this reaches EVERY
+// method, including the ones that build their request without a context.
+rows, err := client.AsUser(alicesToken).ListDecisions(ctx, axonflow.ListDecisionsOptions{})
+```
+
+> **Setting `UserToken` affects more than reads.** The header rides every
+> request and the agent validates it on every route it proxies — not just the
+> scoped reads. A stale or rotated token therefore turns `ListConnectors`,
+> `InstallConnector`, `GetPlanStatus` and policy CRUD into `401`s rather than
+> merely unscoping a read. That is the correct, fail-closed direction, but it
+> puts this value in the same rotation story as `ClientSecret`.
+
+The token is a per-user JWT - minted by the customer portal's user-token API,
+or for local testing by `scripts/generate-jwt.sh --kind user`. It is **not** the
+tenant JWT and not `ClientSecret`. It is sent as `X-User-Token`, is never
+logged, and never reaches telemetry.
+
+### Telling the three misses apart
+
+"Not found", "not yours" and "you presented nothing" used to arrive as the same
+`404`, and an unscoped list arrived as an ordinary empty page. Both now carry
+a cause:
+
+```go
+decisions, err := client.ListDecisions(ctx, axonflow.ListDecisionsOptions{})
+if rse, ok := axonflow.AsReadScopeError(err); ok && rse.IdentityMissing() {
+    // The platform resolved no identity, so it returned zero rows by
+    // construction. The empty answer was never evidence about your data.
+}
+
+// ExplainDecision is where the other scope shows up. Under own-rows the
+// platform answers "not attributed to you" and "not there at all" with the
+// same 404, deliberately — so that a miss cannot be used to probe for another
+// user's rows. The error reports the scope the read ran under, never a claim
+// about what exists.
+exp, err := client.ExplainDecision(ctx, id)
+if rse, ok := axonflow.AsReadScopeError(err); ok && !rse.IdentityMissing() {
+    // Not among the rows this identity can see. A tenant-wide role
+    // (admin, owner, policy_admin) reads the whole tenant.
+}
+```
+
+> **A valid token can still resolve to nobody.** The platform reserves the whole
+> of `@axonflow.local` and `@axonflow.internal` for *shared* identities and
+> censuses them to nothing before scoping. A correctly-signed developer token
+> minted at `demo-user@axonflow.local` - which is `generate-jwt.sh`'s own
+> default - reads zero rows and reports `IdentityMissing`, exactly like no token
+> at all. Mint per-user identities at a real domain.
 
 ## Error Handling
 

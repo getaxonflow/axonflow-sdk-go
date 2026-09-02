@@ -408,25 +408,17 @@ func (c *AxonFlowClient) SearchAuditLogs(ctx context.Context, req *AuditSearchRe
 		}
 	}
 
-	// The API returns an array directly, wrap it in a response
-	var entries []AuditLogEntry
-	if err := json.Unmarshal(body, &entries); err != nil {
-		// Try parsing as wrapped response
-		var wrappedResp AuditSearchResponse
-		if wrapErr := json.Unmarshal(body, &wrappedResp); wrapErr == nil {
-			if c.config.Debug {
-				log.Printf("[AxonFlow] Audit search returned %d entries", len(wrappedResp.Entries))
-			}
-			return &wrappedResp, nil
-		}
+	result, err := decodeAuditPage(body, req.Limit, req.Offset)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal audit search response: %w", err)
 	}
 
-	result := &AuditSearchResponse{
-		Entries: entries,
-		Total:   len(entries), // API doesn't return total, use entries count
-		Limit:   req.Limit,
-		Offset:  req.Offset,
+	// The audit reads are in the same role-scoped family as decisions
+	// (platform/orchestrator applyReadScopeHeader), so they inherit the same
+	// rule: an empty page under scope `none` could not have contained a row,
+	// and reporting it as data is the vacuous read this SDK now refuses.
+	if scopeErr := refuseVacuousScopedPage(resp, "audit entries", len(result.Entries)); scopeErr != nil {
+		return nil, scopeErr
 	}
 
 	if c.config.Debug {
@@ -434,6 +426,29 @@ func (c *AxonFlowClient) SearchAuditLogs(ctx context.Context, req *AuditSearchRe
 	}
 
 	return result, nil
+}
+
+// decodeAuditPage reads an audit page in either shape the platform sends: a
+// bare array, or the wrapped envelope with its own total/limit/offset.
+//
+// Extracted because both audit reads decoded it inline, identically, with a
+// separate return per shape — four places for one rule to be applied in, and
+// the scope refusal above would have had to be written in all four to hold.
+func decodeAuditPage(body []byte, limit, offset int) (*AuditSearchResponse, error) {
+	var entries []AuditLogEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		var wrapped AuditSearchResponse
+		if wrapErr := json.Unmarshal(body, &wrapped); wrapErr == nil {
+			return &wrapped, nil
+		}
+		return nil, err
+	}
+	return &AuditSearchResponse{
+		Entries: entries,
+		Total:   len(entries), // the array shape carries no total; use the count
+		Limit:   limit,
+		Offset:  offset,
+	}, nil
 }
 
 // GetAuditLogsByTenant retrieves recent audit logs for a specific tenant.
@@ -513,25 +528,14 @@ func (c *AxonFlowClient) GetAuditLogsByTenant(ctx context.Context, tenantID stri
 		}
 	}
 
-	// The API returns an array directly, wrap it in a response
-	var entries []AuditLogEntry
-	if err := json.Unmarshal(body, &entries); err != nil {
-		// Try parsing as wrapped response
-		var wrappedResp AuditSearchResponse
-		if wrapErr := json.Unmarshal(body, &wrappedResp); wrapErr == nil {
-			if c.config.Debug {
-				log.Printf("[AxonFlow] Tenant audit returned %d entries", len(wrappedResp.Entries))
-			}
-			return &wrappedResp, nil
-		}
+	result, err := decodeAuditPage(body, limit, offset)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal tenant audit response: %w", err)
 	}
 
-	result := &AuditSearchResponse{
-		Entries: entries,
-		Total:   len(entries),
-		Limit:   limit,
-		Offset:  offset,
+	// Same rule, same family as SearchAuditLogs — see refuseVacuousScopedPage.
+	if scopeErr := refuseVacuousScopedPage(resp, "audit entries", len(result.Entries)); scopeErr != nil {
+		return nil, scopeErr
 	}
 
 	if c.config.Debug {
@@ -549,6 +553,13 @@ func (c *AxonFlowClient) GetAuditLogsByTenant(ctx context.Context, tenantID stri
 // don't have to re-decode Basic auth. The agent's apiAuthMiddleware
 // overwrites the header with its auth-derived value, so any caller-
 // supplied X-Client-ID is harmless (no spoofing surface).
+//
+// It also stamps the per-user READ identity (X-User-Token) via
+// applyReadIdentity. This is the SDK's ONE identity site: every method that
+// builds a request calls this helper, and the platform likewise reads the
+// header once in the middleware in front of every proxied route rather than
+// per route. Adding it in a method instead would be a second copy of a
+// decision that is made in one place on both sides. See read_identity.go.
 func (c *AxonFlowClient) addAuthHeaders(req *http.Request) {
 	effectiveClientID := c.config.ClientID
 	if effectiveClientID == "" {
@@ -559,4 +570,5 @@ func (c *AxonFlowClient) addAuthHeaders(req *http.Request) {
 	)
 	req.Header.Set("Authorization", "Basic "+credentials)
 	req.Header.Set("X-Client-ID", effectiveClientID)
+	c.applyReadIdentity(req)
 }

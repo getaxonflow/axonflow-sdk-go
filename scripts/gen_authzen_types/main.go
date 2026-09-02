@@ -152,9 +152,24 @@ const AuthZENContractSchemaVersion = %q
 	// be unused and the generated file would not compile. Deciding from the
 	// rendered body rather than from a predicate keeps the two in step: a
 	// future emitter that starts using fmt somewhere else does not also have to
-	// remember to update a flag.
+	// remember to update a flag. encoding/json joins it on the same terms: only
+	// a surface with a required primitive produces an UnmarshalJSON.
+	var imports []string
+	if strings.Contains(body.String(), "bytes.") {
+		imports = append(imports, `"bytes"`)
+	}
+	if strings.Contains(body.String(), "json.") {
+		imports = append(imports, `"encoding/json"`)
+	}
 	if strings.Contains(body.String(), "fmt.") {
-		b.WriteString("import \"fmt\"\n\n")
+		imports = append(imports, `"fmt"`)
+	}
+	switch len(imports) {
+	case 0:
+	case 1:
+		fmt.Fprintf(&b, "import %s\n\n", imports[0])
+	default:
+		fmt.Fprintf(&b, "import (\n\t%s\n)\n\n", strings.Join(imports, "\n\t"))
 	}
 	b.WriteString(body.String())
 
@@ -226,8 +241,114 @@ func emitType(b *strings.Builder, s *Surface, t Type, validated map[string]bool)
 	}
 	fmt.Fprintf(b, "}\n\n")
 
+	emitPresenceUnmarshal(b, name, t)
 	emitValidate(b, name, t, validated)
 	return nil
+}
+
+// zeroIsLegalKinds are the artifact kinds whose Go zero value is a value the
+// wire may legitimately carry.
+//
+// This is the whole reason a presence check has to exist. For a required
+// STRING or ref, encoding/json's zero value ("" / nil) is not a value the
+// server would ever send for a required member, so an absent one arrives
+// visibly broken and the generated Validate refuses it. For a required bool or
+// integer it is the opposite: absent decodes to false / 0, which are ordinary
+// values, and by the time Validate runs the two are the same bytes. Nothing
+// downstream can recover the distinction, so it has to be caught at the only
+// point where it is still observable — the decode.
+var zeroIsLegalKinds = map[string]bool{"bool": true, "int": true, "number": true}
+
+// presenceCheckedMembers lists, in artifact order, the required members of t
+// whose zero value is a legal wire value.
+func presenceCheckedMembers(t Type) []string {
+	var out []string
+	for _, f := range t.Fields {
+		if f.Required && zeroIsLegalKinds[f.Type.Kind] {
+			out = append(out, f.Name)
+		}
+	}
+	return out
+}
+
+// emitPresenceUnmarshal renders an UnmarshalJSON that refuses a payload
+// omitting (or nulling) a required member whose zero value is legal.
+//
+// It is emitted rather than left to Validate for two reasons. Validate is
+// documented as OPTIONAL — "the server enforces the same rules" — so a caller
+// that never calls it is exactly the caller this defect reaches; and Validate
+// runs after the decode, when absence has already collapsed into the value.
+// UnmarshalJSON is neither optional nor late: encoding/json calls it for every
+// payload that reaches these types, including nested ones.
+func emitPresenceUnmarshal(b *strings.Builder, name string, t Type) {
+	members := presenceCheckedMembers(t)
+	if len(members) == 0 {
+		return
+	}
+
+	quoted := make([]string, len(members))
+	for i, m := range members {
+		quoted[i] = fmt.Sprintf("%q", m)
+	}
+
+	fmt.Fprintf(b, "// UnmarshalJSON decodes v and REFUSES a payload that omits, or explicitly\n")
+	fmt.Fprintf(b, "// nulls, a required member whose zero value the wire may legitimately carry:\n")
+	fmt.Fprintf(b, "// %s.\n", strings.Join(members, ", "))
+	fmt.Fprintf(b, "//\n")
+	fmt.Fprintf(b, "// Absent and false, absent and 0, are the same bytes to encoding/json and\n")
+	fmt.Fprintf(b, "// different statements on the wire. Silently reading the first as the second\n")
+	fmt.Fprintf(b, "// is a fail-open wherever the member decides an enforcement question — an\n")
+	fmt.Fprintf(b, "// obligation that lost `mandatory` in transit reads as advisory, an approval\n")
+	fmt.Fprintf(b, "// clause that lost `quorum` reads as needing nobody. Validate cannot close\n")
+	fmt.Fprintf(b, "// this: it runs after the decode, by which point the distinction is gone.\n")
+	fmt.Fprintf(b, "//\n")
+	fmt.Fprintf(b, "// An explicit null is refused alongside an absent member because it decodes\n")
+	fmt.Fprintf(b, "// to the same zero value while being present in the object — a presence test\n")
+	fmt.Fprintf(b, "// that only looked for the key would pass it straight through.\n")
+	fmt.Fprintf(b, "//\n")
+	fmt.Fprintf(b, "// The second pass decodes STRICTLY, and that is load-bearing rather than\n")
+	fmt.Fprintf(b, "// tidy. encoding/json hands a json.Unmarshaler the raw bytes and applies\n")
+	fmt.Fprintf(b, "// none of the enclosing Decoder's settings inside it, so the moment a type\n")
+	fmt.Fprintf(b, "// on this surface grows an UnmarshalJSON, a caller's outer\n")
+	fmt.Fprintf(b, "// DisallowUnknownFields stops reaching this subtree — silently. authzen.go\n")
+	fmt.Fprintf(b, "// sets exactly that on the response path, and its reason applies here\n")
+	fmt.Fprintf(b, "// verbatim: an unknown member in a decision is a server speaking a profile\n")
+	fmt.Fprintf(b, "// this build does not understand, and quietly dropping it means acting on a\n")
+	fmt.Fprintf(b, "// partial reading of an authorization decision. Re-asserting strictness on\n")
+	fmt.Fprintf(b, "// the inner decoder keeps the guard continuous through every nested type\n")
+	fmt.Fprintf(b, "// that has one of these methods, instead of leaving a hole shaped like\n")
+	fmt.Fprintf(b, "// whichever types happened to need a presence check.\n")
+	fmt.Fprintf(b, "func (v *%s) UnmarshalJSON(data []byte) error {\n", name)
+	fmt.Fprintf(b, "\tvar members map[string]json.RawMessage\n")
+	fmt.Fprintf(b, "\tif err := json.Unmarshal(data, &members); err != nil {\n")
+	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: %%w\", err)\n\t}\n", name)
+	fmt.Fprintf(b, "\t// A whole-object null decodes to a NIL map, not an empty one, and every\n")
+	fmt.Fprintf(b, "\t// member below would then be reported as absent - naming a cause this\n")
+	fmt.Fprintf(b, "\t// code did not observe. Say the thing that is actually true.\n")
+	fmt.Fprintf(b, "\tif members == nil {\n")
+	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: the value is null, not an object\")\n\t}\n", name)
+	fmt.Fprintf(b, "\tfor _, member := range []string{%s} {\n", strings.Join(quoted, ", "))
+	fmt.Fprintf(b, "\t\traw, ok := members[member]\n")
+	fmt.Fprintf(b, "\t\tif !ok {\n")
+	fmt.Fprintf(b, "\t\t\treturn fmt.Errorf(\"%s: required member %%q is absent; \"+\n", name)
+	fmt.Fprintf(b, "\t\t\t\t\"it would decode to its zero value, which is a value this member may legitimately carry, \"+\n")
+	fmt.Fprintf(b, "\t\t\t\t\"so the absence cannot be recovered after decoding\", member)\n")
+	fmt.Fprintf(b, "\t\t}\n")
+	fmt.Fprintf(b, "\t\tif string(raw) == \"null\" {\n")
+	fmt.Fprintf(b, "\t\t\treturn fmt.Errorf(\"%s: required member %%q is null; \"+\n", name)
+	fmt.Fprintf(b, "\t\t\t\t\"it would decode to its zero value, indistinguishable from a sent one\", member)\n")
+	fmt.Fprintf(b, "\t\t}\n")
+	fmt.Fprintf(b, "\t}\n")
+	fmt.Fprintf(b, "\t// The alias sheds this method, so the second pass is the ordinary\n")
+	fmt.Fprintf(b, "\t// field-by-field decode rather than an infinite recursion into here.\n")
+	fmt.Fprintf(b, "\ttype plain %s\n", name)
+	fmt.Fprintf(b, "\tvar decoded plain\n")
+	fmt.Fprintf(b, "\tdec := json.NewDecoder(bytes.NewReader(data))\n")
+	fmt.Fprintf(b, "\tdec.DisallowUnknownFields()\n")
+	fmt.Fprintf(b, "\tif err := dec.Decode(&decoded); err != nil {\n")
+	fmt.Fprintf(b, "\t\treturn fmt.Errorf(\"%s: %%w\", err)\n\t}\n", name)
+	fmt.Fprintf(b, "\t*v = %s(decoded)\n", name)
+	fmt.Fprintf(b, "\treturn nil\n}\n\n")
 }
 
 // emitValidate renders the checks the type system cannot carry.
