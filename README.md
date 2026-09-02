@@ -329,6 +329,51 @@ for _, o := range dec.Obligations() {
 }
 ```
 
+### An attribute you could not resolve
+
+Every attribute bag (`Context`, and the `Properties` of a subject, action or
+resource) holds facts *you* resolved from somewhere: an identity provider, a
+trace propagator, a session store. Resolving a fact has three outcomes, and a
+`map[string]any` can only express two of them. `AuthZENAttribute` carries the
+third:
+
+```go
+dec, err := client.Evaluate(ctx, axonflow.AuthZENRequest{
+    // ...
+    Context: map[string]any{
+        "args": map[string]any{"query": userPrompt},
+        "correlation": map[string]any{
+            "trace_id":   axonflow.AuthZENKnown(traceID),      // sent, as its value
+            "session_id": axonflow.AuthZENAbsent(),            // omitted: there IS no session
+            "origin_id":  axonflow.AuthZENUnknown(             // REFUSES the request locally
+                axonflow.AuthZENUnknownResolutionFailed),
+        },
+    },
+})
+if unres, ok := axonflow.AsAuthZENUnresolvedError(err); ok {
+    // unres.Pointer: "/evaluation/context/correlation/origin_id"
+    // unres.Retryable(): false - the refusal is frozen inside the request;
+    // re-resolve the attribute and build a new one.
+    log.Printf("re-resolve %s: %s", unres.Pointer, unres.Reason)
+}
+```
+
+`absent` and `unknown` are not the same thing: absence is a **fact** (the source
+answered: there is no value), so the member is omitted and the request is sent.
+`unknown` means the source **could not answer** - and sending the request anyway
+would have the gateway evaluate as though the attribute were missing, recording
+an attribute as weighed that nobody ever read. The SDK refuses that request
+before it exists on the wire, with a typed `*AuthZENUnresolvedError` that is
+distinguishable from a server refusal (`*AuthZENError`) and from a transport
+error, and is never retryable. The rule holds at every depth of every bag,
+including inside slices and the plural envelope's shared base and entries. The
+one exception is an attribute nested inside your own struct, which neither you
+nor the SDK can rebuild with a member left out: there `known` still encodes as
+its value and `unknown` still refuses, but `absent` degrades to a refusal (the
+encode fails with an error naming the limitation, and nothing is sent) instead
+of an omission - put the attribute in a `map[string]any` bag if it must be
+omissible.
+
 ### What is evaluable today
 
 | Field | Accepted |

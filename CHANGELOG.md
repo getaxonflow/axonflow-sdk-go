@@ -37,6 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the request that a retry will not change. A `401` continues to surface as the
   SDK's existing authentication error.
 
+- **`AuthZENAttribute`, an explicit three-valued type for policy-visible
+  attributes**, constructed with `AuthZENKnown`, `AuthZENAbsent` and
+  `AuthZENUnknown` and usable inside any attribute bag (`Context`, and the
+  `Properties` of a subject, action or resource) at any depth. `known` is
+  sent, `absent` is omitted (the source established there is no value), and
+  `unknown` REFUSES the request locally rather than letting the gateway
+  evaluate as though the attribute were missing. A bare omission from a
+  `map[string]any` cannot express that difference, and collapsing it is how an
+  attribute nobody resolved is recorded as one that was weighed. The local
+  refusal is the typed `*AuthZENUnresolvedError` (recover it with
+  `AsAuthZENUnresolvedError`): it carries the JSON Pointer of the member in
+  the server's own vocabulary, is distinguishable from a server refusal and
+  from a transport error, and its `Retryable()` is always false - the refusal
+  is frozen inside the request, so re-resolve the attribute and build a new
+  one. `AuthZENAttributeMarker` is exported for hand-building an attribute on
+  the far side of a boundary the type cannot cross (a queue, a cache that
+  round-trips through JSON), along with the `AuthZENUnknown*` reason constants
+  shared with the sibling SDKs.
+
 - **Decision readers**: `Allowed()`, `State()` (the operational state behind
   the boolean) and `Obligations()`. An allow can carry obligations the
   enforcement point must discharge; a `Mandatory` obligation that cannot be
