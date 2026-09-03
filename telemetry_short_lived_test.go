@@ -82,9 +82,11 @@ func TestTelemetryDeliveryOnShortLivedProcess(t *testing.T) {
 		t.Fatalf("filepath.Abs: %v", err)
 	}
 
-	// Build a tiny binary that imports this module (via local replace) and
-	// exits immediately after NewClient — no sleep, no goroutine wait. This
-	// is the exact shape of a real short-lived caller.
+	// Build a tiny binary that imports this module (via local replace),
+	// constructs a client, makes ONE call, and exits immediately — no sleep,
+	// no goroutine wait. That is the exact shape of a real short-lived caller,
+	// and since #3682 the call is what fires the heartbeat: construction alone
+	// no longer pings.
 	binDir := t.TempDir()
 	srcDir := filepath.Join(binDir, "src")
 	if err := writeShortLivedBinary(srcDir, modRoot); err != nil {

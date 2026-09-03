@@ -99,8 +99,11 @@ const (
 	captureWaitSeconds   = 12
 )
 
-// runChild registers whatever the parent asked for, then builds one real
-// client and lets the SDK's own startup goroutine deliver the ping.
+// runChild registers whatever the parent asked for, builds one real client,
+// and then MAKES ONE REQUEST — which is what fires the heartbeat since #3682.
+// Constructing a client no longer pings, so a child that only constructed
+// would capture nothing and every assertion here would read as a failure of
+// the SDK rather than of the harness.
 func runChild() {
 	clearStamp()
 	if raw := os.Getenv(childAdaptersVar); raw != "" {

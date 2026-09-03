@@ -3,6 +3,7 @@ package axonflow
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -24,50 +25,122 @@ import (
 // new one fails here until its author says in writing which category it is in.
 //
 // This is a source-scanning guard, so it is only as wide as the syntax it
-// matches. It catches `.Do(`, which is how every net/http request is issued in
-// this package. It would NOT catch a request issued through some future helper
-// that hides the call, and it is not a substitute for thinking about the
-// trigger when adding one — said plainly rather than left for someone to
-// discover.
+// matches, and R3 was right that the first version's needle was narrower than
+// this paragraph claimed. It now matches every request-issuing method
+// net/http's Client exposes — Do, Get, Post, Head, PostForm — and the
+// package-level http.Get / http.Post / http.Head / http.PostForm helpers.
+//
+// THREE FORMS IT STILL DOES NOT SEE, declared rather than discovered:
+//
+//   1. A call split across lines, e.g. `c.httpClient.\n\tDo(req)`. The scan
+//      is line-based; gofmt does not produce this shape, but a hand-edit
+//      could.
+//   2. A method VALUE: `do := c.httpClient.Do; do(req)`. The call site then
+//      carries no receiver at all.
+//   3. A request issued through some future helper that hides the call behind
+//      another name.
+//
+// It is not a substitute for thinking about the trigger when adding a request
+// path. What it does guarantee is that the ordinary spellings cannot be added
+// silently.
 
-// requestSiteExemptions maps "file:line-bearing snippet" to the reason that
-// site does not need — or cannot have — the heartbeat trigger.
+// requestSiteCategory is a CLOSED set. Free text let a new site claim any
+// category it liked, which made "naming its category" true only by courtesy —
+// R3's L3. An unknown value fails the test.
+type requestSiteCategory string
+
+const (
+	// categoryWrapper: doHttpRequest itself, which calls the trigger.
+	categoryWrapper requestSiteCategory = "wrapper"
+	// categoryTriggersItself: builds its own client for a reason the wrapper
+	// cannot express, and calls the trigger directly.
+	categoryTriggersItself requestSiteCategory = "triggers-itself"
+	// categoryNoClient: a package-level function with no client and no
+	// configured endpoint, so there is nothing for a heartbeat to describe.
+	categoryNoClient requestSiteCategory = "no-client"
+	// categoryTelemetryPath: the telemetry path itself, which MUST NOT
+	// trigger or the heartbeat triggers recursively.
+	categoryTelemetryPath requestSiteCategory = "telemetry-path"
+)
+
+var validCategories = map[requestSiteCategory]bool{
+	categoryWrapper:        true,
+	categoryTriggersItself: true,
+	categoryNoClient:       true,
+	categoryTelemetryPath:  true,
+}
+
+// requestSiteExemptions records, per file, how many raw request sites it has
+// and which category they are in.
 //
 // Keyed by file rather than by line so ordinary edits above a call site do not
 // churn this table; the COUNT per file is what is pinned.
 var requestSiteExemptions = map[string]struct {
-	count  int
-	reason string
+	count    int
+	category requestSiteCategory
+	reason   string
 }{
 	"heartbeat.go": {
-		count: 1,
+		category: categoryWrapper,
+		count:    1,
 		reason: "doHttpRequest itself — THE wrapper. It calls the trigger " +
 			"immediately before this .Do, which is what covers every site routed " +
 			"through it.",
 	},
 	"execution.go": {
-		count: 1,
+		category: categoryTriggersItself,
+		count:    1,
 		reason: "StreamExecutionStatus. SSE needs a client with no timeout, which " +
 			"the shared wrapper cannot express, so this site builds its own and " +
 			"calls maybeSendHeartbeatOnRequest itself. NOT exempt from the " +
 			"trigger — exempt only from the wrapper.",
 	},
 	"register.go": {
-		count: 1,
+		category: categoryNoClient,
+		count:    1,
 		reason: "A PACKAGE-LEVEL function, not a client method: registration is how " +
 			"a tenant is created, so there is no client and no configured endpoint " +
 			"to describe. A heartbeat here would report a deployment that does not " +
 			"exist yet.",
 	},
 	"telemetry.go": {
-		count: 2,
+		category: categoryTelemetryPath,
+		count:    2,
 		reason: "The telemetry path itself — the /health probe and the checkpoint " +
 			"POST. These MUST NOT call the trigger: doing so would make the " +
 			"heartbeat trigger itself, recursively.",
 	},
 }
 
+// requestCall matches the ordinary spellings of "issue an HTTP request".
+//
+// THE RECEIVER IS PART OF THE PATTERN, and that is a correction rather than a
+// nicety. Widening the needle to a bare `.Get(` on any receiver immediately
+// flagged three sites that are not requests at all — `resp.Header.Get(...)` in
+// read_identity.go and two in transport.go — because `Header` ends in a word
+// character followed by `.Get(`. A guard that cries wolf is not a stricter
+// guard: it trains the next reader to add a bogus exemption to make the test
+// pass, which is how a census stops meaning anything.
+//
+// So: `.Do(` on any receiver, since http.Client is essentially its only user;
+// the other verbs only on a receiver whose name ends in Client/client; and the
+// package-level http.* helpers.
+//
+// DECLARED LIMIT: a client held in a variable NOT named *client (say
+// `hc.Get(u)`) is not matched. That is the price of not producing false
+// positives, and it is stated rather than left to be discovered.
+var requestCall = regexp.MustCompile(
+	`\.Do\(|[Cc]lient\.(?:Get|Post|Head|PostForm)\(|\bhttp\.(?:Get|Post|Head|PostForm)\(`)
+
 func TestEveryRequestSitePassesTheHeartbeatTrigger(t *testing.T) {
+	// Every recorded exemption must name a category from the closed set.
+	for file, ex := range requestSiteExemptions {
+		if !validCategories[ex.category] {
+			t.Errorf("%s claims category %q, which is not one of the four defined categories. "+
+				"A free-text category is not a category", file, ex.category)
+		}
+	}
+
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read package dir: %v", err)
@@ -91,7 +164,7 @@ func TestEveryRequestSitePassesTheHeartbeatTrigger(t *testing.T) {
 			if strings.HasPrefix(trimmed, "//") {
 				continue
 			}
-			if strings.Contains(line, ".Do(") {
+			if requestCall.MatchString(line) {
 				found[name]++
 			}
 		}
@@ -112,6 +185,33 @@ func TestEveryRequestSitePassesTheHeartbeatTrigger(t *testing.T) {
 	const knownTotal = 5
 	if total != knownTotal {
 		t.Logf("request-site census: %d sites across %d files (was %d)", total, len(found), knownTotal)
+	}
+
+	// FALSE-POSITIVE CONTROL, the mirror of the positive control above. A
+	// needle broad enough to match `resp.Header.Get(` would make this census
+	// noise, and noise gets silenced with bogus exemptions.
+	for _, notARequest := range []string{
+		"\tscope := resp.Header.Get(headerReadScope)",
+		"\tneedsUA := req.Header.Get(\"User-Agent\") == \"\"",
+		"\tv := u.Query().Get(\"id\")",
+	} {
+		if requestCall.MatchString(notARequest) {
+			t.Errorf("the needle matches %q, which issues no request. False positives train "+
+				"readers to add bogus exemptions, which is how a census stops meaning anything",
+				strings.TrimSpace(notARequest))
+		}
+	}
+
+	// And it must still match the real spellings.
+	for _, isARequest := range []string{
+		"\tresp, err := streamClient.Do(req)",
+		"\tresp, err := c.httpClient.Get(url)",
+		"\tresp, err := http.Post(url, ct, body)",
+	} {
+		if !requestCall.MatchString(isARequest) {
+			t.Errorf("the needle MISSES %q, which is an ordinary request spelling",
+				strings.TrimSpace(isARequest))
+		}
 	}
 
 	for file, count := range found {

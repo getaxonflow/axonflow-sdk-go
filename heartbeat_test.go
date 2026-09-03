@@ -260,10 +260,15 @@ func TestHeartbeat_ConcurrentCallers_CoalesceToOnePing(t *testing.T) {
 	}
 }
 
-// Case 8: no writable cache dir (stampPath="") → ping fires per call,
-// but no crash and no stamp persistence. Mirrors AWS Lambda where HOME is
-// unset. Net effect is the same as today's pre-heartbeat behavior — no
-// regression for that runtime.
+// Case 8: no writable cache dir (stampPath="") → the ping fires ONCE and is
+// then bounded in memory, with no crash and no stamp persistence. Mirrors AWS
+// Lambda where HOME is unset, and distroless/scratch images and read-only root
+// filesystems.
+//
+// "Fires per call" was the old behaviour AND the old defect: with no stamp to
+// suppress it, a DELIVERED ping recurred every hour forever. The in-memory
+// cadence added in #3682 is the only bound in this runtime — see the inverted
+// assertion below.
 //
 // NAME CHANGED IN #3682: this used to be _PingsButNoStamp and asserted that a
 // second ping fires once the guard expires. With no writable stamp the 7-day

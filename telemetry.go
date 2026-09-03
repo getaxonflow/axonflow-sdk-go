@@ -610,8 +610,9 @@ func (c *AxonFlowClient) isTelemetryEnabled() bool {
 // isTelemetryEnabled and, if enabled, sends a single ping via
 // sendTelemetryPingNow under a bounded context. It does NOT consult the
 // 7-day stamp file — that's the heartbeat orchestrator's job
-// (maybeSendHeartbeat). Production callers should always go through
-// NewClient → maybeSendHeartbeat instead of calling this directly.
+// (maybeSendHeartbeat). Production callers always reach the ping through
+// maybeSendHeartbeatOnRequest, which every outbound request path calls —
+// NOT through NewClient, which stopped pinging at construction in #3682.
 func (c *AxonFlowClient) sendTelemetryPing() {
 	if !c.isTelemetryEnabled() {
 		return
