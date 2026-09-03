@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -1157,5 +1158,86 @@ func TestEveryAuthenticatedRequestAddsAuthHeaders(t *testing.T) {
 		sort.Strings(stale)
 		t.Errorf("unauthenticatedByDesign names %v, which no longer match an unauthenticated "+
 			"request-sending function; remove them so the list keeps meaning something", stale)
+	}
+}
+
+// TestTwoDerivedClientsDoNotShareACachedResponse pins the cross-user leak that
+// a shared cache plus an identity-blind key produced.
+//
+// AsUser is a struct copy and `cache` is a POINTER, so a derived client shares
+// the parent's cache — deliberately, because deriving one per request must not
+// cost a cache. The key was requestType:query:userToken, where userToken is the
+// write-path BODY field, and carried nothing about the identity the request
+// would actually PRESENT. Measured before the fix: one request reached the
+// server, identities [ALICE], and BOB was handed ALICE's governed response with
+// nothing evaluated on his behalf.
+func TestTwoDerivedClientsDoNotShareACachedResponse(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.Header.Get(headerUserToken))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"content":"answer"}}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(AxonFlowConfig{
+		Endpoint:     srv.URL,
+		ClientID:     "org",
+		ClientSecret: "secret",
+		Cache:        CacheConfig{Enabled: true},
+	})
+
+	const query = "the same question from two people"
+	_, _ = c.AsUser("ALICE-TOKEN").ProxyLLMCall("", query, "mcp-query", nil)
+	_, _ = c.AsUser("BOB-TOKEN").ProxyLLMCall("", query, "mcp-query", nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 {
+		t.Fatalf("two identities asking the same question must produce TWO governed requests; got "+
+			"%d (identities %v). One means the second caller was served the FIRST caller's "+
+			"response out of a shared cache, without the platform evaluating anything on their "+
+			"behalf", len(seen), seen)
+	}
+	if seen[0] != "ALICE-TOKEN" || seen[1] != "BOB-TOKEN" {
+		t.Errorf("each request must carry its OWN caller's identity; got %v", seen)
+	}
+}
+
+// TestOneIdentityAskingTwiceStillHitsTheCache is the other failure direction.
+//
+// Without it, the test above is satisfied by a key that never matches — a
+// disabled cache wearing a fix's name, costing every caller a round trip.
+func TestOneIdentityAskingTwiceStillHitsTheCache(t *testing.T) {
+	var mu sync.Mutex
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"content":"answer"}}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(AxonFlowConfig{
+		Endpoint:     srv.URL,
+		ClientID:     "org",
+		ClientSecret: "secret",
+		Cache:        CacheConfig{Enabled: true},
+	})
+	alice := c.AsUser("ALICE-TOKEN")
+	for i := 0; i < 2; i++ {
+		_, _ = alice.ProxyLLMCall("", "one question", "mcp-query", nil)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if hits != 1 {
+		t.Fatalf("the same identity asking the same question twice must be served from the "+
+			"cache; got %d requests. A key that never matches is a disabled cache", hits)
 	}
 }
