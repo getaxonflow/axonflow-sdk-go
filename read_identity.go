@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -457,11 +458,23 @@ func refuseVacuousScopedPage(resp *http.Response, resource string, rows int) err
 // The rule here is deliberately STRICTER than net/http's own. net/http
 // compares Hostname() — port-insensitive — so it forwards Authorization
 // across a port change on the same name; measured, a 127.0.0.1:A -> 127.0.0.1:B
-// redirect kept Basic auth while this policy dropped the identity. Full host
-// equality (name AND port) is the right rule for an identity assertion:
-// a different port is a different service. Subdomains are not trusted either,
-// for the same reason — this header is an identity assertion, not a session
-// cookie, and "close enough" is not a property an identity should have.
+// redirect kept Basic auth while this policy dropped the identity. Full ORIGIN
+// equality — scheme, name AND port — is the right rule for an identity
+// assertion: a different port is a different service, and a different scheme
+// is a different guarantee about who can read the credential in transit.
+// Subdomains are not trusted either, for the same reason — this header is an
+// identity assertion, not a session cookie, and "close enough" is not a
+// property an identity should have.
+//
+// Scheme was MISSING from this comparison until it was measured. url.URL.Host
+// is "name:port" and carries no scheme, so an https -> http redirect on the
+// same name compared EQUAL and the per-user identity followed the hop in
+// cleartext; measured, https://api.example.com -> http://api.example.com kept
+// X-User-Token and X-Client-ID intact. That is the one direction where being
+// wrong costs the credential to any observer on the path, and it is exactly
+// the axis a redirect test built on two local listeners cannot vary — both
+// ends are http, so scheme is constant across every such test by
+// construction.
 //
 // A same-name, different-port redirect therefore strips the identity and the
 // scoped read that follows REFUSES visibly, which is the intended outcome:
@@ -475,7 +488,7 @@ func stripIdentityOnCrossHostRedirect(req *http.Request, via []*http.Request) er
 	if len(via) >= 10 {
 		return fmt.Errorf("stopped after 10 redirects")
 	}
-	if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+	if len(via) > 0 && !sameOrigin(req.URL, via[0].URL) {
 		req.Header.Del(headerUserToken)
 		// Not a secret — the tenant SECRET rides Authorization, which net/http
 		// strips itself — but these two name the caller to whoever receives
@@ -485,6 +498,55 @@ func stripIdentityOnCrossHostRedirect(req *http.Request, via []*http.Request) er
 		req.Header.Del("X-Axonflow-Client")
 	}
 	return nil
+}
+
+// sameOrigin reports whether two URLs share an origin: scheme, host AND port.
+//
+// url.URL.Host is "name:port", so it carries the port and NOT the scheme;
+// comparing it alone is a two-axis check wearing a three-axis name. Each axis
+// is compared explicitly here so that reading the function tells you which
+// three they are.
+//
+// The port is compared through effectivePort so that the default is the
+// explicit one — https://h and https://h:443 are the same origin. Comparing
+// Host verbatim would call them different and strip the identity from an
+// ordinary redirect, which fails closed but produces a refusal nobody can act
+// on. It also matters for cross-SDK consistency: the Python, TypeScript, Java
+// and Rust siblings all resolve the default port (httpx's netloc, URL.origin,
+// HttpUrl.port, port_or_known_default), and five SDKs disagreeing about what
+// counts as the same origin is a rule nobody can state.
+//
+// The hostname is compared case-INSENSITIVELY for the same reason, and here Go
+// is the odd one out rather than merely unopinionated: url.Parse preserves the
+// case of the host, while httpx, JavaScript's URL.origin, OkHttp's HttpUrl and
+// rust-url all normalise it. Compared verbatim, a redirect from
+// https://api.example.com to https://API.example.com — the same host, and DNS
+// agrees — would strip the identity in Go alone. Fail-closed, so not a leak,
+// but it is a refusal the caller cannot act on and a divergence from the four
+// siblings on a rule the five are supposed to state identically.
+func sameOrigin(a, b *url.URL) bool {
+	return a.Scheme == b.Scheme &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) &&
+		effectivePort(a) == effectivePort(b)
+}
+
+// effectivePort is u's port, or the scheme's default when it is implicit.
+//
+// Returns the raw port for any scheme it does not know, which compares two
+// implicit ports of the same unknown scheme equal and never invents a match
+// across different ones.
+func effectivePort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch u.Scheme {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return ""
+	}
 }
 
 // AsReadScopeError unwraps err and returns the typed ReadScopeError if the

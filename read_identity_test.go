@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1239,5 +1240,102 @@ func TestOneIdentityAskingTwiceStillHitsTheCache(t *testing.T) {
 	if hits != 1 {
 		t.Fatalf("the same identity asking the same question twice must be served from the "+
 			"cache; got %d requests. A key that never matches is a disabled cache", hits)
+	}
+}
+
+// TestSameOriginComparesEveryAxis pins the origin comparison as the pure
+// function it is, one axis varied per case.
+//
+// This exists because the redirect tests CANNOT cover one of the three axes.
+// Every one of them is built on two local httptest servers, so both ends are
+// http and the SCHEME is constant across all of them by construction — which
+// is how an https -> http downgrade came to forward the per-user identity in
+// cleartext while every redirect test stayed green. Measured before the fix:
+// https://api.example.com -> http://api.example.com kept X-User-Token and
+// X-Client-ID intact.
+//
+// The redirect tests are kept and are not redundant: they assert the ALTITUDE
+// property, that the policy is wired into every client this SDK builds and is
+// re-run per hop. A pure-function test cannot see that. Neither substitutes
+// for the other.
+func TestSameOriginComparesEveryAxis(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{"identical", "https://api.example.com:8443", "https://api.example.com:8443", true},
+		{"host alone differs", "https://api.example.com:8443", "https://attacker.example:8443", false},
+		{"scheme alone differs (the cleartext downgrade)", "https://api.example.com:8443", "http://api.example.com:8443", false},
+		{"port alone differs", "https://api.example.com:8443", "https://api.example.com:9443", false},
+		{"scheme alone differs, implicit ports", "https://api.example.com", "http://api.example.com", false},
+		{"localhost is not its own loopback literal", "http://localhost:8080", "http://127.0.0.1:8080", false},
+		// Go is the odd SDK out here: url.Parse preserves host case while
+		// httpx, URL.origin, HttpUrl and rust-url all normalise it, so
+		// comparing verbatim would strip the identity in Go alone.
+		{"host case is not part of the origin", "https://api.example.com", "https://API.example.com", true},
+		{"host case, with an explicit port", "https://api.example.com:8443", "https://API.EXAMPLE.COM:8443", true},
+		{"a subdomain is not the origin", "https://api.example.com", "https://evil.api.example.com", false},
+		{"the https default port is the explicit one", "https://api.example.com", "https://api.example.com:443", true},
+		{"the http default port likewise", "http://api.example.com", "http://api.example.com:80", true},
+		{"a default port is not another scheme's", "https://api.example.com:80", "http://api.example.com", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, err := url.Parse(tc.a)
+			if err != nil {
+				t.Fatalf("parse %q: %v", tc.a, err)
+			}
+			b, err := url.Parse(tc.b)
+			if err != nil {
+				t.Fatalf("parse %q: %v", tc.b, err)
+			}
+			if got := sameOrigin(a, b); got != tc.want {
+				t.Fatalf("sameOrigin(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTheIdentityDoesNotFollowASchemeDowngrade drives the policy itself, so the
+// property is asserted at the altitude a caller actually meets it.
+func TestTheIdentityDoesNotFollowASchemeDowngrade(t *testing.T) {
+	mk := func(t *testing.T, raw string) *http.Request {
+		t.Helper()
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("parse %q: %v", raw, err)
+		}
+		return &http.Request{URL: u, Header: http.Header{}}
+	}
+
+	via := []*http.Request{mk(t, "https://api.example.com/decisions")}
+	req := mk(t, "http://api.example.com/decisions")
+	req.Header.Set(headerUserToken, "SENTINEL-USER-TOKEN")
+	req.Header.Set("X-Client-ID", "org")
+	req.Header.Set("X-Axonflow-Client", "sdk-go/9.2.0")
+
+	if err := stripIdentityOnCrossHostRedirect(req, via); err != nil {
+		t.Fatalf("policy returned an error: %v", err)
+	}
+
+	for _, h := range []string{headerUserToken, "X-Client-ID", "X-Axonflow-Client"} {
+		if got := req.Header.Get(h); got != "" {
+			t.Errorf("%s survived an https -> http redirect with value %q. A per-user identity "+
+				"must not be carried over cleartext: every observer on the path can read it, "+
+				"and net/http's own sensitive-header list does not cover this header at all", h, got)
+		}
+	}
+
+	// The other failure direction: a same-origin redirect must still carry it,
+	// or the fix is an outage rather than a guard.
+	sameVia := []*http.Request{mk(t, "https://api.example.com/a")}
+	sameReq := mk(t, "https://api.example.com/b")
+	sameReq.Header.Set(headerUserToken, "SENTINEL-USER-TOKEN")
+	if err := stripIdentityOnCrossHostRedirect(sameReq, sameVia); err != nil {
+		t.Fatalf("policy returned an error: %v", err)
+	}
+	if sameReq.Header.Get(headerUserToken) == "" {
+		t.Error("a same-origin redirect lost the identity; strictness that breaks ordinary " +
+			"redirects is an outage, not a guard")
 	}
 }
