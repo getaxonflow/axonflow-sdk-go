@@ -43,6 +43,80 @@ type heartbeatState struct {
 	lastCheckedNanos atomic.Int64 // mirror of lastChecked.UnixNano(), for lock-free pre-check on the request hot path
 	inFlight         bool         // true while a ping POST is in progress
 	stampPath        string       // empty when no user cache dir is available
+
+	// consecutiveFailures counts attempts in a row that did NOT deliver.
+	// Widens the re-check interval so a deployment that can never reach the
+	// checkpoint service stops probing its own platform every hour forever.
+	// Reset on delivery.
+	//
+	// Without it the SDK has no backoff at all, and two deliberate design
+	// choices combine into a defect: the 7-day stamp only advances on
+	// DELIVERY, and the gate is re-evaluated on every request. In a
+	// deployment where egress to the checkpoint service is blocked — the
+	// normal state of the air-gapped and in-VPC self-hosted topologies this
+	// SDK supports — every process would issue a /health GET against the
+	// CUSTOMER'S OWN platform once an hour, indefinitely, with a failed POST
+	// beside it. Unsolicited hourly traffic against someone else's platform,
+	// for a heartbeat disclosed as weekly, is not defensible.
+	//
+	// Backing off loses no ping: the stamp is still untouched, so the first
+	// attempt after the widened interval sends normally.
+	consecutiveFailures int
+
+	// lastDelivered is when this PROCESS last delivered a ping.
+	//
+	// The stamp file is the cross-restart record of that, but it is not
+	// always available: resolveStampPath returns "" where there is no usable
+	// cache dir (HOME unset — distroless and scratch containers, Lambda
+	// custom runtimes), and writeStampAtomic fails on a read-only root
+	// filesystem (readOnlyRootFilesystem: true is ordinary Kubernetes
+	// hardening). In both, readStampMtime returns the zero time forever.
+	//
+	// The failure backoff above cannot bound this case, because it resets on
+	// delivery and these deliveries SUCCEED: the gate re-opens every hour,
+	// the ping lands, the stamp cannot be written, and the next hour repeats
+	// it — 168x the "at most one ping per machine every 7 days" this SDK
+	// discloses, in exactly the environments least able to notice.
+	//
+	// So the cadence is enforced in memory too. Redundant whenever the stamp
+	// works, and the only bound when it does not. Same shape as the Rust
+	// SDK's GateInner.last_delivered (sdk-rust#89).
+	lastDelivered time.Time
+}
+
+// guardIntervalFor returns how long the gate waits before re-consulting,
+// given how many attempts in a row have failed to deliver: heartbeatGuardInterval
+// doubled per failure, capped at heartbeatInterval.
+func guardIntervalFor(consecutiveFailures int) time.Duration {
+	// Clamped before shifting: the counter is unbounded, and shifting by 63
+	// or more is undefined. 16 doublings already exceed the 7-day cap by
+	// orders of magnitude.
+	doublings := consecutiveFailures
+	if doublings > 16 {
+		doublings = 16
+	}
+	interval := heartbeatGuardInterval << doublings
+	// The shift can overflow into a negative duration for a large base if
+	// heartbeatInterval is ever raised; compare defensively rather than
+	// trusting the arithmetic.
+	if interval <= 0 || interval > heartbeatInterval {
+		return heartbeatInterval
+	}
+	return interval
+}
+
+// recordAttempt records what an attempt achieved so the next one can back
+// off. Called ONLY when an attempt was actually made — a pass that stopped at
+// a fresh stamp is not a failure and must not widen the interval.
+func (h *heartbeatState) recordAttempt(delivered bool, now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if delivered {
+		h.consecutiveFailures = 0
+		h.lastDelivered = now
+		return
+	}
+	h.consecutiveFailures++
 }
 
 // resolveStampPath returns the OS-native path to the SDK's heartbeat stamp
@@ -185,12 +259,21 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 		h.mu.Unlock()
 		return
 	}
-	if !h.lastChecked.IsZero() && now.Sub(h.lastChecked) < heartbeatGuardInterval {
+	if !h.lastChecked.IsZero() && now.Sub(h.lastChecked) < guardIntervalFor(h.consecutiveFailures) {
 		h.mu.Unlock()
 		return
 	}
 	h.lastChecked = now
 	h.lastCheckedNanos.Store(now.UnixNano())
+
+	// The 7-day cadence enforced IN MEMORY, before the stamp is consulted.
+	// See heartbeatState.lastDelivered: where the stamp cannot be persisted
+	// this is the only thing standing between a delivered ping and an hourly
+	// one.
+	if !h.lastDelivered.IsZero() && now.Sub(h.lastDelivered) < heartbeatInterval {
+		h.mu.Unlock()
+		return
+	}
 
 	if mtime := h.readStampMtime(); !mtime.IsZero() && now.Sub(mtime) < heartbeatInterval {
 		h.mu.Unlock()
@@ -211,6 +294,12 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 	h.mu.Lock()
 	h.inFlight = false
 	h.mu.Unlock()
+
+	// Recorded for EVERY attempt, delivered or not: the failure counter is
+	// what widens the guard, and the delivery instant is what bounds the
+	// success cadence when the stamp file is unavailable.
+	h.recordAttempt(err == nil, time.Now())
+
 	if err == nil {
 		if writeErr := h.writeStampAtomic(time.Now()); writeErr != nil && c.config.Debug {
 			log.Printf("[AxonFlow] heartbeat stamp write failed: %v", writeErr)
@@ -234,6 +323,13 @@ func (c *AxonFlowClient) maybeSendHeartbeatAsync() {
 		return
 	}
 	h := getSharedHeartbeat()
+	// The pre-check deliberately uses the BASE guard interval, not
+	// guardIntervalFor(consecutiveFailures): reading the counter needs the
+	// mutex, and taking it here would undo the whole point of a lock-free
+	// pre-check. Using the base interval only ever errs toward spawning a
+	// goroutine that maybeSendHeartbeat then declines under the widened
+	// interval — the backoff still holds, it is just enforced one frame in
+	// rather than here.
 	if last := h.lastCheckedNanos.Load(); last != 0 &&
 		time.Since(time.Unix(0, last)) < heartbeatGuardInterval {
 		return

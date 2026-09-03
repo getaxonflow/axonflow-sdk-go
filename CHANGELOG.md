@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`RegisterAdapter(name string)` declares a framework adapter on the existing
+  heartbeat (axonflow-enterprise#3682).** A LangChain / LangGraph / LiteLLM
+  wrapper - or your own in-house adapter - was previously indistinguishable
+  from bare SDK use on every telemetry dimension: same `sdk`, same
+  `sdk_version`, same endpoint. `RegisterAdapter("langchain")` adds
+  `adapter:langchain` to the `features` array of the ping that already fires.
+  **No new network request, no new configuration surface, no second endpoint**;
+  calling it does not itself send anything. Idempotent and safe from any
+  goroutine. The name is lowercased and trimmed and is otherwise sent as
+  given - it is deliberately NOT checked against a list of known frameworks,
+  because the canonical vocabulary lives on the receiver, which preserves an
+  unrecognised name on the row while bucketing it for reporting. Only adoption
+  signal is collected: nothing about what the adapter does, no prompts, no
+  payloads, no identities. `AXONFLOW_TELEMETRY=off` suppresses it with the rest
+  of the heartbeat.
+
+  This is the FIRST producer of `features` in this SDK - the array was
+  previously a hardcoded `[]` at its single construction site.
+
+### Changed
+
+- **Every value the SDK relays but did not author is now bounded at 64 bytes
+  and DROPPED WHOLE when it exceeds that.** The bound already applied to the
+  values promoted out of `/health`; it now also applies to adapter names, and
+  the constant moved to package scope so the two paths cannot drift into two
+  different bounds. Dropping rather than truncating is the point: a truncated
+  version string is a version nobody is running, and the receiver would record
+  it as a real value. The `features` array itself is bounded at 32 entries of
+  128 bytes, mirroring the receiver's own limits.
+
+### Fixed
+
+- **A delivered heartbeat could recur hourly, forever, where the stamp file
+  cannot be written.** The 7-day cadence was enforced only by a stamp file, so
+  in a runtime with no usable cache directory - distroless and scratch
+  containers, Lambda custom runtimes - or on a read-only root filesystem
+  (ordinary Kubernetes hardening), a *successful* ping left no record and the
+  gate re-opened an hour later, indefinitely: 168 pings a week against a
+  contract that discloses one, in exactly the environments least able to
+  notice. The cadence is now also enforced in memory, which is redundant
+  whenever the stamp works and the only bound when it does not.
+
+- **A deployment that cannot reach the checkpoint service probed the
+  customer's own platform every hour, indefinitely.** There was no failure
+  backoff: the 7-day stamp advances only on delivery and the gate is consulted
+  on every request, so with egress blocked - the normal state of air-gapped
+  and in-VPC self-hosted topologies - every process issued a `/health` GET
+  against the customer's own platform hourly, with a failed POST beside it.
+  The re-check interval now doubles per consecutive undelivered attempt, capped
+  at the 7-day interval. No ping is lost: the stamp is still untouched, so the
+  first attempt after the widened interval sends normally.
+
 ## [9.2.0] - 2026-09-01: AuthZEN-native authorization surface
 
 ### Added

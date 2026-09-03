@@ -38,7 +38,7 @@ Enterprise-grade Go SDK for AxonFlow AI governance platform. Add invisible AI go
 
 This SDK is a client library for interacting with a running AxonFlow control plane. It is used from application or agent code to send execution context, policies, and requests at runtime.
 
-A deployed AxonFlow platform (self-hosted or cloud) is required for end-to-end AI governance. SDKs alone are not sufficient—the platform and SDKs are designed to be used together.
+A deployed AxonFlow platform (self-hosted or cloud) is required for end-to-end AI governance. SDKs alone are not sufficient-the platform and SDKs are designed to be used together.
 
 ### See AxonFlow in Action
 
@@ -65,18 +65,18 @@ Need more capacity than Community without moving to Enterprise? Evaluation uses 
 | Audit retention | 3 days | 14 days | 3650 days |
 | Concurrent executions | 5 | 25 | Unlimited |
 | Pending execution approvals | 5 | 25 | Unlimited |
-| Evidence export (CSV / JSON) | — | 5,000 records · 14d window · 3/day | Unlimited |
-| Policy simulation | — | 300 / day | Unlimited |
+| Evidence export (CSV / JSON) | - | 5,000 records · 14d window · 3/day | Unlimited |
+| Policy simulation | - | 300 / day | Unlimited |
 
 Concurrent executions applies to MAP and WCP executions per tenant. Pending execution approvals applies to MAP confirm/step mode and WCP approval queues.
 
-> **Note:** Evidence export and policy simulation are licensed AxonFlow platform capabilities available alongside the SDK on your deployed platform — not language-specific SDK helpers. Access them via the platform API or customer portal. The SDK row is included to show what your licensed deployment unlocks at each tier.
+> **Note:** Evidence export and policy simulation are licensed AxonFlow platform capabilities available alongside the SDK on your deployed platform - not language-specific SDK helpers. Access them via the platform API or customer portal. The SDK row is included to show what your licensed deployment unlocks at each tier.
 
 [Get a free Evaluation license](https://getaxonflow.com/evaluation-license?utm_source=readme_sdk_go_eval) · [Run a paid production program](https://getaxonflow.com/design-partner?utm_source=readme_sdk_go_eval) · [Full feature matrix](https://docs.getaxonflow.com/docs/features/community-vs-enterprise?utm_source=readme_sdk_go_eval)
 
 ## Try Without Installing
 
-Skip local setup entirely — try AxonFlow instantly at [**try.getaxonflow.com**](https://docs.getaxonflow.com/docs/deployment/community-saas):
+Skip local setup entirely - try AxonFlow instantly at [**try.getaxonflow.com**](https://docs.getaxonflow.com/docs/deployment/community-saas):
 
 ```bash
 # 1. Register (30 seconds)
@@ -229,7 +229,7 @@ docker-compose up
 ### Sandbox Mode (Local Testing)
 
 ```go
-// Quick sandbox client for local testing — defaults to http://localhost:8080.
+// Quick sandbox client for local testing - defaults to http://localhost:8080.
 client := axonflow.Sandbox("demo-client", "demo-secret")
 
 resp, err := client.ProxyLLMCall(
@@ -244,7 +244,7 @@ if resp.Blocked {
 }
 ```
 
-> Sandbox-mode clients fire telemetry like every other client — anonymous SDK
+> Sandbox-mode clients fire telemetry like every other client - anonymous SDK
 > heartbeat, classification-only payload, opt-out via `AXONFLOW_TELEMETRY=off`.
 > Pings are tagged `stream="sandbox"` server-side so dev/test usage is
 > distinguishable from production heartbeat.
@@ -280,7 +280,7 @@ change**, so an integration written against it migrates once rather than twice.
 
 The server **refuses what it cannot evaluate** rather than evaluating around it.
 Send a subject property, an unrecognised context member, or an argument beside
-the query, and you get a typed refusal naming the exact member — not a decision
+the query, and you get a typed refusal naming the exact member - not a decision
 computed without it:
 
 ```go
@@ -603,7 +603,7 @@ err := client.InstallConnector(axonflow.ConnectorInstallRequest{
     TenantID:    "your-tenant-id",
     Options: map[string]interface{}{
         // Host/port as seen from the platform (orchestrator), not from
-        // this process — "redis" on the docker-compose stack.
+        // this process - "redis" on the docker-compose stack.
         "host": "redis",
         "port": 6379,
     },
@@ -918,7 +918,7 @@ rows, err := client.AsUser(alicesToken).ListDecisions(ctx, axonflow.ListDecision
 ```
 
 > **Setting `UserToken` affects more than reads.** The header rides every
-> request and the agent validates it on every route it proxies — not just the
+> request and the agent validates it on every route it proxies - not just the
 > scoped reads. A stale or rotated token therefore turns `ListConnectors`,
 > `InstallConnector`, `GetPlanStatus` and policy CRUD into `401`s rather than
 > merely unscoping a read. That is the correct, fail-closed direction, but it
@@ -944,7 +944,7 @@ if rse, ok := axonflow.AsReadScopeError(err); ok && rse.IdentityMissing() {
 
 // ExplainDecision is where the other scope shows up. Under own-rows the
 // platform answers "not attributed to you" and "not there at all" with the
-// same 404, deliberately — so that a miss cannot be used to probe for another
+// same 404, deliberately - so that a miss cannot be used to probe for another
 // user's rows. The error reports the scope the read ran under, never a claim
 // about what exists.
 exp, err := client.ExplainDecision(ctx, id)
@@ -1067,7 +1067,7 @@ The API surface between v1 and v5 is substantially different. Check the release 
 go get github.com/getaxonflow/axonflow-sdk-go/v9
 ```
 
-Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface changes are required for the v4 → v5 bump itself — the major version increment reflects a policy break in how plan-scoped HITL responses are returned. See the [v5.0.0 release notes](https://github.com/getaxonflow/axonflow-sdk-go/releases/tag/v5.0.0) for the specifics.
+Update all imports in your `.go` files from `/v4` to `/v5`. No API-surface changes are required for the v4 → v5 bump itself - the major version increment reflects a policy break in how plan-scoped HITL responses are returned. See the [v5.0.0 release notes](https://github.com/getaxonflow/axonflow-sdk-go/releases/tag/v5.0.0) for the specifics.
 
 ### Migrating from v3 to v4
 
@@ -1100,7 +1100,7 @@ req := axonflow.CreateWorkflowRequest{
 // Before (v3): defaulted to "query"
 resp, _ := client.MCPCheckInput(ctx, req)
 
-// After (v4): defaults to "execute" — pass explicitly if needed
+// After (v4): defaults to "execute" - pass explicitly if needed
 req.Operation = "query"
 resp, _ := client.MCPCheckInput(ctx, req)
 ```
@@ -1223,22 +1223,22 @@ they're distinguishable from production heartbeat).
 
 ### Scope of `AXONFLOW_TELEMETRY=off`
 
-`AXONFLOW_TELEMETRY=off` disables the anonymous SDK heartbeat (version, OS, architecture). On **self-hosted** and **in-VPC** deployments, that heartbeat is the only data the SDK sends to AxonFlow, so setting `=off` means we receive nothing. On **Community SaaS** (`try.getaxonflow.com`) the hosted service also processes operational data — registrations, audit logs, policy enforcement records, workflow state, plan data, and request-header metadata aggregated for usage analytics — as part of running the platform; that operational data flow is governed by the [Privacy Policy](https://getaxonflow.com/privacy/), not by `AXONFLOW_TELEMETRY`.
+`AXONFLOW_TELEMETRY=off` disables the anonymous SDK heartbeat (version, OS, architecture). On **self-hosted** and **in-VPC** deployments, that heartbeat is the only data the SDK sends to AxonFlow, so setting `=off` means we receive nothing. On **Community SaaS** (`try.getaxonflow.com`) the hosted service also processes operational data - registrations, audit logs, policy enforcement records, workflow state, plan data, and request-header metadata aggregated for usage analytics - as part of running the platform; that operational data flow is governed by the [Privacy Policy](https://getaxonflow.com/privacy/), not by `AXONFLOW_TELEMETRY`.
 
 ### Platform licence tier (`license_tier`)
 
-Each heartbeat also reports the licence tier of the AxonFlow platform the SDK is configured to talk to — for example `community`, `evaluation`, `Enterprise`, or the transient `starting` while a platform is still booting. This lets us tell an enterprise-licensed deployment apart from an unlicensed community one in aggregate adoption figures, which the heartbeat previously could not distinguish.
+Each heartbeat also reports the licence tier of the AxonFlow platform the SDK is configured to talk to - for example `community`, `evaluation`, `Enterprise`, or the transient `starting` while a platform is still booting. This lets us tell an enterprise-licensed deployment apart from an unlicensed community one in aggregate adoption figures, which the heartbeat previously could not distinguish.
 
 What is and is not collected:
 
 - **Collected:** the coarse tier string only.
 - **Not collected:** your licence key, its expiry, its seat or node count, your organisation's name, and any other licence detail. The SDK never reads your licence key.
 
-The value is read from the `tier` field of the platform's own `/health` response — the same response the heartbeat already fetches to report the platform version, and an endpoint that returns this field to any caller without authentication. **No additional network request is made, and the SDK gains no access to anything `/health` does not already return.**
+The value is read from the `tier` field of the platform's own `/health` response - the same response the heartbeat already fetches to report the platform version, and an endpoint that returns this field to any caller without authentication. **No additional network request is made, and the SDK gains no access to anything `/health` does not already return.**
 
 **This is an adoption-analytics signal, not an entitlement one.** The value is whatever the platform at your configured endpoint reported about itself, relayed unchanged: the SDK derives nothing and verifies nothing, and the receiver cannot verify the relay either. Whoever operates that endpoint controls the value completely, so it must never gate entitlement, unlock a feature, or enter any authorization or billing decision. It is used only for aggregate adoption figures.
 
-The field is **omitted entirely** whenever the tier could not be determined — the platform is unreachable, returns an error, returns an unparseable body, or returns no `tier` field. It is never defaulted to a guessed value, so an absent field means "not known", never "community".
+The field is **omitted entirely** whenever the tier could not be determined - the platform is unreachable, returns an error, returns an unparseable body, or returns no `tier` field. It is never defaulted to a guessed value, so an absent field means "not known", never "community".
 
 `AXONFLOW_TELEMETRY=off` suppresses this field along with the rest of the heartbeat.
 
@@ -1251,15 +1251,43 @@ What is and is not collected:
 - **Collected:** the two coarse strings only, exactly as the platform reported them.
 - **Not collected:** your hostname, your endpoint URL, your organisation's name, your environment variables, or any other configuration. The SDK reads nothing from your machine to produce either value.
 
-Both are read from the platform's own `/health` response — the **same response** the heartbeat already fetches for the platform version and licence tier, and an endpoint that returns these fields to any caller without authentication. **No additional network request is made.**
+Both are read from the platform's own `/health` response - the **same response** the heartbeat already fetches for the platform version and licence tier, and an endpoint that returns these fields to any caller without authentication. **No additional network request is made.**
 
 **These are adoption-analytics signals, not entitlement ones**, on exactly the same terms as the licence tier above: whoever operates your configured endpoint controls both values, the SDK relays them unchanged and verifies nothing, and they must never gate entitlement, unlock a feature, or enter any authorization or billing decision.
 
-Both fields are **omitted entirely** whenever the platform did not report them — it is unreachable, returns an error or an unparseable body, or is a version older than 10.4.0 that does not serve these members at all. That last case will be the common one for some time. An absent field means "not known"; it is never defaulted, so it can never be read as `community`.
+Both fields are **omitted entirely** whenever the platform did not report them - it is unreachable, returns an error or an unparseable body, or is a version older than 10.4.0 that does not serve these members at all. That last case will be the common one for some time. An absent field means "not known"; it is never defaulted, so it can never be read as `community`.
 
-> One naming caution for anyone reading raw payloads: the heartbeat's own `deployment_mode` field is a **different** dimension — a coarse topology (`self_hosted` / `community_saas` / `unknown`) that this SDK derives from the endpoint URL you configured. The platform's own mode travels as `platform_deployment_mode`.
+> One naming caution for anyone reading raw payloads: the heartbeat's own `deployment_mode` field is a **different** dimension - a coarse topology (`self_hosted` / `community_saas` / `unknown`) that this SDK derives from the endpoint URL you configured. The platform's own mode travels as `platform_deployment_mode`.
 
 `AXONFLOW_TELEMETRY=off` suppresses both fields along with the rest of the heartbeat.
+
+### Declaring a framework adapter (`RegisterAdapter`)
+
+If you are building a framework integration on top of this SDK - a LangChain or LangGraph wrapper, a LiteLLM callback, your own in-house adapter - you can declare it so aggregate adoption figures can tell adapter-driven usage apart from bare SDK usage. Without this they are indistinguishable: an adapter reports the same `sdk`, the same `sdk_version` and the same endpoint as any other client.
+
+```go
+import axonflow "github.com/getaxonflow/axonflow-sdk-go/v9"
+
+func init() {
+    axonflow.RegisterAdapter("langchain")
+}
+```
+
+The name is added to the `features` array of the heartbeat that already fires, as `adapter:langchain`. **It adds no network request** - there is no second ping, no second endpoint and no new configuration surface, and calling `RegisterAdapter` does not itself send anything. It is safe to call from any goroutine and from an `init()`; repeat registrations of the same name collapse to one entry.
+
+What is and is not collected:
+
+- **Collected:** the adapter name you pass, lowercased and trimmed.
+- **Not collected:** anything about what the adapter *does* - no prompts, no payloads, no tool names, no user identities, no configuration.
+
+Bounds, so a malformed call cannot damage the ping it rides on:
+
+- A name longer than **64 bytes** is **dropped whole**, never truncated - a truncated adapter name is a name nothing is running, and it would be recorded as if it were real. A name that is empty after trimming is ignored.
+- The `features` array carries at most **32 entries**, none longer than **128 bytes**. These mirror the receiver's own bounds so an oversized array is shaped here rather than silently at ingest.
+
+The name is **not** validated against a list of known frameworks. The canonical vocabulary lives on the receiving service, which folds an unrecognised name into an `adapter:unknown` bucket while keeping the raw name on the row - so an adapter this SDK build predates still shows up as "something we do not recognise is in use" instead of vanishing at the client.
+
+`AXONFLOW_TELEMETRY=off` suppresses this along with the rest of the heartbeat.
 
 `DO_NOT_TRACK` is **not** honored as an opt-out for AxonFlow telemetry. It is commonly inherited from host tools and developer environments, which makes it an unreliable expression of user intent.
 
