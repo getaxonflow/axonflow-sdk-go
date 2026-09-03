@@ -239,10 +239,17 @@ func (h *heartbeatState) writeStampAtomic(now time.Time) error {
 //  1. AXONFLOW_TELEMETRY=off / mode-disabled: short-circuit immediately.
 //     Re-evaluated every call (lock-free) so a mid-process opt-out works.
 //  2. In-flight: another goroutine is already sending — fast-path out.
-//  3. In-memory 1-hour cache: skip the stat() syscall on hot paths.
-//  4. Stamp file mtime: skip if last delivered <heartbeatInterval ago.
-//  5. Send ping under bounded timeout. On success, write stamp. On
-//     failure, leave stamp unchanged so the next call retries.
+//  3. In-memory guard: skip the stat() syscall on hot paths. One hour
+//     normally, WIDENED by guardIntervalFor after consecutive undelivered
+//     attempts so a deployment that cannot reach the checkpoint stops
+//     probing its own platform hourly.
+//  4. In-memory delivery record: skip if THIS PROCESS delivered less than
+//     heartbeatInterval ago. Redundant whenever the stamp file works, and
+//     the only bound when it cannot be written.
+//  5. Stamp file mtime: skip if last delivered <heartbeatInterval ago.
+//  6. Send ping under bounded timeout. Record the attempt either way
+//     (recordAttempt) — that is what drives 3 and 4. On success, write the
+//     stamp; on failure, leave it unchanged so the next call retries.
 func (c *AxonFlowClient) maybeSendHeartbeat() {
 	if !c.isTelemetryEnabled() {
 		return

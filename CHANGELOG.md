@@ -49,7 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate re-opened an hour later, indefinitely: 168 pings a week against a
   contract that discloses one, in exactly the environments least able to
   notice. The cadence is now also enforced in memory, which is redundant
-  whenever the stamp works and the only bound when it does not.
+  whenever the stamp works and the only bound when it does not. Note what this
+  means for those runtimes: with no writable stamp the 7-day cadence is
+  enforced PER PROCESS, so a host that starts many short-lived processes still
+  emits one ping per process. That is the same bound the SDK has always had
+  there, and it is a large improvement on one ping per hour per process, but it
+  is not the per-machine guarantee a writable stamp gives.
 
 - **A deployment that cannot reach the checkpoint service probed the
   customer's own platform every hour, indefinitely.** There was no failure

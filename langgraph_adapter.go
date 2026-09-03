@@ -163,6 +163,29 @@ func WithAutoBlock(autoBlock bool) LangGraphAdapterOption {
 //	adapter := axonflow.NewLangGraphAdapter(client, "code-review-pipeline")
 //	workflowID, err := adapter.StartWorkflow(ctx, nil, "")
 func NewLangGraphAdapter(client *AxonFlowClient, workflowName string, opts ...LangGraphAdapterOption) *LangGraphAdapter {
+	// Declare this adapter on the next telemetry heartbeat. Without it, an
+	// application driving the SDK through this adapter is indistinguishable
+	// from bare SDK use on every telemetry dimension — same sdk, same
+	// sdk_version, same endpoint — which is the entire gap the registry
+	// exists to close. See RegisterAdapter in telemetry.go.
+	//
+	// Here rather than at package init, and that distinction is the point:
+	// importing this package says the adapter is COMPILED IN, constructing
+	// one says it is IN USE. Only the second is adoption signal.
+	//
+	// Costs nothing on a hot path: no I/O, one map insert into a set that
+	// deduplicates, so a caller constructing an adapter per request declares
+	// itself once on the wire rather than N times.
+	// A LITERAL, deliberately, and NOT string(WorkflowSourceLangGraph) even
+	// though that constant currently holds the same text. They are two
+	// different vocabularies that happen to coincide: WorkflowSource is a
+	// PLATFORM API value the orchestrator interprets, this is a TELEMETRY
+	// value the checkpoint service buckets. Deriving one from the other would
+	// mean a rename in the workflow API silently repoints an analytics
+	// dimension, with nothing failing to say so. The pinning test is
+	// TestLangGraphAdapterDeclaresItself.
+	RegisterAdapter("langgraph")
+
 	a := &LangGraphAdapter{
 		client:       client,
 		workflowName: workflowName,

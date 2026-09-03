@@ -1273,6 +1273,14 @@ func init() {
 }
 ```
 
+**Call it before you construct the client.** `NewClient` sends the boot heartbeat synchronously before it returns, so anything registered afterwards rides the *next* heartbeat rather than the first one. This matters most for the SDK's own `NewLangGraphAdapter`, which registers `adapter:langgraph` from its constructor and therefore cannot reach the boot ping - the adapter takes a client, so it necessarily runs after. For day-one attribution in a short-lived process, declare the adapter first:
+
+```go
+axonflow.RegisterAdapter("langgraph")        // before the client exists
+client := axonflow.NewClient(cfg)            // boot ping carries adapter:langgraph
+adapter := axonflow.NewLangGraphAdapter(client, "my-workflow")
+```
+
 The name is added to the `features` array of the heartbeat that already fires, as `adapter:langchain`. **It adds no network request** - there is no second ping, no second endpoint and no new configuration surface, and calling `RegisterAdapter` does not itself send anything. It is safe to call from any goroutine and from an `init()`; repeat registrations of the same name collapse to one entry.
 
 What is and is not collected:

@@ -346,3 +346,62 @@ func TestFeaturesNeverSerializesAsNull(t *testing.T) {
 		t.Errorf("payload serialized as %s, want features as [] not null", string(body))
 	}
 }
+
+// TestLangGraphAdapterDeclaresItself is the census correction: the SDK SHIPS
+// a first-party LangGraph adapter, and shipping one is exactly the case the
+// registry exists for.
+//
+// The first version of this change grepped for the wire string `adapter:` and
+// concluded the SDK declared no adapters. That grep answers "does any code
+// build the string", NOT "does this SDK ship an adapter" — a census is bounded
+// by the shape you search for. The right question is asked of the EXPORTED
+// TYPE, and it finds NewLangGraphAdapter here.
+//
+// Registration is in the CONSTRUCTOR, not at package init: importing the
+// package says the adapter is compiled in, constructing one says it is in
+// USE, and only the second is adoption signal.
+//
+// MUTATION GATE: delete the RegisterAdapter call from NewLangGraphAdapter and
+// this fails with "features = []".
+func TestLangGraphAdapterDeclaresItself(t *testing.T) {
+	defer resetAdapterRegistryForTest()()
+
+	// Nothing declared before the adapter exists — the positive control that
+	// makes the assertion below about the CONSTRUCTOR rather than about
+	// package init having already run.
+	if got := registeredFeatures(); len(got) != 0 {
+		t.Fatalf("registry was non-empty before any adapter was constructed: %v", got)
+	}
+
+	_ = NewLangGraphAdapter(&AxonFlowClient{config: AxonFlowConfig{Mode: "production"}}, "wf")
+
+	got := registeredFeatures()
+	if len(got) != 1 || got[0] != "adapter:langgraph" {
+		t.Errorf("registeredFeatures() = %v, want [adapter:langgraph]", got)
+	}
+}
+
+// TestAdapterNameIsNotDerivedFromTheWorkflowSourceEnum pins the decoupling.
+//
+// WorkflowSourceLangGraph is a PLATFORM API value the orchestrator
+// interprets; the telemetry name is a value the checkpoint service buckets.
+// They coincide today. If someone renames the workflow source, this test
+// keeps the telemetry dimension where it is — without it, an analytics
+// dimension silently repoints and nothing fails.
+func TestAdapterNameIsNotDerivedFromTheWorkflowSourceEnum(t *testing.T) {
+	defer resetAdapterRegistryForTest()()
+
+	_ = NewLangGraphAdapter(&AxonFlowClient{config: AxonFlowConfig{Mode: "production"}}, "wf")
+
+	got := registeredFeatures()
+	if len(got) != 1 || got[0] != "adapter:langgraph" {
+		t.Fatalf("registeredFeatures() = %v, want [adapter:langgraph]", got)
+	}
+	// Stated as a fact about the CURRENT coincidence, so that a future
+	// divergence is a deliberate edit here rather than a silent drift.
+	if string(WorkflowSourceLangGraph) != "langgraph" {
+		t.Logf("NOTE: WorkflowSourceLangGraph is now %q while the telemetry adapter name stays "+
+			"%q. That divergence is fine — they are different vocabularies — but confirm it "+
+			"was intended.", string(WorkflowSourceLangGraph), "langgraph")
+	}
+}

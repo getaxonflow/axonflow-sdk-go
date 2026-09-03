@@ -264,7 +264,13 @@ func TestHeartbeat_ConcurrentCallers_CoalesceToOnePing(t *testing.T) {
 // but no crash and no stamp persistence. Mirrors AWS Lambda where HOME is
 // unset. Net effect is the same as today's pre-heartbeat behavior — no
 // regression for that runtime.
-func TestHeartbeat_NoCacheDir_PingsButNoStamp(t *testing.T) {
+//
+// NAME CHANGED IN #3682: this used to be _PingsButNoStamp and asserted that a
+// second ping fires once the guard expires. With no writable stamp the 7-day
+// cadence is now held in memory instead, so the ping fires ONCE and is then
+// bounded — see the inverted assertion below for why the old contract was the
+// defect.
+func TestHeartbeat_NoCacheDir_PingsOnceThenBoundedInMemory(t *testing.T) {
 	_, called := startCheckpointMock(t, http.StatusOK)
 	// Override the singleton with an empty stamp path to simulate a runtime
 	// where os.UserCacheDir() returned an error (Lambda-like). newHeartbeatClient
