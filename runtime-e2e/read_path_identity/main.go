@@ -334,7 +334,133 @@ func main() {
 	// audit. The orchestrator logs the unscoped read from step 4.
 	assertPlatformRecordedTheUnscopedRead()
 
+	// ================================================= 10. THE SHARED CACHE
+	// AsUser is a struct copy and `cache` is a POINTER, so a derived client
+	// shares the parent's response cache. Proven against the REAL agent rather
+	// than an httptest server, because the property is that a second CALLER's
+	// request actually reached the platform and was governed on their behalf,
+	// and only the platform can say that.
+	assertDerivedClientsDoNotShareACachedResponse(endpoint, clientID, clientSecret, jwtSecret, devA, devB, admin)
+
 	fmt.Println("\nALL PASS: read-path identity verified end to end through the Go SDK runtime")
+}
+
+// assertDerivedClientsDoNotShareACachedResponse drives two derived clients
+// through the real agent and asks the PLATFORM how many requests it governed.
+//
+// The unit tests count requests at an httptest server. That proves the key
+// changed; it cannot prove the platform evaluated anything for the second
+// caller, which is the property that matters when the failure mode is "BOB was
+// served ALICE's governed response".
+//
+// Three choices below are load-bearing, and each was found by measurement on a
+// live stack rather than by design. Getting any of them wrong yields a step
+// that passes on the UNFIXED SDK.
+func assertDerivedClientsDoNotShareACachedResponse(endpoint, clientID, secret, jwtSecret, devA, devB, adminToken string) {
+	// (1) Cache ON explicitly. With it off this step asserts nothing about the
+	// fix, and the SDK's default is not something this step should depend on.
+	base := axonflow.NewClient(axonflow.AxonFlowConfig{
+		Endpoint:     endpoint,
+		ClientID:     clientID,
+		ClientSecret: secret,
+		Timeout:      30 * time.Second,
+		Cache:        axonflow.CacheConfig{Enabled: true, TTL: time.Minute},
+	})
+
+	// (2) requestType "chat", NOT "mcp-query". An mcp-query without a connector
+	// in context FAILS, and the SDK caches only a SUCCESSFUL response - so with
+	// a failing type both calls reach the wire whatever the key says, and the
+	// step passes just as happily on the unfixed SDK. Measured: mcp-query
+	// answers "missing 'connector' in context".
+	//
+	// (3) The BODY user_token is IDENTICAL across both calls. /api/request
+	// validates it as a real JWT (an arbitrary string is a 401 that reads like
+	// a TENANT credential problem and is not), and it is already a cache-key
+	// component - so varying it would make the two keys differ for a reason
+	// that has nothing to do with the fix. Holding it fixed leaves the READ
+	// identity as the only thing that differs, which is the axis under test.
+	//
+	// Its address is run-specific, which is what makes the count below specific
+	// to this run: the agent attributes /api/request to the BODY token's
+	// identity - measured, NOT to the X-User-Token header - so every audit row
+	// this step produces carries this address and no other session's does.
+	serviceEmail := "cache-service-" + runTag + "@example.com"
+	service := mintUserToken(jwtSecret, serviceEmail, clientID, "developer", time.Hour)
+	query := "say hello for " + runTag
+
+	identities := []struct{ name, token string }{{"dev-a", devA}, {"dev-b", devB}}
+	for _, tok := range identities {
+		resp, err := base.AsUser(tok.token).ProxyLLMCall(service, query, "chat", nil)
+		if err != nil {
+			fail("step 10: the governed call failed for %s, a valid identity (%v). This is the "+
+				"control: without a working call the count below would be low for a reason that "+
+				"has nothing to do with the cache", tok.name, err)
+		}
+		// THE ANTI-VACUITY CONTROL, and it is not decoration: the SDK caches
+		// only a SUCCESSFUL response (`resp.Success && !isMutation`), so if
+		// these calls fail, NOTHING is cached, both calls reach the wire
+		// whatever the key says, and this step passes on the UNFIXED SDK.
+		//
+		// Measured, not hypothetical: on a stack booted without
+		// DEFAULT_LLM_PROVIDER the chat route answers "LLM routing failed" with
+		// success=false, and an earlier revision of this step went green under
+		// the very mutant it exists to catch.
+		if !resp.Success {
+			fail("step 10: the governed call for %s returned success=false (%q). Only a "+
+				"SUCCESSFUL response is cached, so this step cannot observe the cache at all "+
+				"and would pass on the unfixed SDK. This is a STACK problem, not an SDK one - "+
+				"check DEFAULT_LLM_PROVIDER on the agent and orchestrator", tok.name, resp.Error)
+		}
+	}
+
+	// Read as ADMIN: a developer identity is scoped to its own rows and would
+	// count differently by construction.
+	// The floor is DERIVED from what this step itself drove - one governed
+	// request per identity - not chosen to match an observed number. Add an
+	// identity above and the floor follows.
+	want := len(identities)
+	rows := auditRowsFor(client(endpoint, clientID, secret, adminToken), serviceEmail, want)
+	if rows < want {
+		fail("step 10: the platform governed %d request(s), want %d, for distinct identities asking "+
+			"the same question through one shared cache. One means the second caller was served "+
+			"the FIRST caller's response, with nothing evaluated on their behalf - a cross-user "+
+			"leak the SDK produced without the platform ever being asked. (If this reads 0, the "+
+			"calls did not reach the platform at all and the cause is NOT the cache - look "+
+			"further up this run for auth or provider failures.)", rows, want)
+	}
+	fmt.Printf("step 10 PASS: two derived identities produced %d governed requests through one "+
+		"shared cache; neither was served the other's response\n", rows)
+}
+
+// auditRowsFor counts this run's governed requests from the platform's own
+// audit trail.
+//
+// Counted by user_email rather than by a marker in the query: this platform
+// records query_summary EMPTY on every row (measured), so a marker-matching
+// count can only ever return zero - it would report a WORKING fix as a leak.
+//
+// Polled, because the audit write is not synchronous with the response.
+func auditRowsFor(admin *axonflow.AxonFlowClient, userEmail string, want int) int {
+	deadline := time.Now().Add(20 * time.Second)
+	seen := 0
+	for time.Now().Before(deadline) {
+		resp, err := admin.SearchAuditLogs(context.Background(), &axonflow.AuditSearchRequest{Limit: 200})
+		if err != nil {
+			fail("step 10: could not read the audit trail to count governed requests (%v). An "+
+				"unverified observability claim is not evidence", err)
+		}
+		seen = 0
+		for _, entry := range resp.Entries {
+			if entry.UserEmail == userEmail {
+				seen++
+			}
+		}
+		if seen >= want {
+			return seen
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return seen
 }
 
 // ---------------------------------------------------------------- helpers
