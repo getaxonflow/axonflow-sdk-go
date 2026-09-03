@@ -1,5 +1,5 @@
 // Regression test for issue #1693: telemetry must be delivered even when a
-// Go binary exits immediately after client init.
+// Go binary exits immediately after doing its one piece of work.
 //
 // Root cause: `go client.sendTelemetryPing()` spawned a goroutine that was
 // abandoned when main() returned, silently dropping the HTTP POST to
@@ -12,6 +12,22 @@
 // production users experience. In-process tests can't catch this regression
 // because the test binary keeps running long enough for the goroutine to
 // complete.
+//
+// THE FIXTURE NOW MAKES A REQUEST, AND THAT IS THE #3682 CHANGE, NOT A
+// WEAKENING. The heartbeat trigger moved from NewClient to the client's first
+// outbound request, so a binary that constructs a client and never uses it
+// deliberately no longer pings — a heartbeat is a claim about usage, and
+// pinging at construction made it impossible for a framework adapter to
+// declare itself on the first ping (every adapter takes a *client, so it
+// cannot exist until the constructor has returned and already pinged).
+//
+// The property under test is unchanged and is still the one #1693 is about:
+// a SHORT-LIVED PROCESS MUST NOT DROP ITS PING. The fixture therefore does
+// what the real short-lived caller it models does — construct, make one call,
+// exit immediately — and still asserts exactly one ping was delivered. The
+// synchronous cold-gate branch in maybeSendHeartbeatOnRequest is what keeps
+// that true; make it asynchronous and this test fails again, which is the
+// point of keeping it.
 
 package axonflow
 
@@ -66,9 +82,11 @@ func TestTelemetryDeliveryOnShortLivedProcess(t *testing.T) {
 		t.Fatalf("filepath.Abs: %v", err)
 	}
 
-	// Build a tiny binary that imports this module (via local replace) and
-	// exits immediately after NewClient — no sleep, no goroutine wait. This
-	// is the exact shape of a real short-lived caller.
+	// Build a tiny binary that imports this module (via local replace),
+	// constructs a client, makes ONE call, and exits immediately — no sleep,
+	// no goroutine wait. That is the exact shape of a real short-lived caller,
+	// and since #3682 the call is what fires the heartbeat: construction alone
+	// no longer pings.
 	binDir := t.TempDir()
 	srcDir := filepath.Join(binDir, "src")
 	if err := writeShortLivedBinary(srcDir, modRoot); err != nil {
@@ -149,13 +167,21 @@ replace github.com/getaxonflow/axonflow-sdk-go/v9 => ` + modRoot + `
 	main := `package main
 
 import (
+	"context"
+
 	axonflow "github.com/getaxonflow/axonflow-sdk-go/v9"
 )
 
 func main() {
-	_ = axonflow.NewClient(axonflow.AxonFlowConfig{
+	client := axonflow.NewClient(axonflow.AxonFlowConfig{
 		Endpoint: "http://127.0.0.1:1",
 	})
+	// ONE outbound call, then exit. The endpoint is a closed port, so the
+	// call itself fails — deliberately: the heartbeat must ride the ATTEMPT
+	// to make a request, not its success. A caller whose very first API call
+	// fails is still a caller, and is exactly the short-lived shape #1693 is
+	// about.
+	_, _ = client.ListDecisions(context.Background(), axonflow.ListDecisionsOptions{})
 	// no sleep, no goroutine wait — this is the regression case
 }
 `

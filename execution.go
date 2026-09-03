@@ -505,6 +505,22 @@ func (c *AxonFlowClient) StreamExecutionStatus(ctx context.Context, executionID 
 		// No timeout — SSE connections are long-lived
 	}
 
+	// THE HEARTBEAT TRIGGER, BECAUSE THIS PATH DOES NOT GO THROUGH
+	// doHttpRequest. This is the SDK's one legitimate request site that builds
+	// its own client — SSE needs a client with no timeout, and the shared
+	// wrapper cannot express that — so it must call the trigger itself.
+	//
+	// Without this, a process whose ONLY outbound call is a stream never
+	// pings at all: measured, 0 pings. That is a real shape (a monitor or a
+	// dashboard backend that opens one long-lived stream and does nothing
+	// else), and it became reachable when the heartbeat moved from client
+	// construction to first request — a gate placed at one caller is not a
+	// gate on the others.
+	//
+	// Pinned by TestEveryRequestSitePassesTheHeartbeatTrigger, which fails on
+	// any NEW raw .Do( call site that has not been given a written exemption.
+	c.maybeSendHeartbeatOnRequest()
+
 	resp, err := streamClient.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to stream: %w", err)

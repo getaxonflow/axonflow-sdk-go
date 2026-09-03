@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`RegisterAdapter(name string)` declares a framework adapter on the existing
+  heartbeat (axonflow-enterprise#3682).** A LangChain / LangGraph / LiteLLM
+  wrapper - or your own in-house adapter - was previously indistinguishable
+  from bare SDK use on every telemetry dimension: same `sdk`, same
+  `sdk_version`, same endpoint. `RegisterAdapter("langchain")` adds
+  `adapter:langchain` to the `features` array of the ping that already fires.
+  **No new network request, no new configuration surface, no second endpoint**;
+  calling it does not itself send anything. Idempotent and safe from any
+  goroutine. The name is lowercased and trimmed and is otherwise sent as
+  given - it is deliberately NOT checked against a list of known frameworks,
+  because the canonical vocabulary lives on the receiver, which preserves an
+  unrecognised name on the row while bucketing it for reporting. Only adoption
+  signal is collected: nothing about what the adapter does, no prompts, no
+  payloads, no identities. `AXONFLOW_TELEMETRY=off` suppresses it with the rest
+  of the heartbeat.
+
+  This is the FIRST producer of `features` in this SDK - the array was
+  previously a hardcoded `[]` at its single construction site.
+
+### Changed
+
+- **The telemetry heartbeat now fires on the client's first outbound request
+  rather than at client construction.** This includes `StreamExecutionStatus`,
+  which builds its own HTTP client for SSE and is therefore outside the shared
+  request wrapper; a process whose only outbound call is a stream still pings. A process that constructs a client and
+  never sends a request no longer pings at all — a heartbeat is a claim about
+  usage, and this makes that claim true.
+
+  The reason is `RegisterAdapter`. Every framework adapter takes a client, so an
+  adapter cannot exist until `NewClient` has returned; pinging inside the
+  constructor meant an adapter registering from its own constructor could never
+  reach the first ping, and the 7-day stamp then suppressed the next one for a
+  week. For a short-lived process — a CLI, a Lambda, a CI job — the adapter was
+  never reported at all, which is precisely the population the registry exists
+  to measure. Triggering on first use fixes that for every SDK uniformly.
+
+  Delivery for short-lived processes (issue #1693) is preserved: when the gate
+  is cold, i.e. when the call might actually send, the heartbeat runs
+  synchronously on the caller's goroutine exactly as the constructor used to, so
+  the process cannot exit underneath it. In steady state the per-request cost is
+  a single atomic load.
+
+  **The latency this can add to a first request is bounded at 3 seconds**
+  (`telemetryTimeout`), and that is the whole telemetry path — the `/health`
+  probe and the checkpoint POST share one deadline rather than stacking.
+  Measured against a `/health` that accepts the connection and never answers:
+  **3.0021s**. A hung `/health` consumes that budget, yields no relayed fields,
+  and counts as an undelivered attempt, so the failure backoff widens the
+  re-check interval and the next attempt is further away — the cost is not
+  repeated per request. It is reachable at most once per guard interval per
+  process, and only when a ping is actually due, which the 7-day stamp limits
+  to once per machine per week.
+
+- **Every value the SDK relays but did not author is now bounded at 64 bytes
+  and DROPPED WHOLE when it exceeds that.** The bound already applied to the
+  values promoted out of `/health`; it now also applies to adapter names, and
+  the constant moved to package scope so the two paths cannot drift into two
+  different bounds. Dropping rather than truncating is the point: a truncated
+  version string is a version nobody is running, and the receiver would record
+  it as a real value. The `features` array itself is bounded at 32 entries of
+  128 bytes, mirroring the receiver's own limits.
+
+### Fixed
+
+- **A delivered heartbeat could recur hourly, forever, where the stamp file
+  cannot be written.** The 7-day cadence was enforced only by a stamp file, so
+  in a runtime with no usable cache directory - distroless and scratch
+  containers, Lambda custom runtimes - or on a read-only root filesystem
+  (ordinary Kubernetes hardening), a *successful* ping left no record and the
+  gate re-opened an hour later, indefinitely: 168 pings a week against a
+  contract that discloses one, in exactly the environments least able to
+  notice. The cadence is now also enforced in memory, which is redundant
+  whenever the stamp works and the only bound when it does not. Note what this
+  means for those runtimes: with no writable stamp the 7-day cadence is
+  enforced PER PROCESS, so a host that starts many short-lived processes still
+  emits one ping per process. That is the same bound the SDK has always had
+  there, and it is a large improvement on one ping per hour per process, but it
+  is not the per-machine guarantee a writable stamp gives.
+
+- **A deployment that cannot reach the checkpoint service probed the
+  customer's own platform every hour, indefinitely.** There was no failure
+  backoff: the 7-day stamp advances only on delivery and the gate is consulted
+  on every request, so with egress blocked - the normal state of air-gapped
+  and in-VPC self-hosted topologies - every process issued a `/health` GET
+  against the customer's own platform hourly, with a failed POST beside it.
+  The re-check interval now doubles per consecutive undelivered attempt, capped
+  at the 7-day interval. No ping is lost: the stamp is still untouched, so the
+  first attempt after the widened interval sends normally.
+
 ## [9.2.0] - 2026-09-01: AuthZEN-native authorization surface
 
 ### Added

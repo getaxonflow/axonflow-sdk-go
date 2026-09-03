@@ -13,7 +13,9 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,6 +23,41 @@ const (
 	defaultCheckpointURL = "https://checkpoint.getaxonflow.com/v1/ping"
 	telemetryTimeout     = 3 * time.Second
 )
+
+// maxRelayedValueBytes bounds every value this SDK puts on the telemetry wire
+// that it did not author itself — every string promoted out of a /health
+// response, and every adapter name handed to RegisterAdapter.
+//
+// WHY A DROP AND NOT A TRUNCATION. The checkpoint refuses a request body over
+// 64 KiB. A single 70 KB value from a hostile or broken /health therefore
+// produces a ~72 KB ping that is rejected WHOLE — the version, the tier, the
+// org id, every dimension lost, not just the oversized one — and because the
+// stamp is only written on a 2xx, the SDK retries that same doomed request at
+// every gate run for as long as /health keeps answering that way.
+//
+// Dropping the offending value alone keeps the ping under the limit and
+// preserves every other dimension. It is dropped rather than truncated
+// because a truncated value is a value nobody reported: 64 bytes of a 70 KB
+// string is not a licence tier and not an adapter name, and relaying it would
+// put a fabricated observation on the wire. Absent is the honest answer, and
+// this path already has a well-defined meaning for absent.
+//
+// 64 BYTES, NOT 64 CHARACTERS. Go's len() on a string is already a byte count,
+// so this reads correctly here; the sibling SDKs each have to say so explicitly
+// (Python len(s.encode()), TypeScript Buffer.byteLength, Java
+// s.getBytes(UTF_8).length) because their natural length operator counts code
+// units instead. The bound is bytes because the thing being bounded — the
+// serialized request body — is bytes.
+//
+// This is the same bound the receiver applies to these coarse enums
+// (checkpoint-service MaxCoarseEnumValueBytes), and ~3.5x the longest
+// legitimate value.
+//
+// Hoisted to package scope in the adapter-registration change: it was a
+// function-local const inside probePlatformHealth, and the registry needs the
+// SAME bound with the SAME meaning. Two constants would be two bounds that
+// drift.
+const maxRelayedValueBytes = 64
 
 // telemetryPayload is the JSON body sent to the checkpoint endpoint.
 type telemetryPayload struct {
@@ -131,6 +168,161 @@ type telemetryPayload struct {
 	//
 	// Same trust boundary and same nil semantics as Edition.
 	PlatformDeploymentMode *string `json:"platform_deployment_mode,omitempty"`
+}
+
+// ============================================================================
+// The adapter registry — the ONLY producer of `features` entries.
+// ============================================================================
+
+// featureAdapterPrefix marks a features[] entry as an adapter identifier.
+//
+// The vocabulary is SERVER-DEFINED (checkpoint-service FeatureAdapterPrefix)
+// and is not this SDK's to extend. Spelled as a constant here so the entry is
+// built in exactly one place rather than hand-concatenated at each use.
+const featureAdapterPrefix = "adapter:"
+
+// maxFeatures and maxFeatureBytes mirror the receiver's own bounds on the
+// features array (checkpoint-service MaxFeatures / MaxFeatureBytes). Applying
+// them client-side means an over-long array is shaped HERE, where the SDK
+// still knows which entries it dropped, rather than silently at ingest.
+//
+// READ WHAT THESE TWO BOUNDS ACTUALLY REACH. The entry cap is live: register
+// 33 adapters and the 33rd does not reach the wire. The byte cap is a
+// BACKSTOP that today's only producer cannot trigger — RegisterAdapter
+// already refuses a name over maxRelayedValueBytes (64), so the longest entry
+// boundFeatures can ever receive from it is len("adapter:")+64 = 72 bytes,
+// well under 128. It is implemented and tested directly on boundFeatures
+// rather than through RegisterAdapter, because a test driven through the
+// registry could not express it. Said plainly so a reader does not mistake
+// the byte bound for something the registry path exercises.
+const (
+	maxFeatures     = 32
+	maxFeatureBytes = 128
+)
+
+// adapterRegistry holds the adapter names declared by RegisterAdapter.
+//
+// A set, so a framework that registers on every wrapper construction — the
+// ordinary case for an adapter whose constructor runs per request — declares
+// itself once on the wire rather than N times.
+var (
+	adapterRegistryMu sync.RWMutex
+	adapterRegistry   = make(map[string]struct{})
+)
+
+// RegisterAdapter declares that a framework adapter is driving this SDK, so
+// the next telemetry heartbeat carries `adapter:<name>` in its `features`
+// array.
+//
+// A framework adapter (LangChain, LangGraph, LiteLLM, …) wrapping this SDK is
+// indistinguishable from bare SDK use on every other telemetry dimension —
+// same sdk, same sdk_version, same endpoint. This is the one call that makes
+// the difference visible, and it is adoption signal only.
+//
+// IT ADDS NO REQUEST. The name rides the `features` array of the heartbeat
+// that already fires; there is no second ping, no second endpoint, and no new
+// configuration surface. Calling it does not itself send anything.
+//
+// Idempotent and safe from any goroutine. Call it once at import/registration
+// time; calling it per request is harmless but pointless, since the set
+// already deduplicates.
+//
+// THE NAME IS NOT VALIDATED AGAINST A LIST, DELIBERATELY. The canonical
+// vocabulary lives on the receiver (checkpoint-service NormalizeAdapterFeature,
+// which folds an unrecognised name into `adapter:unknown` at READ time while
+// keeping the raw name on the row). An allowlist here would be a second
+// vocabulary that drifts from the first: a name this SDK build predates would
+// be dropped at the client instead of arriving and rendering as "someone is
+// using an adapter we do not know about" — which is precisely the signal the
+// unknown bucket exists to preserve.
+//
+// So the only transformations are the two the receiver also applies before
+// matching: trim surrounding whitespace, and lowercase. What is refused is
+// refused for a reason that is not about vocabulary:
+//
+//   - a name that is empty after trimming — there is nothing to declare, and
+//     `adapter:` alone is not an identifier;
+//   - a name longer than maxRelayedValueBytes — dropped WHOLE, never
+//     truncated, for the reason spelled out on that constant.
+//
+// Both refusals are silent: this is a telemetry declaration on a
+// fire-and-forget path, and returning an error would invite a caller to fail
+// their own startup over an analytics detail.
+func RegisterAdapter(name string) {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	if normalized == "" || len(normalized) > maxRelayedValueBytes {
+		return
+	}
+	adapterRegistryMu.Lock()
+	defer adapterRegistryMu.Unlock()
+	adapterRegistry[normalized] = struct{}{}
+}
+
+// resetAdapterRegistryForTest empties the registry and returns a function
+// that restores what was there. The registry is process-global by design, so
+// a test that registers an adapter would otherwise leak it into every later
+// test's ping. Production code does NOT call this.
+func resetAdapterRegistryForTest() func() {
+	adapterRegistryMu.Lock()
+	previous := adapterRegistry
+	adapterRegistry = make(map[string]struct{})
+	adapterRegistryMu.Unlock()
+	return func() {
+		adapterRegistryMu.Lock()
+		adapterRegistry = previous
+		adapterRegistryMu.Unlock()
+	}
+}
+
+// registeredFeatures renders the registry as the `features` array for one
+// ping: sorted, bounded, and never nil.
+//
+// Sorted so the wire is deterministic — two processes that registered the
+// same adapters in a different order produce the same array, which is what
+// lets a test assert on the whole field rather than on set membership, and
+// what makes "which 32 survive" a defined answer rather than a map-iteration
+// accident.
+//
+// Never nil: the field has always serialized as `[]` rather than `null` for
+// a client with nothing to declare, and that wire shape is preserved.
+func registeredFeatures() []string {
+	adapterRegistryMu.RLock()
+	names := make([]string, 0, len(adapterRegistry))
+	for name := range adapterRegistry {
+		names = append(names, name)
+	}
+	adapterRegistryMu.RUnlock()
+
+	sort.Strings(names)
+	features := make([]string, 0, len(names))
+	for _, name := range names {
+		features = append(features, featureAdapterPrefix+name)
+	}
+	return boundFeatures(features)
+}
+
+// boundFeatures applies the receiver's array bounds: at most maxFeatures
+// entries, none over maxFeatureBytes.
+//
+// An over-long entry is DROPPED rather than truncated, which is where this
+// deliberately differs from the receiver's own BoundFeatures. The receiver
+// truncates because it is defending storage against arbitrary clients and a
+// truncated entry harmlessly folds into its unknown bucket. Here the entry is
+// something this process declared about itself, and a truncated adapter name
+// is a name nothing is running — the same reasoning as maxRelayedValueBytes.
+// Dropping loses nothing the truncation would have preserved.
+func boundFeatures(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, f := range in {
+		if len(f) > maxFeatureBytes {
+			continue
+		}
+		out = append(out, f)
+		if len(out) == maxFeatures {
+			break
+		}
+	}
+	return out
 }
 
 // DeploymentMode classifications for telemetry (v1 schema, axonflow-enterprise#2008).
@@ -332,26 +524,10 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 		return healthProbe{}
 	}
 
-	// maxRelayedValueBytes bounds every value promoted out of /health.
-	//
-	// WHY A DROP AND NOT A TRUNCATION. The checkpoint refuses a request body
-	// over 64 KiB. A single 70 KB value from a hostile or broken /health
-	// therefore produces a ~72 KB ping that is rejected WHOLE — the version,
-	// the tier, the org id, every dimension lost, not just the oversized one —
-	// and because the stamp is only written on a 2xx, the SDK retries that
-	// same doomed request at every gate run for as long as /health keeps
-	// answering that way.
-	//
-	// Dropping the offending value alone keeps the ping under the limit and
-	// preserves every other dimension. It is dropped rather than truncated
-	// because a truncated value is a value the platform never reported: 64
-	// bytes of a 70 KB string is not a licence tier, and relaying it would put
-	// a fabricated observation on the wire. Absent is the honest answer, and
-	// this path already has a well-defined meaning for absent.
-	//
-	// 64 bytes is the same bound the receiver applies to these coarse enums,
-	// and ~3.5x the longest legitimate value.
-	const maxRelayedValueBytes = 64
+	// Each value promoted below is bounded by the package-level
+	// maxRelayedValueBytes — see that constant for why an over-long value is
+	// dropped whole rather than truncated. It lives at package scope because
+	// the adapter registry applies the same bound with the same meaning.
 
 	// Each field is promoted independently, and only when it is a non-empty
 	// STRING. An absent key, a non-string value, and an explicit "" are all
@@ -434,8 +610,9 @@ func (c *AxonFlowClient) isTelemetryEnabled() bool {
 // isTelemetryEnabled and, if enabled, sends a single ping via
 // sendTelemetryPingNow under a bounded context. It does NOT consult the
 // 7-day stamp file — that's the heartbeat orchestrator's job
-// (maybeSendHeartbeat). Production callers should always go through
-// NewClient → maybeSendHeartbeat instead of calling this directly.
+// (maybeSendHeartbeat). Production callers always reach the ping through
+// maybeSendHeartbeatOnRequest, which every outbound request path calls —
+// NOT through NewClient, which stopped pinging at construction in #3682.
 func (c *AxonFlowClient) sendTelemetryPing() {
 	if !c.isTelemetryEnabled() {
 		return
@@ -500,11 +677,14 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		RuntimeVersion:  strings.TrimPrefix(runtime.Version(), "go"),
 		DeploymentMode:  deploymentMode,
 		EndpointType:    ClassifyEndpoint(c.config.Endpoint),
-		Features:        []string{},
-		InstanceID:      generateInstanceID(),
-		Stream:          stream,
-		OrgID:           telemetryOrgID(),
-		LicenseTier:     probe.LicenseTier,
+		// The adapter registry is the ONLY producer of this array. Read here
+		// rather than snapshotted at construction so an adapter that registers
+		// after the first client is built still reaches the next heartbeat.
+		Features:    registeredFeatures(),
+		InstanceID:  generateInstanceID(),
+		Stream:      stream,
+		OrgID:       telemetryOrgID(),
+		LicenseTier: probe.LicenseTier,
 		// Forwarded verbatim, omitted when not learned. NOTE that /health's
 		// `deployment_mode` member lands on `platform_deployment_mode` here,
 		// NOT on DeploymentMode above, which is the topology this SDK derived

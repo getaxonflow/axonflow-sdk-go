@@ -174,12 +174,20 @@ func TestHeartbeat_AfterRateLimitExpiry_FiresAgain(t *testing.T) {
 		t.Fatalf("setup: expected 1st ping, got %d", got)
 	}
 
-	// Backdate both lastChecked (memory) and stamp (file) so the gate lets
-	// the next call through.
+	// Backdate lastChecked (memory), lastDelivered (memory) and the stamp
+	// (file) so the gate lets the next call through.
+	//
+	// lastDelivered joined this list with the in-memory 7-day cadence
+	// (#3682 item 3). It is not an extra knob for the test's convenience:
+	// "eight days have passed" is a statement about all three records, and a
+	// fixture that moved only two of them was modelling a state the process
+	// cannot actually be in. Leaving it out makes this test fail for the
+	// right reason — the cadence refusing — which is what caught it.
+	eightDaysAgo := time.Now().Add(-8 * 24 * time.Hour)
 	getSharedHeartbeat().mu.Lock()
 	getSharedHeartbeat().lastChecked = time.Now().Add(-2 * time.Hour)
+	getSharedHeartbeat().lastDelivered = eightDaysAgo
 	getSharedHeartbeat().mu.Unlock()
-	eightDaysAgo := time.Now().Add(-8 * 24 * time.Hour)
 	if err := os.Chtimes(getSharedHeartbeat().stampPath, eightDaysAgo, eightDaysAgo); err != nil {
 		t.Fatalf("chtimes: %v", err)
 	}
@@ -252,11 +260,22 @@ func TestHeartbeat_ConcurrentCallers_CoalesceToOnePing(t *testing.T) {
 	}
 }
 
-// Case 8: no writable cache dir (stampPath="") → ping fires per call,
-// but no crash and no stamp persistence. Mirrors AWS Lambda where HOME is
-// unset. Net effect is the same as today's pre-heartbeat behavior — no
-// regression for that runtime.
-func TestHeartbeat_NoCacheDir_PingsButNoStamp(t *testing.T) {
+// Case 8: no writable cache dir (stampPath="") → the ping fires ONCE and is
+// then bounded in memory, with no crash and no stamp persistence. Mirrors AWS
+// Lambda where HOME is unset, and distroless/scratch images and read-only root
+// filesystems.
+//
+// "Fires per call" was the old behaviour AND the old defect: with no stamp to
+// suppress it, a DELIVERED ping recurred every hour forever. The in-memory
+// cadence added in #3682 is the only bound in this runtime — see the inverted
+// assertion below.
+//
+// NAME CHANGED IN #3682: this used to be _PingsButNoStamp and asserted that a
+// second ping fires once the guard expires. With no writable stamp the 7-day
+// cadence is now held in memory instead, so the ping fires ONCE and is then
+// bounded — see the inverted assertion below for why the old contract was the
+// defect.
+func TestHeartbeat_NoCacheDir_PingsOnceThenBoundedInMemory(t *testing.T) {
 	_, called := startCheckpointMock(t, http.StatusOK)
 	// Override the singleton with an empty stamp path to simulate a runtime
 	// where os.UserCacheDir() returned an error (Lambda-like). newHeartbeatClient
@@ -279,14 +298,28 @@ func TestHeartbeat_NoCacheDir_PingsButNoStamp(t *testing.T) {
 		t.Errorf("expected in-memory cache to suppress 2nd call, got %d", got)
 	}
 
-	// Backdate cache, call again — fires again because no stamp exists to
-	// gate the 7-day path.
+	// ASSERTION INVERTED IN #3682 (item 3), AND THE OLD ONE WAS THE DEFECT.
+	//
+	// This block used to backdate the cache and assert a SECOND ping fired,
+	// "because no stamp exists to gate the 7-day path". That is precisely the
+	// bug: in a runtime with no usable cache dir — distroless and scratch
+	// containers, Lambda custom runtimes, a read-only root filesystem — the
+	// stamp can never be written, so nothing bounded the cadence and a
+	// SUCCESSFUL ping recurred every hour, forever. 168 pings a week against
+	// a contract that discloses one, in exactly the environments least able
+	// to notice, and the failure backoff cannot help because these
+	// deliveries succeed.
+	//
+	// The in-memory lastDelivered record is the bound. An hour after a
+	// delivery the gate must now REFUSE, and only the 7-day interval
+	// re-opens it (covered by TestSuccessCadenceReopensAfterTheInterval).
 	getSharedHeartbeat().mu.Lock()
 	getSharedHeartbeat().lastChecked = time.Now().Add(-2 * time.Hour)
 	getSharedHeartbeat().mu.Unlock()
 	client.maybeSendHeartbeat()
-	if got := called.Load(); got != 2 {
-		t.Errorf("expected 2nd ping when stamp absent and cache expired, got %d", got)
+	if got := called.Load(); got != 1 {
+		t.Errorf("expected the delivered ping to stay bounded in memory when no stamp file "+
+			"exists, got %d pings. Without that bound a success recurs hourly", got)
 	}
 }
 

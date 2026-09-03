@@ -43,6 +43,80 @@ type heartbeatState struct {
 	lastCheckedNanos atomic.Int64 // mirror of lastChecked.UnixNano(), for lock-free pre-check on the request hot path
 	inFlight         bool         // true while a ping POST is in progress
 	stampPath        string       // empty when no user cache dir is available
+
+	// consecutiveFailures counts attempts in a row that did NOT deliver.
+	// Widens the re-check interval so a deployment that can never reach the
+	// checkpoint service stops probing its own platform every hour forever.
+	// Reset on delivery.
+	//
+	// Without it the SDK has no backoff at all, and two deliberate design
+	// choices combine into a defect: the 7-day stamp only advances on
+	// DELIVERY, and the gate is re-evaluated on every request. In a
+	// deployment where egress to the checkpoint service is blocked — the
+	// normal state of the air-gapped and in-VPC self-hosted topologies this
+	// SDK supports — every process would issue a /health GET against the
+	// CUSTOMER'S OWN platform once an hour, indefinitely, with a failed POST
+	// beside it. Unsolicited hourly traffic against someone else's platform,
+	// for a heartbeat disclosed as weekly, is not defensible.
+	//
+	// Backing off loses no ping: the stamp is still untouched, so the first
+	// attempt after the widened interval sends normally.
+	consecutiveFailures int
+
+	// lastDelivered is when this PROCESS last delivered a ping.
+	//
+	// The stamp file is the cross-restart record of that, but it is not
+	// always available: resolveStampPath returns "" where there is no usable
+	// cache dir (HOME unset — distroless and scratch containers, Lambda
+	// custom runtimes), and writeStampAtomic fails on a read-only root
+	// filesystem (readOnlyRootFilesystem: true is ordinary Kubernetes
+	// hardening). In both, readStampMtime returns the zero time forever.
+	//
+	// The failure backoff above cannot bound this case, because it resets on
+	// delivery and these deliveries SUCCEED: the gate re-opens every hour,
+	// the ping lands, the stamp cannot be written, and the next hour repeats
+	// it — 168x the "at most one ping per machine every 7 days" this SDK
+	// discloses, in exactly the environments least able to notice.
+	//
+	// So the cadence is enforced in memory too. Redundant whenever the stamp
+	// works, and the only bound when it does not. Same shape as the Rust
+	// SDK's GateInner.last_delivered (sdk-rust#89).
+	lastDelivered time.Time
+}
+
+// guardIntervalFor returns how long the gate waits before re-consulting,
+// given how many attempts in a row have failed to deliver: heartbeatGuardInterval
+// doubled per failure, capped at heartbeatInterval.
+func guardIntervalFor(consecutiveFailures int) time.Duration {
+	// Clamped before shifting: the counter is unbounded, and shifting by 63
+	// or more is undefined. 16 doublings already exceed the 7-day cap by
+	// orders of magnitude.
+	doublings := consecutiveFailures
+	if doublings > 16 {
+		doublings = 16
+	}
+	interval := heartbeatGuardInterval << doublings
+	// The shift can overflow into a negative duration for a large base if
+	// heartbeatInterval is ever raised; compare defensively rather than
+	// trusting the arithmetic.
+	if interval <= 0 || interval > heartbeatInterval {
+		return heartbeatInterval
+	}
+	return interval
+}
+
+// recordAttempt records what an attempt achieved so the next one can back
+// off. Called ONLY when an attempt was actually made — a pass that stopped at
+// a fresh stamp is not a failure and must not widen the interval.
+func (h *heartbeatState) recordAttempt(delivered bool, now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if delivered {
+		h.consecutiveFailures = 0
+		h.lastDelivered = now
+		return
+	}
+	h.consecutiveFailures++
 }
 
 // resolveStampPath returns the OS-native path to the SDK's heartbeat stamp
@@ -155,20 +229,28 @@ func (h *heartbeatState) writeStampAtomic(now time.Time) error {
 	return os.Rename(tmpName, h.stampPath)
 }
 
-// maybeSendHeartbeat is the central gate for telemetry pings. Called from
-// NewClient (synchronously, to preserve short-lived-process delivery from
-// issue #1693) and from doHttpRequest (asynchronously via goroutine to
-// keep API call latency unaffected).
+// maybeSendHeartbeat is the central gate for telemetry pings. Reached only
+// through maybeSendHeartbeatOnRequest, which every outbound request path
+// calls — see that function for why the trigger is the first REQUEST rather
+// than client construction, and how issue #1693's short-lived-process delivery
+// is preserved.
 //
 // Algorithm (in order — order matters):
 //
 //  1. AXONFLOW_TELEMETRY=off / mode-disabled: short-circuit immediately.
 //     Re-evaluated every call (lock-free) so a mid-process opt-out works.
 //  2. In-flight: another goroutine is already sending — fast-path out.
-//  3. In-memory 1-hour cache: skip the stat() syscall on hot paths.
-//  4. Stamp file mtime: skip if last delivered <heartbeatInterval ago.
-//  5. Send ping under bounded timeout. On success, write stamp. On
-//     failure, leave stamp unchanged so the next call retries.
+//  3. In-memory guard: skip the stat() syscall on hot paths. One hour
+//     normally, WIDENED by guardIntervalFor after consecutive undelivered
+//     attempts so a deployment that cannot reach the checkpoint stops
+//     probing its own platform hourly.
+//  4. In-memory delivery record: skip if THIS PROCESS delivered less than
+//     heartbeatInterval ago. Redundant whenever the stamp file works, and
+//     the only bound when it cannot be written.
+//  5. Stamp file mtime: skip if last delivered <heartbeatInterval ago.
+//  6. Send ping under bounded timeout. Record the attempt either way
+//     (recordAttempt) — that is what drives 3 and 4. On success, write the
+//     stamp; on failure, leave it unchanged so the next call retries.
 func (c *AxonFlowClient) maybeSendHeartbeat() {
 	if !c.isTelemetryEnabled() {
 		return
@@ -185,12 +267,21 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 		h.mu.Unlock()
 		return
 	}
-	if !h.lastChecked.IsZero() && now.Sub(h.lastChecked) < heartbeatGuardInterval {
+	if !h.lastChecked.IsZero() && now.Sub(h.lastChecked) < guardIntervalFor(h.consecutiveFailures) {
 		h.mu.Unlock()
 		return
 	}
 	h.lastChecked = now
 	h.lastCheckedNanos.Store(now.UnixNano())
+
+	// The 7-day cadence enforced IN MEMORY, before the stamp is consulted.
+	// See heartbeatState.lastDelivered: where the stamp cannot be persisted
+	// this is the only thing standing between a delivered ping and an hourly
+	// one.
+	if !h.lastDelivered.IsZero() && now.Sub(h.lastDelivered) < heartbeatInterval {
+		h.mu.Unlock()
+		return
+	}
 
 	if mtime := h.readStampMtime(); !mtime.IsZero() && now.Sub(mtime) < heartbeatInterval {
 		h.mu.Unlock()
@@ -211,6 +302,12 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 	h.mu.Lock()
 	h.inFlight = false
 	h.mu.Unlock()
+
+	// Recorded for EVERY attempt, delivered or not: the failure counter is
+	// what widens the guard, and the delivery instant is what bounds the
+	// success cadence when the stamp file is unavailable.
+	h.recordAttempt(err == nil, time.Now())
+
 	if err == nil {
 		if writeErr := h.writeStampAtomic(time.Now()); writeErr != nil && c.config.Debug {
 			log.Printf("[AxonFlow] heartbeat stamp write failed: %v", writeErr)
@@ -218,43 +315,80 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 	}
 }
 
-// maybeSendHeartbeatAsync schedules maybeSendHeartbeat on a goroutine so
-// it never blocks the caller. Used by the doHttpRequest middleware to
-// keep user API calls latency-free; NewClient still calls maybeSendHeartbeat
-// synchronously to preserve issue #1693 short-lived-process delivery.
+// maybeSendHeartbeatOnRequest is the SINGLE trigger for the telemetry
+// heartbeat, called by the doHttpRequest middleware that wraps every public
+// API call.
 //
-// Hot-path pre-check: on a service handling 10k req/s with a fresh stamp,
-// every request would otherwise spawn a goroutine that does a single
-// mutex acquire + cache compare + return. The atomic load of
-// lastCheckedNanos lets us skip the spawn entirely when we know the
-// 1-hour cache is still warm — bringing per-request overhead from
-// "goroutine + mutex" to "single atomic load".
-func (c *AxonFlowClient) maybeSendHeartbeatAsync() {
+// IT MOVED HERE FROM NewClient, and the move is the point (#3682). The boot
+// ping used to fire synchronously inside NewClient, before the constructor
+// returned. Every framework adapter takes a *client, so an adapter could not
+// possibly exist yet — which meant an adapter registering from its own
+// constructor could NEVER reach the first ping, and the 7-day stamp then
+// suppressed the next one for a week. For a short-lived process (a CLI, a
+// Lambda, a CI job) that pings once and exits, the adapter was never reported
+// at all: precisely the population the registry exists to measure.
+//
+// Triggering on the first outbound REQUEST instead means the ping describes a
+// client that is actually being used, by which time constructors have run.
+// A client that is constructed and never used no longer pings — which is
+// also more honest about what a heartbeat is claiming.
+//
+// THE SYNC/ASYNC SPLIT PRESERVES ISSUE #1693. That issue was a real measured
+// drop: a short-lived process exited before a backgrounded POST completed.
+// So when the gate is COLD — meaning this call might actually send — the
+// heartbeat runs SYNCHRONOUSLY on the caller's goroutine, exactly as the
+// constructor used to, and the process cannot exit underneath it.
+//
+// The latency that costs is bounded and rare, and worth stating precisely
+// rather than hand-waving: the cold branch is reachable at most once per
+// heartbeatGuardInterval per process, and on that branch the only work that
+// blocks is a stat() of the stamp file unless a ping is genuinely DUE — which
+// the 7-day stamp limits to at most once per machine per week. Steady state
+// is one atomic load per request.
+func (c *AxonFlowClient) maybeSendHeartbeatOnRequest() {
 	if !c.isTelemetryEnabled() {
 		return
 	}
 	h := getSharedHeartbeat()
+	// Hot-path pre-check: on a service handling 10k req/s with a warm gate,
+	// every request would otherwise take a mutex. The atomic load brings
+	// per-request overhead to a single load.
+	//
+	// It deliberately uses the BASE guard interval, not
+	// guardIntervalFor(consecutiveFailures): reading the counter needs the
+	// mutex, and taking it here would undo the point of a lock-free
+	// pre-check. Using the base interval only ever errs toward entering
+	// maybeSendHeartbeat, which then declines under the widened interval —
+	// the backoff still holds, it is just enforced one frame in.
 	if last := h.lastCheckedNanos.Load(); last != 0 &&
 		time.Since(time.Unix(0, last)) < heartbeatGuardInterval {
 		return
 	}
-	go c.maybeSendHeartbeat()
+	c.maybeSendHeartbeat()
 }
 
-// doHttpRequest is the single HTTP middleware that wraps every public-API
-// HTTP call in this SDK. It calls maybeSendHeartbeatAsync as a side effect
-// so the 7-day heartbeat gate is consulted on every request — but
-// asynchronously, so the user's API call is never delayed by telemetry.
+// doHttpRequest is the HTTP middleware that wraps almost every public-API
+// HTTP call in this SDK. It calls maybeSendHeartbeatOnRequest as a side
+// effect, so the heartbeat gate is consulted on every request routed through
+// it. The cost is a single atomic load once the gate is warm.
 //
 // The httpClient parameter selects between c.httpClient (default) and
-// c.mapHttpClient (longer timeout for MAP plan operations). The wrapper
-// is used uniformly across both to ensure no code path bypasses the
-// heartbeat gate.
+// c.mapHttpClient (longer timeout for MAP plan operations).
+//
+// "ALMOST EVERY" IS DELIBERATE WORDING, AND IT REPLACES A CLAIM THAT WAS
+// FALSE. This comment used to say no code path bypasses the gate.
+// StreamExecutionStatus does: SSE needs an http.Client with no timeout, which
+// this wrapper cannot express, so it builds its own and calls the trigger
+// itself. Once the heartbeat moved to the first request (#3682) that bypass
+// meant a stream-only process never pinged at all. The set of request sites is
+// now pinned by TestEveryRequestSitePassesTheHeartbeatTrigger rather than by a
+// sentence here — a comment asserting an invariant is not the same as
+// something enforcing it.
 //
 // IMPORTANT: This wrapper must NOT be called from telemetry code itself
 // (sendTelemetryPingNow, probePlatformHealth). Those use raw http.Client
 // instances to avoid recursive heartbeat triggering.
 func (c *AxonFlowClient) doHttpRequest(httpClient *http.Client, req *http.Request) (*http.Response, error) {
-	c.maybeSendHeartbeatAsync()
+	c.maybeSendHeartbeatOnRequest()
 	return httpClient.Do(req)
 }
