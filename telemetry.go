@@ -96,6 +96,41 @@ type telemetryPayload struct {
 	// receiver preserves omission for legacy pings, so an omitted field
 	// reads as "unknown", not as any particular tier.
 	LicenseTier *string `json:"license_tier,omitempty"`
+	// Edition is the BUILD the connected platform reported on its own /health:
+	// "community" or "enterprise". Relayed verbatim, and it rides the SAME
+	// /health response the version and the tier already come from - no new
+	// request. Issue axonflow-enterprise#3660.
+	//
+	// IT IS NOT AN ENTITLEMENT FACT, for the reason spelled out on LicenseTier
+	// above: whoever operates the endpoint this client was pointed at controls
+	// the value completely, and this SDK relays it unverified. Adoption
+	// analytics only - never gate a feature, an authorization decision or a
+	// billing decision on it.
+	//
+	// It is also NOT derivable from anything else here. The Community-SaaS
+	// fleet runs the ENTERPRISE build against the community-saas schema, so
+	// neither DeploymentMode nor LicenseTier implies it.
+	//
+	// nil (omitted) means NOT LEARNED - /health unreachable, non-2xx,
+	// unparseable, or carrying no "edition" key. Absent must never become a
+	// value: emitting "community" for a platform we could not reach would be a
+	// false claim about a customer's deployment.
+	Edition *string `json:"edition,omitempty"`
+	// PlatformDeploymentMode is the connected platform's OWN DEPLOYMENT_MODE
+	// setting, as it reported it on /health under the member name
+	// `deployment_mode`.
+	//
+	// READ THE FIELD NAMES CAREFULLY - THIS IS THE TRAP THIS CONTRACT IS MOST
+	// LIKELY TO BE GOT WRONG ON. The /health member is called
+	// `deployment_mode` because there the platform is describing ITSELF. On
+	// this ping, `deployment_mode` (the field above) already means something
+	// else entirely: the TOPOLOGY bucket this SDK derives from the endpoint URL
+	// it was configured with. They are different dimensions, and mapping
+	// /health's member onto the topology field would overwrite a value every
+	// existing dashboard reads.
+	//
+	// Same trust boundary and same nil semantics as Edition.
+	PlatformDeploymentMode *string `json:"platform_deployment_mode,omitempty"`
 }
 
 // DeploymentMode classifications for telemetry (v1 schema, axonflow-enterprise#2008).
@@ -213,6 +248,16 @@ type telemetryResponse struct {
 type healthProbe struct {
 	PlatformVersion *string
 	LicenseTier     *string
+	// Edition / PlatformDeploymentMode - the platform-identity members added in
+	// axonflow-enterprise#3660. Independent of the two above and of each other:
+	// a platform that reports some of them and not others yields a partially
+	// populated probe rather than nothing.
+	Edition *string
+	// PlatformDeploymentMode is read from the /health member named
+	// `deployment_mode` and travels to the ping field named
+	// `platform_deployment_mode`. The rename is the whole point - see the
+	// telemetryPayload field doc.
+	PlatformDeploymentMode *string
 }
 
 // maxHealthBodyBytes bounds the /health response the probe will parse.
@@ -247,7 +292,21 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 		return healthProbe{}
 	}
 
-	resp, err := (&http.Client{}).Do(req)
+	// NO REDIRECTS ON THE TELEMETRY PATH. A 30x from /health would otherwise be
+	// followed silently, and every value promoted below — the version, the tier,
+	// the edition and the platform's deployment mode — would then describe the
+	// REDIRECT TARGET rather than the endpoint the caller configured. A captive
+	// portal, a misconfigured proxy or an http->https hop is enough to make the
+	// heartbeat report a platform the user never pointed at.
+	//
+	// ErrUseLastResponse hands back the 30x itself, which fails the
+	// StatusOK check below and yields an empty probe — "not learned", the
+	// honest answer. Same precedent as the request client in axonflow.go.
+	resp, err := (&http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}).Do(req)
 	if err != nil {
 		return healthProbe{}
 	}
@@ -273,20 +332,65 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 		return healthProbe{}
 	}
 
+	// maxRelayedValueBytes bounds every value promoted out of /health.
+	//
+	// WHY A DROP AND NOT A TRUNCATION. The checkpoint refuses a request body
+	// over 64 KiB. A single 70 KB value from a hostile or broken /health
+	// therefore produces a ~72 KB ping that is rejected WHOLE — the version,
+	// the tier, the org id, every dimension lost, not just the oversized one —
+	// and because the stamp is only written on a 2xx, the SDK retries that
+	// same doomed request at every gate run for as long as /health keeps
+	// answering that way.
+	//
+	// Dropping the offending value alone keeps the ping under the limit and
+	// preserves every other dimension. It is dropped rather than truncated
+	// because a truncated value is a value the platform never reported: 64
+	// bytes of a 70 KB string is not a licence tier, and relaying it would put
+	// a fabricated observation on the wire. Absent is the honest answer, and
+	// this path already has a well-defined meaning for absent.
+	//
+	// 64 bytes is the same bound the receiver applies to these coarse enums,
+	// and ~3.5x the longest legitimate value.
+	const maxRelayedValueBytes = 64
+
 	// Each field is promoted independently, and only when it is a non-empty
 	// STRING. An absent key, a non-string value, and an explicit "" are all
 	// "not learned" — the pointer stays nil rather than becoming a pointer to
 	// "", which would put a meaningless empty value on the wire despite
 	// omitempty, or a coerced value that misrepresents what the platform said.
 	var probe healthProbe
-	if v, ok := health["version"].(string); ok && v != "" {
-		probe.PlatformVersion = &v
+	// learned promotes one member: a non-empty string, within the size bound.
+	// One helper rather than four copies of the same two conditions — a bound
+	// applied to three of four fields is the shape that gets found in
+	// production by the field it was not applied to.
+	learned := func(key string) *string {
+		v, ok := health[key].(string)
+		if !ok || v == "" || len(v) > maxRelayedValueBytes {
+			return nil
+		}
+		return &v
 	}
-	if t, ok := health["tier"].(string); ok && t != "" {
-		// Verbatim, including the transient "starting" the agent returns
-		// before its licence is validated. "starting" is a real signal the
-		// receiver buckets deliberately, not an error to filter client-side.
-		probe.LicenseTier = &t
+
+	if p := learned("version"); p != nil {
+		probe.PlatformVersion = p
+	}
+	// Verbatim, including the transient "starting" the agent returns before its
+	// licence is validated. "starting" is a real signal the receiver buckets
+	// deliberately, not an error to filter client-side.
+	if p := learned("tier"); p != nil {
+		probe.LicenseTier = p
+	}
+	if p := learned("edition"); p != nil {
+		probe.Edition = p
+	}
+	// NOTE THE NAME CHANGE, AND THAT IT IS DELIBERATE. The /health member is
+	// `deployment_mode` (the platform describing itself); the wire field is
+	// `platform_deployment_mode`. This SDK's OWN `deployment_mode` is a
+	// different dimension - the topology it derives from its endpoint URL - and
+	// promoting /health's member into it would overwrite a value every existing
+	// dashboard reads.
+	if p := learned("deployment_mode"); p != nil {
+		probe.PlatformDeploymentMode = p
 	}
 	return probe
 }
@@ -401,6 +505,12 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 		Stream:          stream,
 		OrgID:           telemetryOrgID(),
 		LicenseTier:     probe.LicenseTier,
+		// Forwarded verbatim, omitted when not learned. NOTE that /health's
+		// `deployment_mode` member lands on `platform_deployment_mode` here,
+		// NOT on DeploymentMode above, which is the topology this SDK derived
+		// from its own endpoint URL. See the field docs.
+		Edition:                probe.Edition,
+		PlatformDeploymentMode: probe.PlatformDeploymentMode,
 	}
 
 	body, err := json.Marshal(payload)
@@ -415,7 +525,25 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: telemetryTimeout}
+	// NO REDIRECTS, AND HERE IT IS A CORRECTNESS BUG RATHER THAN A PRIVACY ONE.
+	//
+	// net/http does not re-POST across a 301/302/303: it converts the request
+	// to a bodyless GET. So a redirect on the checkpoint POST produces a 200
+	// for a request that carried NO PAYLOAD, the code below reads that 200 as a
+	// successful delivery, and the caller writes the 7-day stamp — leaving the
+	// installation silent for a week on a ping that was never actually sent.
+	// A 200 that means "we delivered nothing" is the worst possible shape for
+	// this path, because it is indistinguishable from success at every layer
+	// above.
+	//
+	// ErrUseLastResponse surfaces the 30x itself, which fails the 2xx check and
+	// leaves the stamp unwritten, so the next gate run retries.
+	client := &http.Client{
+		Timeout: telemetryTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
