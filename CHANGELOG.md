@@ -31,7 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **The telemetry heartbeat now fires on the client's first outbound request
-  rather than at client construction.** A process that constructs a client and
+  rather than at client construction.** This includes `StreamExecutionStatus`,
+  which builds its own HTTP client for SSE and is therefore outside the shared
+  request wrapper; a process whose only outbound call is a stream still pings. A process that constructs a client and
   never sends a request no longer pings at all — a heartbeat is a claim about
   usage, and this makes that claim true.
 
@@ -48,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   synchronously on the caller's goroutine exactly as the constructor used to, so
   the process cannot exit underneath it. In steady state the per-request cost is
   a single atomic load.
+
+  **The latency this can add to a first request is bounded at 3 seconds**
+  (`telemetryTimeout`), and that is the whole telemetry path — the `/health`
+  probe and the checkpoint POST share one deadline rather than stacking.
+  Measured against a `/health` that accepts the connection and never answers:
+  **3.0021s**. A hung `/health` consumes that budget, yields no relayed fields,
+  and counts as an undelivered attempt, so the failure backoff widens the
+  re-check interval and the next attempt is further away — the cost is not
+  repeated per request. It is reachable at most once per guard interval per
+  process, and only when a ping is actually due, which the 7-day stamp limits
+  to once per machine per week.
 
 - **Every value the SDK relays but did not author is now bounded at 64 bytes
   and DROPPED WHOLE when it exceeds that.** The bound already applied to the

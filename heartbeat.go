@@ -229,10 +229,11 @@ func (h *heartbeatState) writeStampAtomic(now time.Time) error {
 	return os.Rename(tmpName, h.stampPath)
 }
 
-// maybeSendHeartbeat is the central gate for telemetry pings. Called from
-// NewClient (synchronously, to preserve short-lived-process delivery from
-// issue #1693) and from doHttpRequest (asynchronously via goroutine to
-// keep API call latency unaffected).
+// maybeSendHeartbeat is the central gate for telemetry pings. Reached only
+// through maybeSendHeartbeatOnRequest, which every outbound request path
+// calls — see that function for why the trigger is the first REQUEST rather
+// than client construction, and how issue #1693's short-lived-process delivery
+// is preserved.
 //
 // Algorithm (in order — order matters):
 //
@@ -366,16 +367,23 @@ func (c *AxonFlowClient) maybeSendHeartbeatOnRequest() {
 	c.maybeSendHeartbeat()
 }
 
-// doHttpRequest is the single HTTP middleware that wraps every public-API
-// HTTP call in this SDK. It calls maybeSendHeartbeatOnRequest as a side effect
-// so the 7-day heartbeat gate is consulted on every request — but
-// asynchronously, so the user's API call is never delayed by telemetry.
+// doHttpRequest is the HTTP middleware that wraps almost every public-API
+// HTTP call in this SDK. It calls maybeSendHeartbeatOnRequest as a side
+// effect, so the heartbeat gate is consulted on every request routed through
+// it. The cost is a single atomic load once the gate is warm.
 //
 // The httpClient parameter selects between c.httpClient (default) and
-// c.mapHttpClient (longer timeout for MAP plan operations). The wrapper
-// is used uniformly across both to ensure no code path bypasses the
-// heartbeat gate — and since #3682 this is the ONLY trigger, NewClient
-// having stopped pinging at construction.
+// c.mapHttpClient (longer timeout for MAP plan operations).
+//
+// "ALMOST EVERY" IS DELIBERATE WORDING, AND IT REPLACES A CLAIM THAT WAS
+// FALSE. This comment used to say no code path bypasses the gate.
+// StreamExecutionStatus does: SSE needs an http.Client with no timeout, which
+// this wrapper cannot express, so it builds its own and calls the trigger
+// itself. Once the heartbeat moved to the first request (#3682) that bypass
+// meant a stream-only process never pinged at all. The set of request sites is
+// now pinned by TestEveryRequestSitePassesTheHeartbeatTrigger rather than by a
+// sentence here — a comment asserting an invariant is not the same as
+// something enforcing it.
 //
 // IMPORTANT: This wrapper must NOT be called from telemetry code itself
 // (sendTelemetryPingNow, probePlatformHealth). Those use raw http.Client

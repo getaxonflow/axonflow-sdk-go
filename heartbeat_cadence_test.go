@@ -1,6 +1,10 @@
 package axonflow
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -271,5 +275,68 @@ func TestASuppressedPassIsNotCountedAsAFailure(t *testing.T) {
 	if h.consecutiveFailures != 0 {
 		t.Errorf("consecutiveFailures = %d after a pass suppressed by a fresh stamp, want 0. "+
 			"A suppressed pass is the gate working, not an attempt that failed", h.consecutiveFailures)
+	}
+}
+
+// TestStreamOnlyProcessStillPings is the regression for the bypass the
+// request-site census was written to prevent recurring.
+//
+// StreamExecutionStatus builds its own http.Client — SSE needs one with no
+// timeout — and called .Do directly, so it never reached doHttpRequest and
+// never reached the heartbeat trigger. Once the heartbeat moved from client
+// construction to first request (#3682), a process whose ONLY outbound call is
+// a stream stopped pinging entirely. That is a real deployment shape: a
+// monitor or a dashboard backend that opens one long-lived stream and does
+// nothing else.
+//
+// MUTATION GATE: delete the maybeSendHeartbeatOnRequest call from
+// StreamExecutionStatus and this fails with "the checkpoint was called 0
+// times".
+func TestStreamOnlyProcessStillPings(t *testing.T) {
+	// A REAL client via NewClient, not the bare struct the other cadence tests
+	// use: StreamExecutionStatus reaches into c.httpClient.Transport, and a
+	// hand-built client has none. Safe to construct here precisely because of
+	// this change — NewClient no longer pings, so constructing one does not
+	// consume the gate the assertion below depends on.
+	previous := replaceHeartbeatStateForTest(filepath.Join(t.TempDir(), "stamp"))
+	t.Cleanup(func() { restoreHeartbeatStateForTest(previous) })
+	_, called := startCheckpointMock(t, 200)
+
+	// A stream endpoint that accepts the connection and closes it. The stream
+	// itself is not under test — reaching the trigger is.
+	stream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(stream.Close)
+
+	c := NewClient(AxonFlowConfig{
+		Endpoint:     stream.URL,
+		ClientID:     "id",
+		ClientSecret: "sec",
+		Mode:         "production",
+	})
+
+	// POSITIVE CONTROL for the whole point of this test: constructing the
+	// client pinged NOTHING. Everything below is therefore attributable to the
+	// stream call, not to construction.
+	if n := called.Load(); n != 0 {
+		t.Fatalf("constructing the client sent %d ping(s); the heartbeat must fire on the "+
+			"first REQUEST, and this case can no longer attribute a ping to the stream", n)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// The call may succeed or fail; either way the trigger must have run
+	// BEFORE the .Do, because the heartbeat rides the ATTEMPT to make a
+	// request.
+	events, errs, _ := c.StreamExecutionStatus(ctx, "exec-1")
+	_ = events
+	_ = errs
+
+	if n := called.Load(); n != 1 {
+		t.Errorf("the checkpoint was called %d times, want 1. A process whose only outbound "+
+			"call is a stream must still ping — StreamExecutionStatus builds its own client "+
+			"and bypasses doHttpRequest, so it has to call the trigger itself", n)
 	}
 }
