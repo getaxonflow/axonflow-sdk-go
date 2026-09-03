@@ -91,9 +91,12 @@ const (
 	// rather than by calling RegisterAdapter directly. That is the leg that
 	// proves shipping an adapter is enough — no application code required.
 	childViaConstructorVar = "AXONFLOW_E2E_ADAPTER_VIA_CONSTRUCTOR"
-	childSeparator         = "\x1f" // unit separator: cannot occur in a name we would send
-	childHoldSeconds       = 5
-	captureWaitSeconds     = 12
+	// When set, the child registers an adapter AFTER its first request, i.e.
+	// after the ping has already been sent.
+	childRegisterLateVar = "AXONFLOW_E2E_ADAPTER_REGISTER_LATE"
+	childSeparator       = "\x1f" // unit separator: cannot occur in a name we would send
+	childHoldSeconds     = 5
+	captureWaitSeconds   = 12
 )
 
 // runChild registers whatever the parent asked for, then builds one real
@@ -113,12 +116,27 @@ func runChild() {
 	})
 	if os.Getenv(childViaConstructorVar) != "" {
 		// The REAL public surface, not a RegisterAdapter call. Constructed
-		// AFTER the client so this also proves the registry is read at ping
-		// time rather than snapshotted when the first client is built.
+		// after the client (it takes one) but BEFORE the first request, which
+		// is what makes it reach the first ping now that the heartbeat
+		// triggers on first use rather than at construction.
 		_ = axonflow.NewLangGraphAdapter(client, "rt-e2e-adapter-telemetry")
 	}
-	// The SDK fires telemetry on a startup goroutine; hold the process open
-	// long enough for the health probe + POST under their shared 3s budget.
+
+	// THE HEARTBEAT FIRES HERE, not at NewClient (#3682). One outbound call
+	// is what triggers it. The call itself fails against the stand-in
+	// platform, which is fine and deliberate: the heartbeat rides the ATTEMPT
+	// to make a request, so a caller whose first API call fails is still a
+	// caller.
+	_, _ = client.ListDecisions(context.Background(), axonflow.ListDecisionsOptions{})
+
+	if os.Getenv(childRegisterLateVar) != "" {
+		// Registered AFTER the first request, i.e. after the ping has already
+		// gone. Must NOT appear on that ping.
+		axonflow.RegisterAdapter("registered-too-late")
+	}
+
+	// The ping is synchronous on a cold gate, but hold the process open a
+	// moment so a slow local listener still records it.
 	time.Sleep(childHoldSeconds * time.Second)
 }
 
@@ -161,6 +179,10 @@ func captureOnePing(platformEndpoint string, adapters ...string) capture {
 // the real LangGraphAdapter instead of calling RegisterAdapter.
 var viaConstructor bool
 
+// registerLate asks the next child to register an adapter AFTER its first
+// request, to prove such a registration does not reach that request's ping.
+var registerLate bool
+
 func runChildAgainst(platformEndpoint, checkpointURL string, done chan struct{}, captured *atomic.Value, adapters []string) []byte {
 	self, err := os.Executable()
 	if err != nil {
@@ -178,6 +200,9 @@ func runChildAgainst(platformEndpoint, checkpointURL string, done chan struct{},
 	)
 	if viaConstructor {
 		cmd.Env = append(cmd.Env, childViaConstructorVar+"=1")
+	}
+	if registerLate {
+		cmd.Env = append(cmd.Env, childRegisterLateVar+"=1")
 	}
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -414,46 +439,23 @@ func runMatrix() {
 	assertHealthRedirectRefused(healthBody)
 	assertCheckpointRedirectRefused(healthBody)
 
-	// --- 6. The FIRST-PARTY adapter, and the ORDERING it exposes. --------
+	// --- 6. The FIRST-PARTY adapter reaches the wire on its own. ---------
 	//
-	// MEASURED, NOT ASSUMED, AND IT IS THE POINT OF THIS CASE:
-	// NewClient fires the boot heartbeat SYNCHRONOUSLY before it returns
-	// (axonflow.go:743). NewLangGraphAdapter takes a *client*, so it cannot
-	// run before that ping. Registering in the adapter's constructor
-	// therefore CANNOT reach the boot ping, and the 7-day stamp then
-	// suppresses the next one for a week.
+	// This is the case the trigger move exists for. The heartbeat now fires on
+	// the client's FIRST OUTBOUND REQUEST rather than inside NewClient, so an
+	// adapter constructed between the two — which is every real usage shape,
+	// because an adapter takes a client — is on the wire for the very first
+	// ping. No application telemetry code at all.
 	//
-	// So there are two different contracts here and they are asserted
-	// separately, because conflating them would let a passing test imply
-	// something the SDK does not do:
-	//
-	//   6a. An application that DECLARES the adapter before constructing its
-	//       client gets it on the very first ping. This is the documented way
-	//       to get day-one attribution, and it is what is asserted on the wire.
-	//   6b. Constructing NewLangGraphAdapter registers the name in-process, so
-	//       it rides the NEXT heartbeat. That is a process-state fact, not a
-	//       wire fact, and it is pinned by TestLangGraphAdapterDeclaresItself
-	//       rather than pretended at here.
-	fmt.Println("\n-- 6a. declaring the adapter before the client puts it on the BOOT ping --")
-	endpoint, stop = startStandInPlatform(http.StatusOK, healthBody)
-	cap = captureOnePing(endpoint, "langgraph")
-	stop()
-	features, present = featuresOnWire(cap.body)
-	switch {
-	case len(cap.body) == 0:
-		fail("no ping captured")
-	case !present:
-		fail("`features` key absent from the wire; body: %s", string(cap.body))
-	case !contains(features, "adapter:langgraph"):
-		fail("features = %v, want adapter:langgraph on the boot ping", features)
-	default:
-		pass("declared before NewClient: features = %v on the boot ping", features)
-	}
-
-	fmt.Println("\n-- 6b. constructing the shipped adapter does NOT reach the boot ping --")
+	// Before the move this was impossible: NewClient pinged synchronously
+	// before returning, so no adapter could exist yet, and the 7-day stamp
+	// then suppressed the next ping for a week. A short-lived process using an
+	// adapter reported it NEVER. The e2e leg written to assert otherwise
+	// failed, which is how that was found.
+	fmt.Println("\n-- 6a. the shipped LangGraphAdapter declares itself, no caller telemetry code --")
 	endpoint, stop = startStandInPlatform(http.StatusOK, healthBody)
 	viaConstructor = true
-	cap = captureOnePing(endpoint) // no names passed; only the constructor registers
+	cap = captureOnePing(endpoint) // NOTE: no adapter names passed
 	viaConstructor = false
 	stop()
 	features, present = featuresOnWire(cap.body)
@@ -462,14 +464,38 @@ func runMatrix() {
 		fail("no ping captured")
 	case !present:
 		fail("`features` key absent from the wire; body: %s", string(cap.body))
-	case contains(features, "adapter:langgraph"):
-		fail("features = %v carries the adapter on the BOOT ping. If NewClient no longer "+
-			"pings synchronously before returning, this ordering has changed and the "+
-			"documented guidance in README.md (declare before constructing the client) "+
-			"should be revisited — a GOOD failure, but read it before 'fixing' it", features)
+	case !contains(features, "adapter:langgraph"):
+		fail("features = %v; constructing NewLangGraphAdapter must declare adapter:langgraph "+
+			"on the first ping without the application calling RegisterAdapter itself", features)
 	default:
-		pass("boot ping features = %v: constructor registration lands on the NEXT heartbeat, "+
-			"which is the documented behaviour, not a silent loss", features)
+		pass("NewLangGraphAdapter alone put features = %v on the first ping", features)
+	}
+
+	// --- 6b. Registering AFTER the first request misses that ping. -------
+	//
+	// The honest other half: the trigger moved, it did not disappear. A name
+	// registered after the ping has gone rides the NEXT cadence ping, and
+	// this asserts the boundary rather than implying registration is
+	// timing-free.
+	fmt.Println("\n-- 6b. an adapter registered AFTER the first request misses that ping --")
+	endpoint, stop = startStandInPlatform(http.StatusOK, healthBody)
+	viaConstructor = true
+	registerLate = true
+	cap = captureOnePing(endpoint)
+	registerLate = false
+	viaConstructor = false
+	stop()
+	features, present = featuresOnWire(cap.body)
+	switch {
+	case !present:
+		fail("`features` absent, so this case cannot distinguish absence from a failed run")
+	case contains(features, "adapter:registered-too-late"):
+		fail("features = %v carries an adapter registered AFTER the ping was sent", features)
+	case !contains(features, "adapter:langgraph"):
+		fail("features = %v lost the adapter registered BEFORE the request — without this the "+
+			"absence assertion above is vacuous", features)
+	default:
+		pass("features = %v: declared-before is on the wire, registered-after is not", features)
 	}
 }
 

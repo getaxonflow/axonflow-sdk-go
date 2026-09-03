@@ -30,6 +30,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The telemetry heartbeat now fires on the client's first outbound request
+  rather than at client construction.** A process that constructs a client and
+  never sends a request no longer pings at all — a heartbeat is a claim about
+  usage, and this makes that claim true.
+
+  The reason is `RegisterAdapter`. Every framework adapter takes a client, so an
+  adapter cannot exist until `NewClient` has returned; pinging inside the
+  constructor meant an adapter registering from its own constructor could never
+  reach the first ping, and the 7-day stamp then suppressed the next one for a
+  week. For a short-lived process — a CLI, a Lambda, a CI job — the adapter was
+  never reported at all, which is precisely the population the registry exists
+  to measure. Triggering on first use fixes that for every SDK uniformly.
+
+  Delivery for short-lived processes (issue #1693) is preserved: when the gate
+  is cold, i.e. when the call might actually send, the heartbeat runs
+  synchronously on the caller's goroutine exactly as the constructor used to, so
+  the process cannot exit underneath it. In steady state the per-request cost is
+  a single atomic load.
+
 - **Every value the SDK relays but did not author is now bounded at 64 bytes
   and DROPPED WHOLE when it exceeds that.** The bound already applied to the
   values promoted out of `/health`; it now also applies to adapter names, and

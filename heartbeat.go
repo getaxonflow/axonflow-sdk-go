@@ -314,50 +314,73 @@ func (c *AxonFlowClient) maybeSendHeartbeat() {
 	}
 }
 
-// maybeSendHeartbeatAsync schedules maybeSendHeartbeat on a goroutine so
-// it never blocks the caller. Used by the doHttpRequest middleware to
-// keep user API calls latency-free; NewClient still calls maybeSendHeartbeat
-// synchronously to preserve issue #1693 short-lived-process delivery.
+// maybeSendHeartbeatOnRequest is the SINGLE trigger for the telemetry
+// heartbeat, called by the doHttpRequest middleware that wraps every public
+// API call.
 //
-// Hot-path pre-check: on a service handling 10k req/s with a fresh stamp,
-// every request would otherwise spawn a goroutine that does a single
-// mutex acquire + cache compare + return. The atomic load of
-// lastCheckedNanos lets us skip the spawn entirely when we know the
-// 1-hour cache is still warm — bringing per-request overhead from
-// "goroutine + mutex" to "single atomic load".
-func (c *AxonFlowClient) maybeSendHeartbeatAsync() {
+// IT MOVED HERE FROM NewClient, and the move is the point (#3682). The boot
+// ping used to fire synchronously inside NewClient, before the constructor
+// returned. Every framework adapter takes a *client, so an adapter could not
+// possibly exist yet — which meant an adapter registering from its own
+// constructor could NEVER reach the first ping, and the 7-day stamp then
+// suppressed the next one for a week. For a short-lived process (a CLI, a
+// Lambda, a CI job) that pings once and exits, the adapter was never reported
+// at all: precisely the population the registry exists to measure.
+//
+// Triggering on the first outbound REQUEST instead means the ping describes a
+// client that is actually being used, by which time constructors have run.
+// A client that is constructed and never used no longer pings — which is
+// also more honest about what a heartbeat is claiming.
+//
+// THE SYNC/ASYNC SPLIT PRESERVES ISSUE #1693. That issue was a real measured
+// drop: a short-lived process exited before a backgrounded POST completed.
+// So when the gate is COLD — meaning this call might actually send — the
+// heartbeat runs SYNCHRONOUSLY on the caller's goroutine, exactly as the
+// constructor used to, and the process cannot exit underneath it.
+//
+// The latency that costs is bounded and rare, and worth stating precisely
+// rather than hand-waving: the cold branch is reachable at most once per
+// heartbeatGuardInterval per process, and on that branch the only work that
+// blocks is a stat() of the stamp file unless a ping is genuinely DUE — which
+// the 7-day stamp limits to at most once per machine per week. Steady state
+// is one atomic load per request.
+func (c *AxonFlowClient) maybeSendHeartbeatOnRequest() {
 	if !c.isTelemetryEnabled() {
 		return
 	}
 	h := getSharedHeartbeat()
-	// The pre-check deliberately uses the BASE guard interval, not
+	// Hot-path pre-check: on a service handling 10k req/s with a warm gate,
+	// every request would otherwise take a mutex. The atomic load brings
+	// per-request overhead to a single load.
+	//
+	// It deliberately uses the BASE guard interval, not
 	// guardIntervalFor(consecutiveFailures): reading the counter needs the
-	// mutex, and taking it here would undo the whole point of a lock-free
-	// pre-check. Using the base interval only ever errs toward spawning a
-	// goroutine that maybeSendHeartbeat then declines under the widened
-	// interval — the backoff still holds, it is just enforced one frame in
-	// rather than here.
+	// mutex, and taking it here would undo the point of a lock-free
+	// pre-check. Using the base interval only ever errs toward entering
+	// maybeSendHeartbeat, which then declines under the widened interval —
+	// the backoff still holds, it is just enforced one frame in.
 	if last := h.lastCheckedNanos.Load(); last != 0 &&
 		time.Since(time.Unix(0, last)) < heartbeatGuardInterval {
 		return
 	}
-	go c.maybeSendHeartbeat()
+	c.maybeSendHeartbeat()
 }
 
 // doHttpRequest is the single HTTP middleware that wraps every public-API
-// HTTP call in this SDK. It calls maybeSendHeartbeatAsync as a side effect
+// HTTP call in this SDK. It calls maybeSendHeartbeatOnRequest as a side effect
 // so the 7-day heartbeat gate is consulted on every request — but
 // asynchronously, so the user's API call is never delayed by telemetry.
 //
 // The httpClient parameter selects between c.httpClient (default) and
 // c.mapHttpClient (longer timeout for MAP plan operations). The wrapper
 // is used uniformly across both to ensure no code path bypasses the
-// heartbeat gate.
+// heartbeat gate — and since #3682 this is the ONLY trigger, NewClient
+// having stopped pinging at construction.
 //
 // IMPORTANT: This wrapper must NOT be called from telemetry code itself
 // (sendTelemetryPingNow, probePlatformHealth). Those use raw http.Client
 // instances to avoid recursive heartbeat triggering.
 func (c *AxonFlowClient) doHttpRequest(httpClient *http.Client, req *http.Request) (*http.Response, error) {
-	c.maybeSendHeartbeatAsync()
+	c.maybeSendHeartbeatOnRequest()
 	return httpClient.Do(req)
 }

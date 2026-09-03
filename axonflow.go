@@ -740,8 +740,15 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	// typical re-runs are sub-millisecond.
 	//
 	// See heartbeat.go for the full algorithm and stamp-on-delivery semantics.
-	client.maybeSendHeartbeat()
-
+	// NO HEARTBEAT HERE ANY MORE (#3682). It fires on the client's first
+	// outbound request instead — see maybeSendHeartbeatOnRequest for why:
+	// pinging inside the constructor made it impossible for a framework
+	// adapter to declare itself on the first ping, because every adapter
+	// takes a *client and so cannot exist until after this returns.
+	//
+	// A client that is constructed and never used therefore no longer pings.
+	// That is a deliberate, disclosed change and not a regression: a
+	// heartbeat is a claim about usage.
 	return client
 }
 
