@@ -165,7 +165,6 @@ func TestHostileHealthValuesAreRelayedSafely(t *testing.T) {
 		"tab":           "a\tb",
 		"json fragment": `","org_id":"pwned`,
 		"unicode":       "🙂",
-		"10KB":          strings.Repeat("x", 10*1024),
 	}
 	for name, v := range hostile {
 		t.Run(name, func(t *testing.T) {
@@ -185,9 +184,17 @@ func TestHostileHealthValuesAreRelayedSafely(t *testing.T) {
 			defer cancel()
 			probe := probePlatformHealth(ctx, endpoint)
 
-			// Relayed VERBATIM. Folding or sanitising here would mask what the
-			// platform actually said; the receiver normalises to a closed enum
-			// and bounds the length, which is where that belongs.
+			// Relayed VERBATIM. Folding or sanitising a WITHIN-BOUNDS value here
+			// would mask what the platform actually said; the receiver
+			// normalises to a closed enum, which is where that belongs.
+			//
+			// The 10 KB case that used to live in this table moved to
+			// TestOversizedHealthValueIsDroppedWholeNotTruncated when the size
+			// bound landed: an oversized value is DROPPED, not relayed, because
+			// one 70 KB member pushes the whole ping past the checkpoint's
+			// 64 KiB limit and costs every other dimension with it. Hostile
+			// CONTENT and hostile SIZE are different contracts, and keeping them
+			// in one table would have hidden that.
 			if probe.Edition == nil || *probe.Edition != v {
 				t.Errorf("edition = %v, want the value verbatim", probe.Edition)
 			}
@@ -349,5 +356,168 @@ func TestHealthIsFetchedExactlyOncePerPing(t *testing.T) {
 	if healthHits != 1 {
 		t.Errorf("/health was fetched %d times for ONE ping; the identity members must ride the "+
 			"response already being fetched for the version and the tier", healthHits)
+	}
+}
+
+// TestHealthRedirectIsNotFollowed — a 30x from /health must yield NOTHING.
+//
+// Following it would make every value the probe promotes describe the REDIRECT
+// TARGET rather than the endpoint the caller configured: a captive portal, a
+// misconfigured proxy or an http->https hop is enough to make the heartbeat
+// report a platform the user never pointed at. The redirect target here serves
+// a complete, plausible /health precisely so that a followed redirect would
+// look like a successful probe rather than an error.
+func TestHealthRedirectIsNotFollowed(t *testing.T) {
+	var targetHits int
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHits++
+		_, _ = w.Write([]byte(`{"version":"99.99.99","tier":"EnterprisePlus",` +
+			`"edition":"enterprise","deployment_mode":"saas"}`))
+	}))
+	defer target.Close()
+
+	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound,
+		http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			targetHits = 0
+			redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, target.URL+"/health", code)
+			}))
+			defer redirector.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
+			defer cancel()
+			probe := probePlatformHealth(ctx, redirector.URL)
+
+			if probe.PlatformVersion != nil || probe.LicenseTier != nil ||
+				probe.Edition != nil || probe.PlatformDeploymentMode != nil {
+				t.Errorf("a %d was followed and the probe relayed the redirect target's values: %+v",
+					code, probe)
+			}
+			if targetHits != 0 {
+				t.Errorf("the redirect target was fetched %d times; the telemetry path must not "+
+					"follow a redirect off the configured endpoint", targetHits)
+			}
+		})
+	}
+}
+
+// TestCheckpointRedirectDoesNotLookLikeDelivery is the more dangerous half.
+//
+// net/http does NOT re-POST across a 301/302/303 — it converts the request to a
+// bodyless GET. So a redirect on the checkpoint POST yields a 200 for a request
+// that carried NO PAYLOAD, and a caller that reads that 200 as success writes
+// the 7-day stamp, leaving the installation silent for a week on a ping that
+// was never sent. The redirect target here answers 200 with a normal checkpoint
+// body, so a followed redirect is indistinguishable from success unless the
+// client refuses to follow it.
+func TestCheckpointRedirectDoesNotLookLikeDelivery(t *testing.T) {
+	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound,
+		http.StatusSeeOther, http.StatusTemporaryRedirect} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			var gotBodyless bool
+			var targetHits int
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				targetHits++
+				b, _ := io.ReadAll(r.Body)
+				if r.Method == http.MethodGet || len(b) == 0 {
+					gotBodyless = true
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"latest_version":""}`))
+			}))
+			defer target.Close()
+
+			redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, target.URL+"/v1/ping", code)
+			}))
+			defer redirector.Close()
+
+			platform := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{"version":"10.4.0","tier":"Enterprise"}`))
+			}))
+			defer platform.Close()
+
+			t.Setenv("AXONFLOW_CHECKPOINT_URL", redirector.URL+"/v1/ping")
+			c := &AxonFlowClient{config: AxonFlowConfig{Endpoint: platform.URL}}
+
+			err := c.sendTelemetryPingNow(context.Background())
+
+			// THE CONTRACT: a redirect must be an ERROR, so the caller does not
+			// write the stamp. A nil error here is the silent-for-7-days bug.
+			if err == nil {
+				t.Errorf("a %d on the checkpoint POST returned success; the caller would write "+
+					"the 7-day stamp for a ping that was never delivered", code)
+			}
+			if targetHits != 0 {
+				t.Errorf("the redirect was followed (%d hits, bodyless=%v)", targetHits, gotBodyless)
+			}
+		})
+	}
+}
+
+// TestOversizedHealthValueIsDroppedWholeNotTruncated pins the ingest-limit
+// guard.
+//
+// The checkpoint refuses a body over 64 KiB, so ONE 70 KB value from a hostile
+// or broken /health produces a ping rejected WHOLE — every dimension lost, not
+// just the oversized one — and, because the stamp is written only on a 2xx, the
+// SDK retries that same doomed request at every gate run.
+//
+// The offending value is DROPPED, not truncated: 64 bytes of a 70 KB string is
+// not a licence tier, and relaying it would put a fabricated observation on the
+// wire. Every OTHER value must survive, which is the half that makes the drop
+// worth doing rather than failing the probe outright.
+func TestOversizedHealthValueIsDroppedWholeNotTruncated(t *testing.T) {
+	huge := strings.Repeat("z", 70*1024)
+
+	for _, field := range []string{"version", "tier", "edition", "deployment_mode"} {
+		t.Run(field, func(t *testing.T) {
+			body := map[string]string{
+				"version": "10.4.0", "tier": "Enterprise",
+				"edition": "enterprise", "deployment_mode": "saas",
+			}
+			body[field] = huge
+			raw, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+
+			endpoint := newTierHealthServer(t, http.StatusOK, string(raw))
+			ctx, cancel := context.WithTimeout(context.Background(), telemetryTimeout)
+			defer cancel()
+			probe := probePlatformHealth(ctx, endpoint)
+
+			got := map[string]*string{
+				"version": probe.PlatformVersion, "tier": probe.LicenseTier,
+				"edition": probe.Edition, "deployment_mode": probe.PlatformDeploymentMode,
+			}
+			for name, p := range got {
+				if name == field {
+					if p != nil {
+						t.Errorf("%s survived at %d bytes; an oversized value must be dropped, "+
+							"and never truncated into a value the platform did not report", name, len(*p))
+					}
+					continue
+				}
+				// EVERY OTHER VALUE SURVIVES. Dropping the whole probe would be
+				// the easy fix and the wrong one: one bad member must not cost
+				// the dimensions beside it.
+				if p == nil {
+					t.Errorf("an oversized %s discarded %s as well; only the offending value is dropped", field, name)
+				}
+			}
+
+			// And the resulting ping is small enough to be accepted.
+			payload, _ := json.Marshal(telemetryPayload{
+				TelemetryType: "sdk", SDK: "go", SDKVersion: Version,
+				PlatformVersion: probe.PlatformVersion, LicenseTier: probe.LicenseTier,
+				Edition: probe.Edition, PlatformDeploymentMode: probe.PlatformDeploymentMode,
+			})
+			if len(payload) > 64*1024 {
+				t.Errorf("the ping is %d bytes, over the checkpoint's 64 KiB limit — it would be "+
+					"rejected whole and retried forever", len(payload))
+			}
+		})
 	}
 }

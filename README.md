@@ -1242,6 +1242,25 @@ The field is **omitted entirely** whenever the tier could not be determined — 
 
 `AXONFLOW_TELEMETRY=off` suppresses this field along with the rest of the heartbeat.
 
+### Platform build and deployment mode (`edition`, `platform_deployment_mode`)
+
+Each heartbeat also reports two things about the AxonFlow platform the SDK is configured to talk to: which **build** it is running (`edition`: `community` or `enterprise`) and the platform's **own deployment mode** (`platform_deployment_mode`: for example `community`, `in-vpc-enterprise`, `community-saas`). Together with the licence tier these say what kind of deployment an adoption figure describes; none of the three is derivable from the others, because the Community SaaS fleet runs the *enterprise* build against the *community-saas* schema.
+
+What is and is not collected:
+
+- **Collected:** the two coarse strings only, exactly as the platform reported them.
+- **Not collected:** your hostname, your endpoint URL, your organisation's name, your environment variables, or any other configuration. The SDK reads nothing from your machine to produce either value.
+
+Both are read from the platform's own `/health` response — the **same response** the heartbeat already fetches for the platform version and licence tier, and an endpoint that returns these fields to any caller without authentication. **No additional network request is made.**
+
+**These are adoption-analytics signals, not entitlement ones**, on exactly the same terms as the licence tier above: whoever operates your configured endpoint controls both values, the SDK relays them unchanged and verifies nothing, and they must never gate entitlement, unlock a feature, or enter any authorization or billing decision.
+
+Both fields are **omitted entirely** whenever the platform did not report them — it is unreachable, returns an error or an unparseable body, or is a version older than 10.4.0 that does not serve these members at all. That last case will be the common one for some time. An absent field means "not known"; it is never defaulted, so it can never be read as `community`.
+
+> One naming caution for anyone reading raw payloads: the heartbeat's own `deployment_mode` field is a **different** dimension — a coarse topology (`self_hosted` / `community_saas` / `unknown`) that this SDK derives from the endpoint URL you configured. The platform's own mode travels as `platform_deployment_mode`.
+
+`AXONFLOW_TELEMETRY=off` suppresses both fields along with the rest of the heartbeat.
+
 `DO_NOT_TRACK` is **not** honored as an opt-out for AxonFlow telemetry. It is commonly inherited from host tools and developer environments, which makes it an unreliable expression of user intent.
 
 See [Telemetry Documentation](https://docs.getaxonflow.com/docs/telemetry) for full details.

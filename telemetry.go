@@ -292,7 +292,21 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 		return healthProbe{}
 	}
 
-	resp, err := (&http.Client{}).Do(req)
+	// NO REDIRECTS ON THE TELEMETRY PATH. A 30x from /health would otherwise be
+	// followed silently, and every value promoted below — the version, the tier,
+	// the edition and the platform's deployment mode — would then describe the
+	// REDIRECT TARGET rather than the endpoint the caller configured. A captive
+	// portal, a misconfigured proxy or an http->https hop is enough to make the
+	// heartbeat report a platform the user never pointed at.
+	//
+	// ErrUseLastResponse hands back the 30x itself, which fails the
+	// StatusOK check below and yields an empty probe — "not learned", the
+	// honest answer. Same precedent as the request client in axonflow.go.
+	resp, err := (&http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}).Do(req)
 	if err != nil {
 		return healthProbe{}
 	}
@@ -318,23 +332,56 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 		return healthProbe{}
 	}
 
+	// maxRelayedValueBytes bounds every value promoted out of /health.
+	//
+	// WHY A DROP AND NOT A TRUNCATION. The checkpoint refuses a request body
+	// over 64 KiB. A single 70 KB value from a hostile or broken /health
+	// therefore produces a ~72 KB ping that is rejected WHOLE — the version,
+	// the tier, the org id, every dimension lost, not just the oversized one —
+	// and because the stamp is only written on a 2xx, the SDK retries that
+	// same doomed request at every gate run for as long as /health keeps
+	// answering that way.
+	//
+	// Dropping the offending value alone keeps the ping under the limit and
+	// preserves every other dimension. It is dropped rather than truncated
+	// because a truncated value is a value the platform never reported: 64
+	// bytes of a 70 KB string is not a licence tier, and relaying it would put
+	// a fabricated observation on the wire. Absent is the honest answer, and
+	// this path already has a well-defined meaning for absent.
+	//
+	// 64 bytes is the same bound the receiver applies to these coarse enums,
+	// and ~3.5x the longest legitimate value.
+	const maxRelayedValueBytes = 64
+
 	// Each field is promoted independently, and only when it is a non-empty
 	// STRING. An absent key, a non-string value, and an explicit "" are all
 	// "not learned" — the pointer stays nil rather than becoming a pointer to
 	// "", which would put a meaningless empty value on the wire despite
 	// omitempty, or a coerced value that misrepresents what the platform said.
 	var probe healthProbe
-	if v, ok := health["version"].(string); ok && v != "" {
-		probe.PlatformVersion = &v
+	// learned promotes one member: a non-empty string, within the size bound.
+	// One helper rather than four copies of the same two conditions — a bound
+	// applied to three of four fields is the shape that gets found in
+	// production by the field it was not applied to.
+	learned := func(key string) *string {
+		v, ok := health[key].(string)
+		if !ok || v == "" || len(v) > maxRelayedValueBytes {
+			return nil
+		}
+		return &v
 	}
-	if t, ok := health["tier"].(string); ok && t != "" {
-		// Verbatim, including the transient "starting" the agent returns
-		// before its licence is validated. "starting" is a real signal the
-		// receiver buckets deliberately, not an error to filter client-side.
-		probe.LicenseTier = &t
+
+	if p := learned("version"); p != nil {
+		probe.PlatformVersion = p
 	}
-	if e, ok := health["edition"].(string); ok && e != "" {
-		probe.Edition = &e
+	// Verbatim, including the transient "starting" the agent returns before its
+	// licence is validated. "starting" is a real signal the receiver buckets
+	// deliberately, not an error to filter client-side.
+	if p := learned("tier"); p != nil {
+		probe.LicenseTier = p
+	}
+	if p := learned("edition"); p != nil {
+		probe.Edition = p
 	}
 	// NOTE THE NAME CHANGE, AND THAT IT IS DELIBERATE. The /health member is
 	// `deployment_mode` (the platform describing itself); the wire field is
@@ -342,8 +389,8 @@ func probePlatformHealth(ctx context.Context, endpoint string) healthProbe {
 	// different dimension - the topology it derives from its endpoint URL - and
 	// promoting /health's member into it would overwrite a value every existing
 	// dashboard reads.
-	if m, ok := health["deployment_mode"].(string); ok && m != "" {
-		probe.PlatformDeploymentMode = &m
+	if p := learned("deployment_mode"); p != nil {
+		probe.PlatformDeploymentMode = p
 	}
 	return probe
 }
@@ -478,7 +525,25 @@ func (c *AxonFlowClient) sendTelemetryPingNow(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: telemetryTimeout}
+	// NO REDIRECTS, AND HERE IT IS A CORRECTNESS BUG RATHER THAN A PRIVACY ONE.
+	//
+	// net/http does not re-POST across a 301/302/303: it converts the request
+	// to a bodyless GET. So a redirect on the checkpoint POST produces a 200
+	// for a request that carried NO PAYLOAD, the code below reads that 200 as a
+	// successful delivery, and the caller writes the 7-day stamp — leaving the
+	// installation silent for a week on a ping that was never actually sent.
+	// A 200 that means "we delivered nothing" is the worst possible shape for
+	// this path, because it is indistinguishable from success at every layer
+	// above.
+	//
+	// ErrUseLastResponse surfaces the 30x itself, which fails the 2xx check and
+	// leaves the stamp unwritten, so the next gate run retries.
+	client := &http.Client{
+		Timeout: telemetryTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

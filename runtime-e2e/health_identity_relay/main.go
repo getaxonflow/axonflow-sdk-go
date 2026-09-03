@@ -91,6 +91,14 @@ func pass(format string, args ...any) {
 // clearStamp removes the 7-day heartbeat stamp so the ping actually fires.
 // Env injection is too late: the shared heartbeat gate is a package var
 // initialised before main() runs.
+//
+// THE CHILD RUNS WITH HOME POINTED AT A TEMP DIR (see captureOnePing), so
+// os.UserCacheDir() resolves inside that temp dir and this removes the CHILD'S
+// stamp — not the developer's real one. Without that redirection, running this
+// suite locally would silently delete
+// ~/Library/Caches/axonflow/go-telemetry-last-sent (or the XDG equivalent) and
+// cause the developer's own next SDK run to emit a real heartbeat they did not
+// ask for. A test harness must not have side effects on the machine it runs on.
 func clearStamp() {
 	if cacheDir, err := os.UserCacheDir(); err == nil {
 		_ = os.Remove(filepath.Join(cacheDir, "axonflow", "go-telemetry-last-sent"))
@@ -148,12 +156,28 @@ func captureOnePing(platformEndpoint string) []byte {
 		os.Exit(2)
 	}
 
+	// A PRIVATE HOME PER CHILD, so the stamp the child clears and writes is its
+	// own. os.UserCacheDir() derives from HOME on Linux/macOS (XDG_CACHE_HOME
+	// first on Linux) and from LOCALAPPDATA on Windows; all three are redirected
+	// here. Without this the harness deletes the developer's real stamp on every
+	// run and their next ordinary SDK call emits a heartbeat they did not ask
+	// for — a test with a side effect on the machine it runs on.
+	childHome, err := os.MkdirTemp("", "axonflow-e2e-home-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "temp home: %v\n", err)
+		os.Exit(2)
+	}
+	defer os.RemoveAll(childHome)
+
 	cmd := exec.Command(self)
 	cmd.Env = append(os.Environ(),
 		childEnvVar+"=1",
 		"AXONFLOW_E2E_PLATFORM_ENDPOINT="+platformEndpoint,
 		"AXONFLOW_CHECKPOINT_URL=http://"+listener.Addr().String()+"/v1/ping",
 		"AXONFLOW_TELEMETRY=",
+		"HOME="+childHome,
+		"XDG_CACHE_HOME="+filepath.Join(childHome, ".cache"),
+		"LOCALAPPDATA="+filepath.Join(childHome, "AppData", "Local"),
 	)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
