@@ -1,5 +1,5 @@
 // Copyright 2025 AxonFlow
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 //
 // selfhosted_zero_config_test.go - Tests for zero-configuration self-hosted mode
 //

@@ -1,5 +1,5 @@
 // Copyright 2025 AxonFlow
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 //
 // selfhosted_auth_headers_test.go - Auth header verification tests
 //

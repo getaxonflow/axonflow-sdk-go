@@ -1,5 +1,5 @@
 // Copyright 2026 AxonFlow
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 //
 // Go SDK example for Issue #1673 Phase 1 (retry_context) + Phase 2
 // (idempotency_key). Exercises the full feature set end-to-end through the
