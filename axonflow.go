@@ -6,7 +6,9 @@ package axonflow
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -564,6 +566,22 @@ type cacheEntry struct {
 }
 
 // Simple in-memory cache
+// cacheKeyFor builds the response-cache key for one call.
+//
+// One helper rather than a format string at each site: the two call sites had
+// identical expressions, and fixing one of two identical expressions leaves the
+// two paths disagreeing about what a cache entry means — which is a worse bug
+// than the one being fixed, because it is silent.
+//
+// The identity is hashed into the key and never stored, so a cache dump cannot
+// yield the credential.
+func (c *AxonFlowClient) cacheKeyFor(requestType, query, userToken string) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf(
+		"%s:%s:%s:%s", requestType, query, userToken, c.config.UserToken,
+	)))
+	return hex.EncodeToString(sum[:])
+}
+
 type cache struct {
 	mu      sync.RWMutex
 	entries map[string]*cacheEntry
@@ -776,8 +794,19 @@ func (c *AxonFlowClient) ProxyLLMCall(userToken, query, requestType string, cont
 		userToken = "anonymous"
 	}
 
-	// Generate cache key
-	cacheKey := fmt.Sprintf("%s:%s:%s", requestType, query, userToken)
+	// Generate cache key. The READ-PATH identity is a component, and is a
+	// different thing from userToken above: that one is the write-path body
+	// field this call was made with, and this one is the X-User-Token header
+	// the request will carry.
+	//
+	// Both belong in the key because both can change the answer. A client
+	// derived with AsUser SHARES this one's cache — AsUser is a struct copy and
+	// cache is a POINTER — so without the identity, c.AsUser(ALICE) and
+	// c.AsUser(BOB) asking the same question hash to one entry: one request
+	// goes out carrying ALICE and BOB is handed ALICE's governed response, with
+	// nothing evaluated on his behalf. Measured before the fix: one request
+	// reached the server, identities [ALICE].
+	cacheKey := c.cacheKeyFor(requestType, query, userToken)
 
 	// Plan operations are mutations and must not be cached
 	isMutation := requestType == "execute-plan" || requestType == "generate-plan" ||
@@ -845,8 +874,8 @@ func (c *AxonFlowClient) ProxyLLMCallWithMedia(userToken, query, requestType str
 		userToken = "anonymous"
 	}
 
-	// Generate cache key
-	cacheKey := fmt.Sprintf("%s:%s:%s", requestType, query, userToken)
+	// Generate cache key — see cacheKeyFor for why the identity is in it.
+	cacheKey := c.cacheKeyFor(requestType, query, userToken)
 
 	// Plan operations are mutations and must not be cached
 	isMutation := requestType == "execute-plan" || requestType == "generate-plan" ||
