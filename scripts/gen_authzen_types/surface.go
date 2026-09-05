@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // The language-neutral AuthZEN surface artifact, as this emitter reads it.
@@ -15,9 +16,16 @@ import (
 
 // Surface is the whole artifact.
 type Surface struct {
-	Artifact              string `json:"artifact"`
-	ArtifactVersion       int    `json:"artifact_version"`
-	Profile               string `json:"profile"`
+	Artifact        string `json:"artifact"`
+	ArtifactVersion int    `json:"artifact_version"`
+	Profile         string `json:"profile"`
+	// ProfileHeader and Route are the request header the profile is negotiated
+	// with and the one route the surface is served on. Both come from the
+	// platform's contract constants through the artifact, so this SDK
+	// generates the path and header it calls rather than transcribing them
+	// (#3603: five hand-written copies, nothing checking them).
+	ProfileHeader         string `json:"profile_header"`
+	Route                 Route  `json:"route"`
 	ContractSchemaVersion string `json:"contract_schema_version"`
 	SourceSchemaID        string `json:"source_schema_id"`
 	SourceSchemaSHA256    string `json:"source_schema_sha256"`
@@ -26,6 +34,12 @@ type Surface struct {
 }
 
 // Enum is a closed set of string values.
+// Route is the HTTP method and path of the surface's single route.
+type Route struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+}
+
 type Enum struct {
 	Name   string   `json:"name"`
 	Doc    string   `json:"doc,omitempty"`
@@ -80,6 +94,15 @@ func ParseSurface(raw []byte) (*Surface, error) {
 	// otherwise become a Go type name that does not exist, and the failure
 	// would surface as a compile error in generated code rather than as a
 	// statement about the artifact.
+	// The route and header are what the generated client CALLS. An artifact
+	// without them would generate a client with nowhere to send a request, so
+	// they are required, not defaulted.
+	if s.Route.Method != "POST" || !strings.HasPrefix(s.Route.Path, "/") || strings.HasSuffix(s.Route.Path, "/") {
+		return nil, fmt.Errorf("the artifact's route is %q %q; want POST and an absolute path with no trailing slash", s.Route.Method, s.Route.Path)
+	}
+	if s.ProfileHeader == "" || strings.ContainsAny(s.ProfileHeader, " :\n") {
+		return nil, fmt.Errorf("the artifact's profile_header %q is not a header name", s.ProfileHeader)
+	}
 	types := map[string]bool{}
 	for _, t := range s.Types {
 		if types[t.Name] {

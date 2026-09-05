@@ -132,7 +132,17 @@ const AuthZENProfileV1 = %q
 // AuthZENResponseContext.SchemaVersion.
 const AuthZENContractSchemaVersion = %q
 
-`, s.Profile, s.ContractSchemaVersion)
+// AuthZENPath is the one route the AuthZEN surface is served on, and
+// AuthZENProfileHeader the request header the profile is negotiated with.
+// Both are generated from the platform's contract through the artifact, not
+// written here: a rename on the platform is a single-source change that
+// TestCommittedTypesAreCurrent turns red in this SDK (#3603).
+const (
+	AuthZENPath          = %q
+	AuthZENProfileHeader = %q
+)
+
+`, s.Profile, s.ContractSchemaVersion, s.Route.Path, s.ProfileHeader)
 
 	for _, e := range s.Enums {
 		emitEnum(&body, e)
