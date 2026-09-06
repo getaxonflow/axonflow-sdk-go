@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real local listener. A forgotten bump fails against the platform; the
   version-alignment check, which compares two files in this tree, cannot see that.
 
+- **`AuthZENPath` and `AuthZENProfileHeader` are generated from the surface
+  artifact, not written here (axonflow-enterprise#3603 follow-up).** The route
+  (`/api/v1/access/evaluation`) and the negotiation header
+  (`X-Axonflow-AuthZEN-Profile`) were literals in this SDK, in the other four
+  SDKs and in the platform's handler, with nothing comparing the copies; a
+  rename on the platform would have surfaced as a 404 in whichever SDK next had
+  a live run. The platform now publishes both in `authzen-surface.json`
+  (`route`, `profile_header`); the generator requires them and emits the two
+  exported constants; the client's own aliases point at them. The vendored
+  artifact is refreshed to the publishing platform commit. No wire change.
 - **`RegisterAdapter(name string)` declares a framework adapter on the existing
   heartbeat (axonflow-enterprise#3682).** A LangChain / LangGraph / LiteLLM
   wrapper - or your own in-house adapter - was previously indistinguishable

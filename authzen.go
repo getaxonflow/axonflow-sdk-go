@@ -36,17 +36,22 @@ import (
 	"net/http"
 )
 
-// authzenPath is the AuthZEN evaluation endpoint.
-const authzenPath = "/api/v1/access/evaluation"
-
-// authzenProfileHeader negotiates the AxonFlow profile.
+// authzenPath and authzenProfileHeader are the GENERATED AuthZENPath and
+// AuthZENProfileHeader (authzen_types_gen.go), aliased under the names this
+// file has always used. They used to be literals here - the SDK's own copy of
+// two strings the platform also wrote by hand - and nothing compared the two
+// (#3603). Now the artifact carries them, and a platform rename is a
+// regenerate-and-diff failure rather than a runtime 404.
 //
-// The SDK always sends it. AuthZEN 1.0's response is a bare boolean, and the
-// four-valued state, obligations and approval challenge ride in the response
-// context, which the server returns only to a caller that asked for it by
-// version. This SDK understands the profile, so there is no reason to ask for
-// less than it can read.
-const authzenProfileHeader = "X-Axonflow-AuthZEN-Profile"
+// The SDK always sends the profile header. AuthZEN 1.0's response is a bare
+// boolean, and the four-valued state, obligations and approval challenge ride
+// in the response context, which the server returns only to a caller that
+// asked for it by version. This SDK understands the profile, so there is no
+// reason to ask for less than it can read.
+const (
+	authzenPath          = AuthZENPath
+	authzenProfileHeader = AuthZENProfileHeader
+)
 
 // Retryable reports whether the caller could get a different answer by sending
 // the same request again.
