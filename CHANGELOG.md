@@ -5,9 +5,18 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [9.3.0] - 2026-09-06: read-path identity, and a heartbeat that fires on first use
 
 ### Added
+
+- **`runtime-e2e/x_axonflow_client/main.go` proves the release against the LIVE platform.** A bump changes one
+  product fact - the version in version.go - and every governed request carries it as
+  `X-Axonflow-Client: sdk-go/<version>` (ADR-050 §4). The leg reads
+  `sdk_compatibility.recommended_sdk_version` from the real 10.4.0 agent's `/health`
+  (try.getaxonflow.com, read-only), requires the built version to equal it and not sit
+  below the minimum, and captures the header the SDK puts on a real request through a
+  real local listener. A forgotten bump fails against the platform; the
+  version-alignment check, which compares two files in this tree, cannot see that.
 
 - **`AuthZENPath` and `AuthZENProfileHeader` are generated from the surface
   artifact, not written here (axonflow-enterprise#3603 follow-up).** The route
