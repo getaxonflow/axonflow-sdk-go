@@ -239,12 +239,19 @@ func TestATypeReachingAValidatedMemberGetsAValidate(t *testing.T) {
 // through the generator built to prevent it.
 func TestParseSurfaceRefusesWhatItCannotGenerate(t *testing.T) {
 	valid := `{"artifact":"axonflow-authzen-surface","artifact_version":1,"profile":"p",
+	  "profile_header":"X-Axonflow-AuthZEN-Profile","route":{"method":"POST","path":"/api/v1/access/evaluation"},
 	  "contract_schema_version":"v","source_schema_id":"i","source_schema_sha256":"s",
 	  "enums":[{"name":"e","values":["a"]}],
 	  "types":[{"name":"t","fields":[{"name":"f","required":true,"type":{"kind":"string"}}]}]}`
 
 	for _, tc := range []struct{ name, doc string }{
 		{"an unknown artifact member", strings.Replace(valid, `"enums":`, `"transport":"grpc","enums":`, 1)},
+		// The route and header are what the generated client CALLS (#3603).
+		{"no route", strings.Replace(valid, `"route":{"method":"POST","path":"/api/v1/access/evaluation"},`, ``, 1)},
+		{"a route that is not POST", strings.Replace(valid, `"method":"POST"`, `"method":"GET"`, 1)},
+		{"a relative route path", strings.Replace(valid, `"path":"/api/v1/access/evaluation"`, `"path":"api/v1/access/evaluation"`, 1)},
+		{"no profile header", strings.Replace(valid, `"profile_header":"X-Axonflow-AuthZEN-Profile",`, ``, 1)},
+		{"a profile header that is not a header name", strings.Replace(valid, `"X-Axonflow-AuthZEN-Profile"`, `"X-Axonflow AuthZEN: Profile"`, 1)},
 		{"an unknown type kind", strings.Replace(valid, `{"kind":"string"}`, `{"kind":"decimal"}`, 1)},
 		{"a dangling type reference", strings.Replace(valid, `{"kind":"string"}`, `{"kind":"ref","ref":"nope"}`, 1)},
 		{"a dangling enum reference", strings.Replace(valid, `{"kind":"string"}`, `{"kind":"enum","enum":"nope"}`, 1)},

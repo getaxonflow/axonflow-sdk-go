@@ -270,12 +270,88 @@ func main() {
 		check("known resolves to its value and absent is omitted on the live wire", nil)
 	}
 
+	// -- the served route and header NAME are the ones this SDK generated ------
+	//
+	// AuthZENPath and AuthZENProfileHeader come from the platform's surface
+	// artifact (axonflow-enterprise#3603), not from a literal here. A raw request
+	// puts both on the wire: with the generated header name the server returns
+	// the negotiated profile context; with the name altered by one character it
+	// must NOT - the bare boolean is the proof that the NAME is what the handler
+	// reads, and that this SDK's constant is that name. Sending through the SDK
+	// would prove nothing here: it would use the same constants.
+	profiled, err := rawEvaluate(ctx, endpoint, clientID, clientSecret, axonflow.AuthZENProfileHeader, benign)
+	switch {
+	case err != nil:
+		check("the generated route and header name negotiate the profile on the live wire", err)
+	case profiled.Context == nil || profiled.Context.Profile != axonflow.AuthZENProfileV1:
+		check("the generated route and header name negotiate the profile on the live wire",
+			fmt.Errorf("POST %s with %s returned context=%+v; want profile %q", axonflow.AuthZENPath, axonflow.AuthZENProfileHeader, profiled.Context, axonflow.AuthZENProfileV1))
+	default:
+		check("the generated route and header name negotiate the profile on the live wire", nil)
+	}
+	offByOne := axonflow.AuthZENProfileHeader[:len(axonflow.AuthZENProfileHeader)-1]
+	bare, err := rawEvaluate(ctx, endpoint, clientID, clientSecret, offByOne, benign)
+	switch {
+	case err != nil:
+		check("a header name one character off is not read, so the constant is the name", err)
+	case bare.Context != nil:
+		check("a header name one character off is not read, so the constant is the name",
+			fmt.Errorf("header %q still negotiated a context (%+v); the server is not reading the NAME the SDK generated", offByOne, bare.Context))
+	case bare.Decision == nil:
+		check("a header name one character off is not read, so the constant is the name",
+			fmt.Errorf("header %q returned no decision member at all", offByOne))
+	default:
+		check("a header name one character off is not read, so the constant is the name", nil)
+	}
+
 	fmt.Println()
 	if failures > 0 {
 		fmt.Printf("%d check(s) failed\n", failures)
 		os.Exit(1)
 	}
 	fmt.Println("AuthZEN runtime checks passed against a live agent.")
+}
+
+// rawResponse is the two members the route-and-header leg reads off the wire:
+// the boolean every response carries and the profile context only a negotiated
+// one does.
+type rawResponse struct {
+	Decision *bool `json:"decision"`
+	Context  *struct {
+		Profile string `json:"profile"`
+	} `json:"context"`
+}
+
+// rawEvaluate POSTs the benign evaluation to the GENERATED path with the given
+// profile header NAME, bypassing the SDK client on purpose.
+func rawEvaluate(ctx context.Context, endpoint, id, secret, headerName, query string) (rawResponse, error) {
+	var out rawResponse
+	body, err := json.Marshal(map[string]any{"evaluation": request(query)})
+	if err != nil {
+		return out, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+axonflow.AuthZENPath, bytes.NewReader(body))
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerName, axonflow.AuthZENProfileV1)
+	if id != "" {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(id+":"+secret)))
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return out, fmt.Errorf("POST %s returned %d: %s", axonflow.AuthZENPath, resp.StatusCode, raw)
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return out, fmt.Errorf("POST %s returned unreadable JSON: %w: %s", axonflow.AuthZENPath, err, raw)
+	}
+	return out, nil
 }
 
 func request(query string) axonflow.AuthZENRequest {

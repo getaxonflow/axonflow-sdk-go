@@ -4,7 +4,7 @@
 //   artifact:        axonflow-authzen-surface v1
 //   profile:         axonflow-authzen-profile-2026-08-29
 //   contract schema: 2026-08-29
-//   schema digest:   sha256:647e16f769766f0ee8cf4913aaf5ac5c4567660fd2903da6766eead5db279efe
+//   schema digest:   sha256:04f63f4d97215faa9fbf2b6a5152630f7310edbe47440b975d0f66ad63df811f
 //
 // Regenerate with:
 //
@@ -35,6 +35,16 @@ const AuthZENProfileV1 = "axonflow-authzen-profile-2026-08-29"
 // generated from. It is the value the server echoes in
 // AuthZENResponseContext.SchemaVersion.
 const AuthZENContractSchemaVersion = "2026-08-29"
+
+// AuthZENPath is the one route the AuthZEN surface is served on, and
+// AuthZENProfileHeader the request header the profile is negotiated with.
+// Both are generated from the platform's contract through the artifact, not
+// written here: a rename on the platform is a single-source change that
+// TestCommittedTypesAreCurrent turns red in this SDK (#3603).
+const (
+	AuthZENPath          = "/api/v1/access/evaluation"
+	AuthZENProfileHeader = "X-Axonflow-AuthZEN-Profile"
+)
 
 // AuthZENErrorCode is a closed set of values the server may send.
 //
