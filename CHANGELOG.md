@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`runtime-e2e/x_axonflow_client/main.go` proves the release against the LIVE platform.** A bump changes one
+  product fact - the version in version.go - and every governed request carries it as
+  `X-Axonflow-Client: sdk-go/<version>` (ADR-050 §4). The leg reads
+  `sdk_compatibility.recommended_sdk_version` from the real 10.4.0 agent's `/health`
+  (try.getaxonflow.com, read-only), requires the built version to equal it and not sit
+  below the minimum, and captures the header the SDK puts on a real request through a
+  real local listener. A forgotten bump fails against the platform; the
+  version-alignment check, which compares two files in this tree, cannot see that.
+
 - **`RegisterAdapter(name string)` declares a framework adapter on the existing
   heartbeat (axonflow-enterprise#3682).** A LangChain / LangGraph / LiteLLM
   wrapper - or your own in-house adapter - was previously indistinguishable
