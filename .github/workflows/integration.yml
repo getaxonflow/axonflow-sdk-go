@@ -130,18 +130,17 @@ jobs:
         ref: ${{ steps.specs_sha.outputs.sha }}
         path: axonflow-community
 
+    # setup-go@v5 caches the module + build cache by default when go.sum
+    # exists at the repo root — no manual `actions/cache@v4` step needed.
+    # A manual cache on the SAME path fights setup-go's restore: both
+    # extract into ~/go/pkg/mod and the second tar aborts with
+    # "Cannot open: File exists". Matches test.yml, which relies on
+    # setup-go's built-in cache alone.
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.21'
-
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+        cache: true
 
     - name: Run wire-shape contract tests
       env:
@@ -162,18 +161,13 @@ jobs:
     - name: Checkout SDK
       uses: actions/checkout@v4
 
+    # See the note on the wire-shape job: setup-go@v5 owns the module cache;
+    # a manual actions/cache on ~/go/pkg/mod collides with its restore.
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.21'
-
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+        cache: true
 
     - name: Clone Community Stack
       run: |
