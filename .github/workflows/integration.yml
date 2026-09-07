@@ -212,12 +212,20 @@ jobs:
     # Logs MUST be captured before `Stop Community Stack` runs — `compose
     # down` destroys the containers and `compose logs` then returns
     # nothing. `if: failure()` here, `if: always()` on teardown.
+    #
+    # This step also WRITES the file the upload step consumes. It previously
+    # only echoed to the console and the teardown step wrote the file, which
+    # ran AFTER the upload — so the artifact had nothing to collect even
+    # before the path was rejected.
     - name: Show Docker Logs on Failure
       if: failure()
       run: |
         if [ -d "../axonflow" ]; then
           cd ../axonflow
           docker compose logs --tail=200 || true
+          # upload-artifact rejects any path containing '..', so stage the
+          # file inside the workspace rather than beside the stack clone.
+          docker compose logs --tail=500 > "${GITHUB_WORKSPACE}/docker-compose-logs.txt" 2>/dev/null || true
         fi
 
     - name: Upload Docker Logs on Failure
@@ -225,7 +233,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: docker-compose-logs
-        path: ../axonflow/docker-compose-logs.txt
+        path: docker-compose-logs.txt
         if-no-files-found: ignore
 
     - name: Stop Community Stack
@@ -233,7 +241,5 @@ jobs:
       run: |
         if [ -d "../axonflow" ]; then
           cd ../axonflow
-          # Persist logs to disk so the upload step can grab them post-teardown.
-          docker compose logs --tail=500 > docker-compose-logs.txt 2>/dev/null || true
           docker compose down --volumes --remove-orphans || true
         fi
