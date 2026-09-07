@@ -209,6 +209,17 @@ jobs:
         AXONFLOW_CLIENT_ID: demo-client
         AXONFLOW_CLIENT_SECRET: demo-secret
 
+    # Runtime proof that the smoke above is asserting something. The example
+    # skips the LLM leg when no provider is configured; this leg pins the half
+    # that IS observable without one, so that skip can never be widened into a
+    # no-op without CI going red. Runs against the same live stack.
+    - name: Run Runtime E2E — provider-absent governance
+      run: go run runtime-e2e/provider_absent_governance/main.go
+      env:
+        AXONFLOW_E2E_PLATFORM_ENDPOINT: http://localhost:8080
+        AXONFLOW_CLIENT_ID: demo-client
+        AXONFLOW_CLIENT_SECRET: demo-secret
+
     # Logs MUST be captured before `Stop Community Stack` runs — `compose
     # down` destroys the containers and `compose logs` then returns
     # nothing. `if: failure()` here, `if: always()` on teardown.
