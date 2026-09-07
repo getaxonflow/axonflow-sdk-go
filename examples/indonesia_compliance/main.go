@@ -23,7 +23,18 @@ func main() {
 		log.Fatal("AXONFLOW_CLIENT_ID and AXONFLOW_CLIENT_SECRET must be set")
 	}
 
-	client := axonflow.NewClientSimple(agentURL, clientID, clientSecret)
+	// NewClientSimple carries no read-path identity, and SearchAuditLogs below
+	// is a read: ClientID/ClientSecret say which ORGANIZATION is asking, not
+	// WHO. Without UserToken the platform resolves no per-user identity, sets
+	// X-Axonflow-Read-Scope: none and returns zero rows by construction — the
+	// same gap that made list_decisions and explain-decision report confident
+	// empty answers before they were given one (platform #2922).
+	client := axonflow.NewClient(axonflow.AxonFlowConfig{
+		Endpoint:     agentURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		UserToken:    userToken,
+	})
 
 	fmt.Println("=== Indonesia Compliance Example ===")
 	fmt.Println()
