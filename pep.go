@@ -178,6 +178,10 @@ func (c *AxonFlowClient) Decide(ctx context.Context, req DecideRequest) (*Decide
 		req.CallerIdentity.OrgID = c.config.ClientID
 	}
 
+	ctx, err := c.onPEPPlane(ctx)
+	if err != nil {
+		return nil, err
+	}
 	fullURL := c.config.Endpoint + decidePath
 	var result DecideResponse
 	if err := c.makeJSONRequest(ctx, "POST", fullURL, req, &result); err != nil {
@@ -261,7 +265,7 @@ func (c *AxonFlowClient) fulfillViaCheckInput(ctx context.Context, statement str
 		Operation:     "execute",
 	})
 	if err != nil {
-		return "", fmt.Errorf("%w: request-redaction engine call failed: %v", ErrObligationNotFulfillable, err)
+		return "", fmt.Errorf("%w: request-redaction engine call failed: %w", ErrObligationNotFulfillable, err)
 	}
 	// FAIL CLOSED if the redactor did not actually run (#2563 B1). Without this
 	// the PEP cannot distinguish "engine looked, found nothing" (safe to forward

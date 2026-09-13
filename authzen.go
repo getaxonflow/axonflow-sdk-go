@@ -220,6 +220,11 @@ func (c *AxonFlowClient) evaluateEnvelope(ctx context.Context, env AuthZENEnvelo
 		return nil, fmt.Errorf("failed to encode the AuthZEN request: %w", err)
 	}
 
+	// The PEP capability handshake is resolved last, so a declaration the
+	// platform would refuse fails the call before anything is sent.
+	if ctx, err = c.onPEPPlane(ctx); err != nil {
+		return nil, err
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.Endpoint+authzenPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build the AuthZEN request: %w", err)

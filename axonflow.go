@@ -78,6 +78,14 @@ type AxonFlowConfig struct {
 	// shares the record), on the goroutine that made the call. When nil, the
 	// SDK logs each deprecated route once with the standard logger.
 	OnRouteDeprecation func(PlatformRouteDeprecation)
+	// PEPHandshake is the PEP capability declaration this client presents on
+	// every call to a plane that reads it: Decide (and DecideAndFulfill and
+	// FulfillRequest's engine round-trip), Evaluate and EvaluateAll, the MCP
+	// check methods, and the gateway pre-check. It is never sent to any other
+	// route. Nil, the default, presents none. Override it for one call with
+	// ContextWithPEPHandshake. Build it with NewPEPHandshake; a value built by
+	// hand is validated when it is sent. See pep_handshake.go.
+	PEPHandshake *PEPHandshake
 }
 
 // RetryConfig configures retry behavior
@@ -1957,6 +1965,10 @@ func (c *AxonFlowClient) MCPCheckInput(ctx context.Context, req MCPCheckInputReq
 	if req.Operation == "" {
 		req.Operation = "execute"
 	}
+	ctx, err := c.onPEPPlane(ctx)
+	if err != nil {
+		return nil, err
+	}
 	url := c.config.Endpoint + "/api/v1/mcp/check-input"
 	var result MCPCheckInputResponse
 	if err := c.makePolicyCheckRequest(ctx, url, req, &result); err != nil {
@@ -1970,6 +1982,10 @@ func (c *AxonFlowClient) MCPCheckInput(ctx context.Context, req MCPCheckInputReq
 // enforcement as a post-execution gate (PII redaction, exfiltration limits).
 // Note: HTTP 403 is a valid policy-blocked response, not an error.
 func (c *AxonFlowClient) MCPCheckOutput(ctx context.Context, req MCPCheckOutputRequest) (*MCPCheckOutputResponse, error) {
+	ctx, err := c.onPEPPlane(ctx)
+	if err != nil {
+		return nil, err
+	}
 	url := c.config.Endpoint + "/api/v1/mcp/check-output"
 	var result MCPCheckOutputResponse
 	if err := c.makePolicyCheckRequest(ctx, url, req, &result); err != nil {
@@ -2640,13 +2656,43 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 	userToken string,
 	query string,
 	dataSources []string,
-	context map[string]interface{},
+	requestContext map[string]interface{},
 ) (*PolicyApprovalResult, error) {
+	return c.preCheck(context.Background(), userToken, query, dataSources, requestContext)
+}
+
+// PreCheckWithContext is GetPolicyApprovedContext with a context: the request
+// is bound to ctx, and a PEP capability declaration set on it with
+// ContextWithPEPHandshake is presented on this call in place of
+// AxonFlowConfig.PEPHandshake. GetPolicyApprovedContext and PreCheck present
+// the client's declaration.
+func (c *AxonFlowClient) PreCheckWithContext(
+	ctx context.Context,
+	userToken string,
+	query string,
+	dataSources []string,
+	requestContext map[string]interface{},
+) (*PolicyApprovalResult, error) {
+	return c.preCheck(ctx, userToken, query, dataSources, requestContext)
+}
+
+// preCheck is the gateway pre-check every public form of it runs.
+func (c *AxonFlowClient) preCheck(
+	ctx context.Context,
+	userToken string,
+	query string,
+	dataSources []string,
+	requestContext map[string]interface{},
+) (*PolicyApprovalResult, error) {
+	ctx, err := c.onPEPPlane(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if dataSources == nil {
 		dataSources = []string{}
 	}
-	if context == nil {
-		context = map[string]interface{}{}
+	if requestContext == nil {
+		requestContext = map[string]interface{}{}
 	}
 
 	// Use smart default for clientId - enables zero-config community mode
@@ -2657,7 +2703,7 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 		"client_id":    clientID,
 		"query":        query,
 		"data_sources": dataSources,
-		"context":      context,
+		"context":      requestContext,
 	}
 
 	reqBytes, err := json.Marshal(reqBody)
@@ -2665,7 +2711,7 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 		return nil, fmt.Errorf("failed to marshal pre-check request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.config.Endpoint+"/api/policy/pre-check", bytes.NewReader(reqBytes))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.config.Endpoint+"/api/policy/pre-check", bytes.NewReader(reqBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pre-check request: %w", err)
 	}

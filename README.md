@@ -408,6 +408,57 @@ CI regenerates and diffs, so editing either file without the other fails.
 See [`examples/authzen`](examples/authzen) for a runnable walkthrough of the
 happy path and every refusal.
 
+### PEP capability handshake
+
+A v11 platform lets an enforcement point declare, on each call, the exact
+obligation types and schema versions it can discharge. Build the declaration once
+and give it to the client:
+
+```go
+declared, err := axonflow.NewPEPHandshake(
+	"checkout-gateway",        // names this enforcement point within your credential
+	"https://pep.example.com", // what a decision proof is bound to
+	[]axonflow.PEPCapability{{Type: axonflow.AuthZENObligationTypeFieldRedact, Version: 1}},
+)
+if err != nil {
+	return err // a *axonflow.PEPHandshakeError naming the member at fault
+}
+
+client := axonflow.NewClient(axonflow.AxonFlowConfig{
+	Endpoint: "...", ClientID: "...", ClientSecret: "...",
+	PEPHandshake: declared,
+})
+decision, err := client.Decide(ctx, request) // carries X-Axonflow-PEP-Handshake
+```
+
+The client sends it on every call to a plane that reads it: `Decide`, the engine
+round-trip of `FulfillRequest` and `DecideAndFulfill`, `Evaluate` and
+`EvaluateAll`, `MCPCheckInput` and `MCPCheckOutput` (and their `CheckTool*`
+aliases), and the gateway pre-check (`PreCheck`, `GetPolicyApprovedContext`,
+`PreCheckWithContext`). It does **not** send it to `ProxyLLMCall`
+(`/api/request`), the OpenAI-compatible route or any other route, because none of
+them reads it.
+
+One process can be two enforcement points: a request path and a response path
+that discharge different obligations. `axonflow.ContextWithPEPHandshake(ctx, h)`
+declares `h` for the calls made with that context, in place of the client's;
+`PreCheckWithContext` is the pre-check's form that takes a context.
+
+- **There is no default.** A client given no declaration sends no header, and the
+  platform behaves as it did before the handshake existed. An empty, non-nil
+  capability slice declares that the enforcement point discharges nothing; a nil
+  one is refused.
+- **What a declaration changes.** On an Enterprise deployment, an allow verdict
+  carrying a mandatory obligation the declared set cannot discharge becomes a
+  deny, so declare every obligation your enforcement point carries out, and only
+  those. A Community deployment records the declaration without denying on it,
+  and drops any capability in a family it does not issue.
+- **Refused before it is sent.** `NewPEPHandshake` applies the platform's own
+  rules and returns a `*PEPHandshakeError` naming the member at fault (`Pointer`
+  is `/pep_id`, `/audience` or `/capabilities`), instead of the first governed
+  call coming back `400`. A `PEPHandshake` built by hand is checked the same way
+  on every call, which then fails before anything is sent.
+
 ## Features
 
 ### ✅ Retry Logic with Exponential Backoff
@@ -1030,6 +1081,7 @@ fmt.Printf("Result: %v\n", resp.Data)
 | `Retry.InitialDelay` | `time.Duration` | `1s` | Initial retry delay (exponential backoff) |
 | `Cache.Enabled` | `bool` | `true` | Enable caching |
 | `Cache.TTL` | `time.Duration` | `60s` | Cache time-to-live |
+| `PEPHandshake` | `*PEPHandshake` | `nil` (no header) | The PEP capability declaration sent on the planes that read it; see [PEP capability handshake](#pep-capability-handshake) |
 
 **Note:** For self-hosted (localhost) deployments, `ClientID` and `ClientSecret` are optional.
 

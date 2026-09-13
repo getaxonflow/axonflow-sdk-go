@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   successor from `Link: <...>; rel="successor-version"`), the SDK reports it once per
   route: to this callback when it is set, otherwise to the standard logger. From v11.0.0
   the legacy static- and dynamic-policy reads carry it.
+- **The v11.0.0 PEP capability handshake (axonflow-enterprise#3746).** An enforcement point
+  declares the obligation types and schema versions it can discharge with `NewPEPHandshake`,
+  presented as `X-Axonflow-PEP-Handshake` on every call to a plane that reads it: `Decide` (and
+  `DecideAndFulfill` and `FulfillRequest`'s engine round-trip), `Evaluate` and `EvaluateAll`, the
+  MCP check methods, and the gateway pre-check. Set `AxonFlowConfig.PEPHandshake` for the client,
+  or `ContextWithPEPHandshake` for one call; the new `PreCheckWithContext` is the pre-check's
+  context-taking form. It is never sent to any other route, and a client with no declaration
+  sends none. The encoding matches the platform's reference encoder byte for byte, and a
+  declaration the platform would refuse fails with `*PEPHandshakeError` naming the member,
+  before anything is sent. `FulfillRequest`'s `ErrObligationNotFulfillable` now also wraps the
+  engine call's own error, so `errors.As` reaches it (a handshake refusal, an HTTP error).
 
 ## [9.3.0] - 2026-09-06: read-path identity, and a heartbeat that fires on first use
 
