@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -205,5 +206,90 @@ func TestRunBootstrapsWithoutPreviousBaseline(t *testing.T) {
 	got := readBaseline(t, dir)
 	if _, ok := got.PerTypeDrift["Foo"]; !ok {
 		t.Error("bootstrap regen must record Foo's drift")
+	}
+}
+
+const headerCommit = "36e0e96b7e5c16626d394272b727b533f2b94a04"
+
+// writeSnapshotSpec replaces scratchTree's spec with the same schemas
+// rendered as a generated snapshot file: the header
+// scripts/snapshot_openapi_schemas.py writes, naming commit.
+func writeSnapshotSpec(t *testing.T, specsDir, commit string) {
+	t.Helper()
+	body := wireshape.SnapshotHeaderFirstLine + "\n" +
+		"# Source: docs/api/spec.yaml at platform commit " + commit + "\n" +
+		`components:
+  schemas:
+    "Foo":
+      properties:
+        "a": {}
+    "Clean":
+      properties:
+        "c": {}
+`
+	if err := os.WriteFile(filepath.Join(specsDir, "spec.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write snapshot fixture: %v", err)
+	}
+}
+
+// TestRunPinsTheSnapshotHeaderCommit proves a regen against a generated
+// snapshot records the commit its headers name, with or without a
+// matching --sha.
+func TestRunPinsTheSnapshotHeaderCommit(t *testing.T) {
+	dir, specsDir := scratchTree(t, nil)
+	writeSnapshotSpec(t, specsDir, headerCommit)
+	if err := run(specsDir, "", false); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := readBaseline(t, dir).OpenAPISpecsSHA; got != headerCommit {
+		t.Errorf("openapi_specs_sha = %q, want the header commit %s", got, headerCommit)
+	}
+	if err := run(specsDir, headerCommit, false); err != nil {
+		t.Fatalf("a --sha equal to the header commit must be accepted: %v", err)
+	}
+}
+
+// TestRunRefusesAShaTheSnapshotDoesNotHold proves a --sha that disagrees
+// with the snapshot's headers fails before the baseline is written.
+func TestRunRefusesAShaTheSnapshotDoesNotHold(t *testing.T) {
+	dir, specsDir := scratchTree(t, nil)
+	writeSnapshotSpec(t, specsDir, headerCommit)
+	err := run(specsDir, "1111111111111111111111111111111111111111", false)
+	if err == nil || !strings.Contains(err.Error(), "disagrees with the snapshot") {
+		t.Fatalf("run must refuse a --sha the snapshot does not hold, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "testdata", "wire_shape_baseline.json")); !os.IsNotExist(statErr) {
+		t.Errorf("a refused run must not write the baseline (stat: %v)", statErr)
+	}
+}
+
+// TestRunNeverPinsTheRepositorysOwnHead proves the git fallback is gone:
+// inside a git repository, a header-less specs dir without --sha is
+// refused. The old fallback read `git rev-parse HEAD` here, which for
+// testdata/openapi is the SDK's own commit, and exited 0.
+func TestRunNeverPinsTheRepositorysOwnHead(t *testing.T) {
+	dir, specsDir := scratchTree(t, nil)
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("git is required to build the repository this test runs in: %v", err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"-c", "user.email=wire-shape@example.com", "-c", "user.name=wire-shape",
+			"-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+			"commit", "-q", "--allow-empty", "-m", "scratch"},
+	} {
+		cmd := exec.Command(git, args...) //nolint:gosec // fixed args
+		cmd.Dir = dir
+		if out, runErr := cmd.CombinedOutput(); runErr != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), runErr, out)
+		}
+	}
+	err = run(specsDir, "", false)
+	if err == nil || !strings.Contains(err.Error(), "is not a generated snapshot") {
+		t.Fatalf("run must refuse a header-less specs dir without --sha even inside a git repository, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "testdata", "wire_shape_baseline.json")); !os.IsNotExist(statErr) {
+		t.Errorf("a refused run must not write the baseline (stat: %v)", statErr)
 	}
 }

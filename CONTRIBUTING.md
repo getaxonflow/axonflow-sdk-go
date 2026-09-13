@@ -95,8 +95,11 @@ drift entry was burned down, or a new acknowledged divergence was
 added), regenerate it with:
 
 ```bash
-go run ./scripts/refresh_wire_shape_baseline --sha <platform-commit-sha> testdata/openapi
+go run ./scripts/refresh_wire_shape_baseline testdata/openapi
 ```
+
+The pinned commit comes from the snapshot's generated headers (see
+`testdata/openapi/README.md`), so the command takes no `--sha`.
 
 Never regenerate to silence a failure without understanding what drifted;
 that defeats the gate.
@@ -114,9 +117,9 @@ surfaces the bump for explicit review.
 
 Recommended flow:
 
-1. Open a dedicated PR that updates only `openapi_specs_sha` (and the
-   parts of the baseline that change as a consequence: drift entries,
-   cross-spec shapes).
+1. Open a dedicated PR that regenerates the snapshot at the new
+   platform commit and the baseline from it (see
+   `testdata/openapi/README.md`), and nothing else.
 2. Apply the `spec-pin-bump` label.
 3. Merge.
 4. Follow up with the SDK-side changes that the new spec enables.
@@ -243,7 +246,7 @@ The wire-shape contract gate uses a baseline file (`testdata/wire_shape_baseline
 
 When your PR touches a type listed in the baseline, do one of:
 
-- **Burn it down.** Realign the struct with the OpenAPI spec in this PR, regenerate the baseline (`go run ./scripts/refresh_wire_shape_baseline --sha <platform-commit-sha> testdata/openapi`), and note "burndown: `<entry>`" in the PR description.
+- **Burn it down.** Realign the struct with the OpenAPI spec in this PR, regenerate the baseline (`go run ./scripts/refresh_wire_shape_baseline testdata/openapi`), and note "burndown: `<entry>`" in the PR description.
 - **Justify it.** If the drift can't be resolved in this PR (different scope, blocked on a platform spec change, etc.), say so in the PR description in one line.
 
 CI does not block PRs that touch a baselined type without addressing it, but reviewers will ask the burndown-or-justify question.

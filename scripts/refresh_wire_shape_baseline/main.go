@@ -8,11 +8,13 @@
 // (flags BEFORE the positional specs dir - the flag package stops
 // parsing at the first non-flag argument.)
 //
-// When --sha is not provided, the script tries `git -C <specs_dir>
-// rev-parse HEAD` to pick up the commit of the specs repo. If neither
-// is available, the script exits non-zero rather than emit a poisoned
-// baseline with an empty openapi_specs_sha — the next CI run would
-// fail at workflow bootstrap anyway, so we fail fast here.
+// For the snapshot, the pinned commit is the one its generated headers
+// name, and a --sha that disagrees with them is refused. A directory
+// without those headers (a platform checkout) needs --sha. There is no
+// fallback to `git rev-parse HEAD`: inside this repository that names the
+// SDK's own commit. Without a commit the script exits non-zero rather than
+// emit a poisoned baseline with an empty openapi_specs_sha - the next CI
+// run would fail at workflow bootstrap anyway, so we fail fast here.
 //
 // All extraction logic is shared with contract_wire_shape_test.go via
 // internal/wireshape so this tool and the gate cannot silently drift
@@ -26,7 +28,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -63,17 +64,9 @@ func run(specsDir, sha string, dropNotes bool) error {
 
 	// Resolve SHA before any expensive work so a bad run terminates
 	// early without touching the baseline file.
-	if sha == "" {
-		sha = gitHeadSHA(specsDir)
-	}
-	if sha == "" {
-		return fmt.Errorf(
-			"could not determine OpenAPI specs commit SHA.\n" +
-				"  Either run this script against a specs_dir that sits inside a git\n" +
-				"  checkout of the getaxonflow/axonflow community mirror, or pass\n" +
-				"  --sha <commit-sha> explicitly. An empty SHA would poison\n" +
-				"  testdata/wire_shape_baseline.json and break the next CI\n" +
-				"  wire-shape-contract run at bootstrap")
+	sha, err = pinnedSHA(specsDir, sha)
+	if err != nil {
+		return err
 	}
 
 	merged, crossSpecDuplicates, intraFileDuplicates, err := wireshape.LoadSchemas(specsDir)
@@ -208,19 +201,35 @@ func writeBaselineAtomically(path string, b *wireshape.Baseline) error {
 	return nil
 }
 
-// gitHeadSHA reads the commit SHA of the git repo containing specDir,
-// or returns "" if the path isn't a git checkout or git isn't on PATH.
-// Best-effort: not a security boundary — the caller can always pass
-// --sha explicitly.
-func gitHeadSHA(specDir string) string {
-	git, err := exec.LookPath("git")
+// pinnedSHA returns the platform commit to record as openapi_specs_sha.
+// For a generated snapshot it is the commit the snapshot's headers name,
+// and an explicit --sha that disagrees is refused. A directory without
+// those headers (a platform checkout of docs/api) needs --sha. There is no
+// fallback to `git rev-parse HEAD`: testdata/openapi sits inside this
+// repository, so HEAD would name the SDK's own commit.
+func pinnedSHA(specsDir, explicitSHA string) (string, error) {
+	headerSHA, err := wireshape.SnapshotSourceCommit(specsDir)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	cmd := exec.Command(git, "-C", specDir, "rev-parse", "HEAD") //nolint:gosec // fixed args, caller-supplied dir
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	explicitSHA = strings.TrimSpace(explicitSHA)
+	if headerSHA == "" {
+		if explicitSHA == "" {
+			return "", fmt.Errorf(
+				"%s is not a generated snapshot (no file carries the header naming\n"+
+					"  its platform commit), so pass --sha <commit-sha> for the platform\n"+
+					"  checkout it came from. An empty SHA would poison\n"+
+					"  testdata/wire_shape_baseline.json and break the next CI\n"+
+					"  wire-shape-contract run at bootstrap", specsDir)
+		}
+		return explicitSHA, nil
 	}
-	return strings.TrimSpace(string(out))
+	if explicitSHA != "" && explicitSHA != headerSHA {
+		return "", fmt.Errorf(
+			"--sha %s disagrees with the snapshot in %s, whose generated headers\n"+
+				"  name platform commit %s. The baseline must pin the revision the\n"+
+				"  snapshot holds: regenerate the snapshot at the commit you mean, or\n"+
+				"  drop --sha", explicitSHA, specsDir, headerSHA)
+	}
+	return headerSHA, nil
 }

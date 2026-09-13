@@ -26,11 +26,9 @@
 // truth. See internal/wireshape/wireshape.go.
 //
 // To regenerate the baseline (after a legitimate burn-down or platform
-// spec change):
+// spec change); the pinned commit comes from the snapshot's headers:
 //
-//	go run ./scripts/refresh_wire_shape_baseline \
-//	    --sha <platform-commit-sha> \
-//	    testdata/openapi
+//	go run ./scripts/refresh_wire_shape_baseline testdata/openapi
 //
 // (flags BEFORE the positional specs dir - the flag package stops
 // parsing at the first non-flag argument.)
@@ -111,6 +109,30 @@ func TestWireShapeSpecsDirIsPopulated(t *testing.T) {
 	}
 	if len(schemas) == 0 {
 		t.Fatalf("no schemas with properties loaded from %s", dir)
+	}
+}
+
+// TestWireShapeSnapshotMatchesThePin proves the specs the gate reads are the
+// revision the baseline pins: a generated snapshot's headers name the
+// platform commit it was derived from, and that must equal
+// openapi_specs_sha, or every other TestWireShape* compares the SDK against
+// specs the baseline does not describe.
+func TestWireShapeSnapshotMatchesThePin(t *testing.T) {
+	dir := specsDir()
+	if dir == "" {
+		t.Skip("AXONFLOW_OPENAPI_SPECS_DIR not set; wire-shape tests skipped")
+	}
+	commit, err := wireshape.SnapshotSourceCommit(dir)
+	if err != nil {
+		t.Fatalf("read the snapshot's pin: %v", err)
+	}
+	if commit == "" {
+		t.Skipf("%s is not a generated snapshot; its pin cannot be checked", dir)
+	}
+	if pinned := loadBaseline(t).OpenAPISpecsSHA; commit != pinned {
+		t.Fatalf("the snapshot in %s was derived at platform commit %s, but %s pins %q; "+
+			"regenerate the baseline: go run ./scripts/refresh_wire_shape_baseline testdata/openapi",
+			dir, commit, baselinePath, pinned)
 	}
 }
 

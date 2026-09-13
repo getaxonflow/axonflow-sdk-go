@@ -6,6 +6,8 @@ The four files here hold exactly that, and nothing else. `scripts/snapshot_opena
 
 The script works on the YAML node graph, so every declaration survives in source order, including a schema declared twice in one file and a declaration with no properties. It drops descriptions, types, paths and the `info` block: the full specs carry the platform's own licence statement there, and this repository is MIT. It refuses a YAML merge key under `schemas` or `properties`, since loaders disagree on expanding one.
 
+Each file's generated header names the platform commit it was derived from. The refresh records that commit as the baseline's `openapi_specs_sha`, and `TestWireShapeSnapshotMatchesThePin` fails when the two disagree, so the baseline cannot name a revision the snapshot does not hold.
+
 Regenerating `testdata/wire_shape_baseline.json` from these files gives a byte-identical baseline to regenerating it from the full specs, so nothing the contract checks is lost.
 
 ## Checking
@@ -19,7 +21,7 @@ Regenerating `testdata/wire_shape_baseline.json` from these files gives a byte-i
 A change to the pinned SHA or to any file here needs the `spec-pin-bump` label on its pull request.
 
     python scripts/snapshot_openapi_schemas.py <platform-checkout>/docs/api testdata/openapi --source-commit <SHA>
-    go run ./scripts/refresh_wire_shape_baseline --sha <SHA> testdata/openapi
+    go run ./scripts/refresh_wire_shape_baseline testdata/openapi
 
 | File | sha256 of the source spec |
 |---|---|
