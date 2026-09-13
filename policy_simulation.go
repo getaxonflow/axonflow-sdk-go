@@ -140,6 +140,14 @@ type PolicyConflictResponse struct {
 //	}
 //	fmt.Printf("Allowed: %v, Risk: %.2f, Policies: %d\n",
 //	    result.Allowed, result.RiskScore, result.TotalPolicies)
+//
+// Deprecated: the platform deprecates POST /api/v1/policies/simulate in v11.0.0 and removes it
+// in v11.1 (PRD v11 §1.11). Every response carries X-AxonFlow-Removed-In:
+// v11.1 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
+// Deprecation header once v11.0.0 is tagged, and the client reports the route
+// once through
+// AxonFlowConfig.OnRouteDeprecation. Its successor is the typed simulate on
+// /api/v1/typed-policies, which ships with the v11 series.
 func (c *AxonFlowClient) SimulatePolicies(ctx context.Context, req *SimulatePoliciesRequest) (*SimulatePoliciesResponse, error) {
 	fullURL := c.config.Endpoint + "/api/v1/policies/simulate"
 
@@ -173,6 +181,14 @@ func (c *AxonFlowClient) SimulatePolicies(ctx context.Context, req *SimulatePoli
 //	}
 //	fmt.Printf("Match rate: %.1f%%, Block rate: %.1f%%\n",
 //	    report.MatchRate*100, report.BlockRate*100)
+//
+// Deprecated: the platform deprecates POST /api/v1/policies/impact-report in v11.0.0 and removes it
+// in v11.1 (PRD v11 §1.11). Every response carries X-AxonFlow-Removed-In:
+// v11.1 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
+// Deprecation header once v11.0.0 is tagged, and the client reports the route
+// once through
+// AxonFlowConfig.OnRouteDeprecation. Policy is authored and tested
+// through the typed policy methods (see ValidateTypedPolicy).
 func (c *AxonFlowClient) GetPolicyImpactReport(ctx context.Context, req *ImpactReportRequest) (*ImpactReportResponse, error) {
 	fullURL := c.config.Endpoint + "/api/v1/policies/impact-report"
 
@@ -205,6 +221,14 @@ func (c *AxonFlowClient) GetPolicyImpactReport(ctx context.Context, req *ImpactR
 //
 //	// Check specific policy
 //	conflicts, err = client.DetectPolicyConflicts(ctx, "policy-123")
+//
+// Deprecated: the platform deprecates POST /api/v1/policies/conflicts in v11.0.0 and removes it
+// in v11.1 (PRD v11 §1.11). Every response carries X-AxonFlow-Removed-In:
+// v11.1 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
+// Deprecation header once v11.0.0 is tagged, and the client reports the route
+// once through
+// AxonFlowConfig.OnRouteDeprecation. Policy is authored and tested
+// through the typed policy methods (see ValidateTypedPolicy).
 func (c *AxonFlowClient) DetectPolicyConflicts(ctx context.Context, policyID string) (*PolicyConflictResponse, error) {
 	fullURL := c.config.Endpoint + "/api/v1/policies/conflicts"
 
