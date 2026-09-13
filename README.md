@@ -1122,6 +1122,24 @@ fmt.Printf("Result: %v\n", resp.Data)
 
 ## Migration Guide
 
+### v11.0.0 deprecations
+
+A v11.0.0 platform deprecates its legacy policy routes and removes them in
+v11.1. Every response from them carries `X-AxonFlow-Removed-In: v11.1` and a
+successor `Link` naming `/api/v1/typed-policies`, plus an RFC 9745
+`Deprecation` header once v11.0.0 is tagged, and the client reports each such
+route once through
+`AxonFlowConfig.OnRouteDeprecation` (or logs it once when that is unset).
+
+- **Policy simulation.** `SimulatePolicies`, `GetPolicyImpactReport` and
+  `DetectPolicyConflicts` are deprecated and keep working until v11.1. The
+  typed simulate on `/api/v1/typed-policies` ships with the v11 series; policy
+  is authored and tested through the typed policy methods (see
+  [Typed policy authoring](#typed-policy-authoring-v1100)).
+- **Per-policy overrides.** A v11.0.0 platform retires them: `CreatePolicyOverride`
+  and `DeletePolicyOverride` return a `*LegacyPolicyWriteFrozenError` whose
+  message names the typed policy route.
+
 ### Migrating from v1.x (bare import path) to v5
 
 If `go get github.com/getaxonflow/axonflow-sdk-go@latest` resolved to **v1.17.0**, you are on a 2026-01 relic because you used the bare module path. Go's semantic import versioning requires the `/v5` suffix for v2+ releases.

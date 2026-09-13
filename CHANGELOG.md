@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and withdrawing are customer portal operations the agent does not proxy, so the SDK has no
   method for either.
 
+### Deprecated
+
+- **The v11.0.0 policy simulation routes (axonflow-enterprise#3746).** `SimulatePolicies`,
+  `GetPolicyImpactReport` and `DetectPolicyConflicts` are deprecated: a v11.0.0 platform deprecates
+  `/api/v1/policies/simulate`, `/impact-report` and `/conflicts` and removes them in v11.1, and
+  stamps every response with `X-AxonFlow-Removed-In: v11.1` and a successor `Link` naming
+  `/api/v1/typed-policies` (plus an RFC 9745 `Deprecation` header once v11.0.0 is tagged), which
+  `AxonFlowConfig.OnRouteDeprecation` reports once per route. They keep working until then. `CreatePolicyOverride` and `DeletePolicyOverride` now
+  document that a v11.0.0 platform retires per-policy overrides and refuses both with the
+  typed `*LegacyPolicyWriteFrozenError`.
+
 ## [9.3.0] - 2026-09-06: read-path identity, and a heartbeat that fires on first use
 
 ### Added

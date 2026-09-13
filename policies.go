@@ -789,6 +789,11 @@ func (c *AxonFlowClient) GetStaticPolicyVersions(id string) ([]PolicyVersion, er
 // ============================================================================
 
 // CreatePolicyOverride creates an override for a static policy.
+//
+// A v11.0.0 platform retires per-policy overrides and refuses this write with
+// 409 LEGACY_POLICY_WRITE_FROZEN, returned as a *LegacyPolicyWriteFrozenError
+// whose message names the typed policy route (/api/v1/typed-policies). An
+// older platform still creates the override.
 func (c *AxonFlowClient) CreatePolicyOverride(policyID string, req *CreatePolicyOverrideRequest) (*PolicyOverride, error) {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Creating policy override for: %s", policyID)
@@ -803,6 +808,11 @@ func (c *AxonFlowClient) CreatePolicyOverride(policyID string, req *CreatePolicy
 }
 
 // DeletePolicyOverride deletes an override for a static policy.
+//
+// A v11.0.0 platform retires per-policy overrides and refuses this write with
+// 409 LEGACY_POLICY_WRITE_FROZEN, returned as a *LegacyPolicyWriteFrozenError
+// whose message names the typed policy route (/api/v1/typed-policies). An
+// older platform still deletes the override.
 func (c *AxonFlowClient) DeletePolicyOverride(policyID string) error {
 	if c.config.Debug {
 		log.Printf("[AxonFlow] Deleting policy override for: %s", policyID)
