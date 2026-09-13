@@ -417,10 +417,7 @@ func (c *AxonFlowClient) orchestratorPolicyRequest(method, path string, body int
 	}
 
 	if resp.StatusCode >= 400 {
-		return &httpError{
-			statusCode: resp.StatusCode,
-			message:    string(respBody),
-		}
+		return responseError(resp.StatusCode, respBody)
 	}
 
 	// Handle no-content responses
@@ -476,10 +473,7 @@ func (c *AxonFlowClient) policyRequest(method, path string, body interface{}, re
 	}
 
 	if resp.StatusCode >= 400 {
-		return &httpError{
-			statusCode: resp.StatusCode,
-			message:    string(respBody),
-		}
+		return responseError(resp.StatusCode, respBody)
 	}
 
 	// Handle no-content responses

@@ -264,6 +264,7 @@
     "PolicyConflictResponse",
     "PolicyEvaluationInfo",
     "PolicyEvaluationResult",
+    "PolicyIdentity",
     "PolicyInfo",
     "PolicyMatch",
     "PolicyMatchInfo",
@@ -368,11 +369,7 @@
         "request_id"
       ],
       "spec_only": [
-        "approval_request_id",
-        "engine",
-        "legacy_validators",
-        "policy_bundle",
-        "subject_type"
+        "approval_request_id"
       ]
     },
     "ConfigureKillSwitchRequest": {
@@ -411,15 +408,7 @@
       "sdk_only": [
         "error"
       ],
-      "spec_only": [
-        "document_version",
-        "engine",
-        "legacy_validators",
-        "policy_bundle",
-        "policy_identities",
-        "policy_packs",
-        "subject_type"
-      ]
+      "spec_only": []
     },
     "DecisionExplanation": {
       "sdk_only": [],
@@ -526,12 +515,7 @@
         "policy_matches",
         "redacted_message"
       ],
-      "spec_only": [
-        "engine",
-        "legacy_validators",
-        "policy_bundle",
-        "subject_type"
-      ]
+      "spec_only": []
     },
     "MCPExecuteRequest": {
       "sdk_only": [
@@ -557,13 +541,9 @@
       "spec_only": [
         "connector",
         "duration_ms",
-        "engine",
-        "legacy_validators",
         "message",
-        "policy_bundle",
         "redacted",
-        "redacted_fields",
-        "subject_type"
+        "redacted_fields"
       ]
     },
     "MCPQueryRequest": {

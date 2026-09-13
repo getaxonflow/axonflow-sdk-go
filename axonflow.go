@@ -69,6 +69,15 @@ type AxonFlowConfig struct {
 	// Override per call with axonflow.WithUserToken, or derive a client bound
 	// to one person with AsUser. See read_identity.go.
 	UserToken string
+
+	// OnRouteDeprecation receives the deprecation the platform declares on a
+	// route this client called. From v11.0.0 the legacy static- and
+	// dynamic-policy routes carry X-AxonFlow-Removed-In and a successor Link,
+	// and an RFC 9745 Deprecation header once the deprecating release is
+	// tagged. It is called once per route per client (a client AsUser derives
+	// shares the record), on the goroutine that made the call. When nil, the
+	// SDK logs each deprecated route once with the standard logger.
+	OnRouteDeprecation func(PlatformRouteDeprecation)
 }
 
 // RetryConfig configures retry behavior
@@ -91,11 +100,12 @@ type CacheConfig struct {
 // concurrent NewClient calls on the same machine coalescing onto a single
 // ping per heartbeatInterval, which is the contract.
 type AxonFlowClient struct {
-	config        AxonFlowConfig
-	httpClient    *http.Client
-	mapHttpClient *http.Client // Separate client with longer timeout for MAP operations
-	cache         *cache
-	sessionCookie string // Session cookie for Customer Portal authentication
+	config            AxonFlowConfig
+	httpClient        *http.Client
+	mapHttpClient     *http.Client // Separate client with longer timeout for MAP operations
+	cache             *cache
+	sessionCookie     string                 // Session cookie for Customer Portal authentication
+	routeDeprecations *routeDeprecationNotes // routes already reported; shared with AsUser clients
 }
 
 // ============================================================================
@@ -141,6 +151,15 @@ type ClientResponse struct {
 	PolicyInfo    *PolicyEvaluationInfo  `json:"policy_info,omitempty"`
 	BudgetInfo    *BudgetInfo            `json:"budget_info,omitempty"`    // Budget enforcement status (Issue #1082)
 	MediaAnalysis *MediaAnalysisResponse `json:"media_analysis,omitempty"` // Media governance results
+
+	// v11.0.0 decision provenance: the engine and policy set that decided,
+	// the type of principal it decided for, and any validator that acted
+	// before the engine. On /api/request Engine is "anchored" or "legacy"
+	// (the proxy's tier engine). Empty on an older platform; see v11_provenance.go.
+	Engine           string                  `json:"engine,omitempty"`
+	SubjectType      string                  `json:"subject_type,omitempty"`
+	PolicyBundle     string                  `json:"policy_bundle,omitempty"`
+	LegacyValidators []LegacyValidatorAction `json:"legacy_validators,omitempty"`
 }
 
 // BudgetInfo provides budget status information (Issue #1082)
@@ -221,6 +240,14 @@ type ConnectorResponse struct {
 	Redacted       bool        `json:"redacted,omitempty"`
 	RedactedFields []string    `json:"redacted_fields,omitempty"`
 	PolicyInfo     *PolicyInfo `json:"policy_info,omitempty"`
+
+	// v11.0.0 decision provenance: the engine and policy set that decided,
+	// the type of principal it decided for, and any validator that acted
+	// before the engine. Empty on an older platform; see v11_provenance.go.
+	Engine           string                  `json:"engine,omitempty"`
+	SubjectType      string                  `json:"subject_type,omitempty"`
+	PolicyBundle     string                  `json:"policy_bundle,omitempty"`
+	LegacyValidators []LegacyValidatorAction `json:"legacy_validators,omitempty"`
 }
 
 // WasRedacted returns true if any fields were redacted by policy evaluation.
@@ -412,6 +439,22 @@ type PolicyApprovalResult struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	// BlockReason contains the reason for blocking (if not approved)
 	BlockReason string `json:"block_reason,omitempty"`
+
+	// DecisionID is the decision's identifier, the name every decision plane
+	// uses for it (v11.0.0).
+	DecisionID string `json:"decision_id,omitempty"`
+	// Verdict is the canonical answer, "allow" or "deny", in the vocabulary
+	// Decide returns; read it rather than Approved in new integrations
+	// (v11.0.0).
+	Verdict string `json:"verdict,omitempty"`
+
+	// v11.0.0 decision provenance: the engine and policy set that decided,
+	// the type of principal it decided for, and any validator that acted
+	// before the engine. Empty on an older platform; see v11_provenance.go.
+	Engine           string                  `json:"engine,omitempty"`
+	SubjectType      string                  `json:"subject_type,omitempty"`
+	PolicyBundle     string                  `json:"policy_bundle,omitempty"`
+	LegacyValidators []LegacyValidatorAction `json:"legacy_validators,omitempty"`
 }
 
 // AuditResult represents the result from audit logging in Gateway Mode
@@ -707,7 +750,8 @@ func NewClient(config AxonFlowConfig) *AxonFlowClient {
 	}
 
 	client := &AxonFlowClient{
-		config: config,
+		config:            config,
+		routeDeprecations: &routeDeprecationNotes{},
 		httpClient: &http.Client{
 			Timeout:   config.Timeout,
 			Transport: uaTransport,
@@ -1696,10 +1740,14 @@ func (c *AxonFlowClient) QueryConnector(userToken, connectorName, query string, 
 	}
 
 	connResp := &ConnectorResponse{
-		Success: resp.Success,
-		Data:    resp.Data,
-		Error:   resp.Error,
-		Meta:    resp.Metadata,
+		Success:          resp.Success,
+		Data:             resp.Data,
+		Error:            resp.Error,
+		Meta:             resp.Metadata,
+		Engine:           resp.Engine,
+		SubjectType:      resp.SubjectType,
+		PolicyBundle:     resp.PolicyBundle,
+		LegacyValidators: resp.LegacyValidators,
 	}
 
 	return connResp, nil
@@ -1753,6 +1801,14 @@ type MCPExecuteResponse struct {
 	RowsAffected int                    `json:"rows_affected,omitempty"`
 	Meta         map[string]interface{} `json:"meta,omitempty"`
 	PolicyInfo   *PolicyInfo            `json:"policy_info,omitempty"`
+
+	// v11.0.0 decision provenance: the engine and policy set that decided,
+	// the type of principal it decided for, and any validator that acted
+	// before the engine. Empty on an older platform; see v11_provenance.go.
+	Engine           string                  `json:"engine,omitempty"`
+	SubjectType      string                  `json:"subject_type,omitempty"`
+	PolicyBundle     string                  `json:"policy_bundle,omitempty"`
+	LegacyValidators []LegacyValidatorAction `json:"legacy_validators,omitempty"`
 }
 
 // MCPExecute executes a command (write operation) via an MCP connector.
@@ -1883,6 +1939,14 @@ type MCPCheckOutputResponse struct {
 	// not populate this on every path today; default false keeps a PEP fail-closed
 	// when the platform predates the field. Source of truth: platform/agent/mcp_handler.go.
 	RedactionEvaluated bool `json:"redaction_evaluated,omitempty"`
+
+	// v11.0.0 decision provenance: the engine and policy set that decided,
+	// the type of principal it decided for, and any validator that acted
+	// before the engine. Empty on an older platform; see v11_provenance.go.
+	Engine           string                  `json:"engine,omitempty"`
+	SubjectType      string                  `json:"subject_type,omitempty"`
+	PolicyBundle     string                  `json:"policy_bundle,omitempty"`
+	LegacyValidators []LegacyValidatorAction `json:"legacy_validators,omitempty"`
 }
 
 // MCPCheckInput validates an MCP request against configured policies without executing it.
@@ -2644,8 +2708,14 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 			Remaining int    `json:"remaining"`
 			ResetAt   string `json:"reset_at"`
 		} `json:"rate_limit,omitempty"`
-		ExpiresAt   string `json:"expires_at"`
-		BlockReason string `json:"block_reason,omitempty"`
+		ExpiresAt        string                  `json:"expires_at"`
+		BlockReason      string                  `json:"block_reason,omitempty"`
+		DecisionID       string                  `json:"decision_id,omitempty"`
+		Verdict          string                  `json:"verdict,omitempty"`
+		Engine           string                  `json:"engine,omitempty"`
+		SubjectType      string                  `json:"subject_type,omitempty"`
+		PolicyBundle     string                  `json:"policy_bundle,omitempty"`
+		LegacyValidators []LegacyValidatorAction `json:"legacy_validators,omitempty"`
 	}
 
 	if err := json.Unmarshal(body, &rawResp); err != nil {
@@ -2670,6 +2740,12 @@ func (c *AxonFlowClient) GetPolicyApprovedContext(
 		Policies:          rawResp.Policies,
 		ExpiresAt:         expiresAt,
 		BlockReason:       rawResp.BlockReason,
+		DecisionID:        rawResp.DecisionID,
+		Verdict:           rawResp.Verdict,
+		Engine:            rawResp.Engine,
+		SubjectType:       rawResp.SubjectType,
+		PolicyBundle:      rawResp.PolicyBundle,
+		LegacyValidators:  rawResp.LegacyValidators,
 	}
 
 	// Parse rate limit info if present
@@ -3070,10 +3146,7 @@ func (c *AxonFlowClient) makeJSONRequest(ctx context.Context, method, fullURL st
 	}
 
 	if resp.StatusCode >= 400 {
-		return &httpError{
-			statusCode: resp.StatusCode,
-			message:    string(respBody),
-		}
+		return responseError(resp.StatusCode, respBody)
 	}
 
 	// Handle no-content responses
