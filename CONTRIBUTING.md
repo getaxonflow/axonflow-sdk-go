@@ -79,14 +79,11 @@ against the spec and fails the PR on drift. This is enforced by
 `contract_wire_shape_test.go` (opt-in via the `AXONFLOW_OPENAPI_SPECS_DIR`
 env var).
 
-Run locally:
+Run locally, against the committed spec snapshot (see
+`testdata/openapi/README.md` for what it holds and how it is derived):
 
 ```bash
-# Clone the community mirror — the specs live in docs/api/
-git clone https://github.com/getaxonflow/axonflow.git ../axonflow
-
-# Point the test at the specs dir and run only wire-shape tests
-AXONFLOW_OPENAPI_SPECS_DIR=../axonflow/docs/api \
+AXONFLOW_OPENAPI_SPECS_DIR=$PWD/testdata/openapi \
   go test -v -run "TestWireShape" .
 ```
 
@@ -98,9 +95,7 @@ drift entry was burned down, or a new acknowledged divergence was
 added), regenerate it with:
 
 ```bash
-# Pinning the SHA picks up the current HEAD of the community mirror.
-# Alternately pass --sha <commit-sha> to pin explicitly.
-go run ./scripts/refresh_wire_shape_baseline ../axonflow/docs/api
+go run ./scripts/refresh_wire_shape_baseline --sha <platform-commit-sha> testdata/openapi
 ```
 
 Never regenerate to silence a failure without understanding what drifted;
@@ -113,7 +108,8 @@ The wire-shape gate pins the OpenAPI spec revision via
 against the same spec. Changing that SHA in the same PR that changes
 SDK structs can silently retarget the gate past drift it should have
 caught, so the CI job enforces an extra guardrail: any PR that moves
-`openapi_specs_sha` must also carry the `spec-pin-bump` label, which
+`openapi_specs_sha`, or changes a file under `testdata/openapi/`, must
+also carry the `spec-pin-bump` label, which
 surfaces the bump for explicit review.
 
 Recommended flow:
@@ -247,7 +243,7 @@ The wire-shape contract gate uses a baseline file (`testdata/wire_shape_baseline
 
 When your PR touches a type listed in the baseline, do one of:
 
-- **Burn it down.** Realign the struct with the OpenAPI spec in this PR, regenerate the baseline (`go run ./scripts/refresh_wire_shape_baseline ../axonflow/docs/api`), and note "burndown: `<entry>`" in the PR description.
+- **Burn it down.** Realign the struct with the OpenAPI spec in this PR, regenerate the baseline (`go run ./scripts/refresh_wire_shape_baseline --sha <platform-commit-sha> testdata/openapi`), and note "burndown: `<entry>`" in the PR description.
 - **Justify it.** If the drift can't be resolved in this PR (different scope, blocked on a platform spec change, etc.), say so in the PR description in one line.
 
 CI does not block PRs that touch a baselined type without addressing it, but reviewers will ask the burndown-or-justify question.

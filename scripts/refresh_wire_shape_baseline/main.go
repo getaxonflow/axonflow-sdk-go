@@ -1,5 +1,5 @@
 // refresh_wire_shape_baseline regenerates testdata/wire_shape_baseline.json
-// from a local checkout of getaxonflow/axonflow's docs/api/ directory.
+// from a specs directory: testdata/openapi (the derived snapshot) or a platform checkout's docs/api/.
 //
 // Usage:
 //
@@ -37,7 +37,7 @@ import (
 const baselineOut = "testdata/wire_shape_baseline.json"
 
 func main() {
-	shaFlag := flag.String("sha", "", "community-repo commit SHA to pin")
+	shaFlag := flag.String("sha", "", "platform commit the specs were taken from")
 	dropNotes := flag.Bool("drop-notes", false,
 		"confirm discarding curated _note keys that do not survive the regen")
 	flag.Parse()

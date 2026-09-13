@@ -7,7 +7,7 @@
 //
 // Data flow:
 //   - Load every *.yaml under AXONFLOW_OPENAPI_SPECS_DIR (set by CI
-//     after cloning the community repo). Collect every schema that has
+//     to testdata/openapi, a derived snapshot). Collect every schema that has
 //     concrete `properties`.
 //   - Walk this package's source files via go/parser, find every
 //     exported struct, compute its wire-shape field names (the `json`
@@ -29,8 +29,8 @@
 // spec change):
 //
 //	go run ./scripts/refresh_wire_shape_baseline \
-//	    --sha <community-repo-commit-sha> \
-//	    /path/to/axonflow/docs/api
+//	    --sha <platform-commit-sha> \
+//	    testdata/openapi
 //
 // (flags BEFORE the positional specs dir - the flag package stops
 // parsing at the first non-flag argument.)
