@@ -390,5 +390,9 @@ func (c *AxonFlowClient) maybeSendHeartbeatOnRequest() {
 // instances to avoid recursive heartbeat triggering.
 func (c *AxonFlowClient) doHttpRequest(httpClient *http.Client, req *http.Request) (*http.Response, error) {
 	c.maybeSendHeartbeatOnRequest()
-	return httpClient.Do(req)
+	resp, err := httpClient.Do(req)
+	if err == nil {
+		c.noteRouteDeprecation(req, resp)
+	}
+	return resp, err
 }

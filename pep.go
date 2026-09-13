@@ -121,6 +121,22 @@ type DecideResponse struct {
 	Stage             string       `json:"stage,omitempty"`
 	ExpiresAt         time.Time    `json:"expires_at,omitempty"`
 	Error             string       `json:"error,omitempty"`
+
+	// v11.0.0 decision provenance: the engine and policy set that decided,
+	// the type of principal it decided for, and any validator that acted
+	// before the engine. Empty on an older platform; see v11_provenance.go.
+	Engine           string                  `json:"engine,omitempty"`
+	SubjectType      string                  `json:"subject_type,omitempty"`
+	PolicyBundle     string                  `json:"policy_bundle,omitempty"`
+	LegacyValidators []LegacyValidatorAction `json:"legacy_validators,omitempty"`
+	// PolicyIdentities names each entry of EvaluatedPolicies, in the same
+	// order. PolicyPacks lists the add-on packs that composed into
+	// PolicyBundle, each as "<pack id>@<digest>", sorted. DocumentVersion is
+	// the published version of the organization's active typed document, 0
+	// while it has published nothing. All empty on an older platform.
+	PolicyIdentities []PolicyIdentity `json:"policy_identities,omitempty"`
+	PolicyPacks      []string         `json:"policy_packs,omitempty"`
+	DocumentVersion  int              `json:"document_version,omitempty"`
 }
 
 // Obligation is a self-describing, engine-fulfillable PEP requirement on an

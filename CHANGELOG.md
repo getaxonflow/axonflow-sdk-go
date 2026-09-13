@@ -5,6 +5,30 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **v11.0.0 decision provenance on every governed response (axonflow-enterprise#3746).**
+  `ClientResponse` (`/api/request`), `ConnectorResponse`, `MCPExecuteResponse`,
+  `MCPCheckOutputResponse`, `DecideResponse` and the pre-check's `PolicyApprovalResult`
+  carry `Engine`, `SubjectType`, `PolicyBundle` and `LegacyValidators`
+  (`[]LegacyValidatorAction`): which engine and policy set decided, the type of principal
+  it decided for, and any checksum validator that acted before the engine.
+  `DecideResponse` adds `PolicyIdentities` (`[]PolicyIdentity`, naming each entry of
+  `EvaluatedPolicies` in order), `PolicyPacks` and `DocumentVersion`, and
+  `PolicyApprovalResult` adds `DecisionID` and `Verdict` (`allow` or `deny`). Every field
+  is empty on an older platform.
+- **`LegacyPolicyWriteFrozenError`.** A v11.0.0 platform answers a write to its static- or
+  dynamic-policy routes with `409 LEGACY_POLICY_WRITE_FROZEN`. The SDK returns this typed
+  error, whose `Message` names the typed policy route (`/api/v1/typed-policies`), on the
+  agent and the orchestrator alike. Every other error keeps its existing form.
+- **`AxonFlowConfig.OnRouteDeprecation`.** When the platform marks a route a call used as
+  deprecated (`X-AxonFlow-Removed-In` or an RFC 9745 `Deprecation` header, with the
+  successor from `Link: <...>; rel="successor-version"`), the SDK reports it once per
+  route: to this callback when it is set, otherwise to the standard logger. From v11.0.0
+  the legacy static- and dynamic-policy reads carry it.
+
 ## [9.3.0] - 2026-09-06: read-path identity, and a heartbeat that fires on first use
 
 ### Added
