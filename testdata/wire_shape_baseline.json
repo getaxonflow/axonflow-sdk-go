@@ -252,6 +252,7 @@
     "OJKAuditExportResponse",
     "OJKBreachNotification",
     "ObligationFulfillment",
+    "PEPHandshake",
     "PaginationMeta",
     "PendingApproval",
     "PendingApprovalsResponse",

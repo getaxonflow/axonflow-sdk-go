@@ -571,4 +571,5 @@ func (c *AxonFlowClient) addAuthHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Basic "+credentials)
 	req.Header.Set("X-Client-ID", effectiveClientID)
 	c.applyReadIdentity(req)
+	applyPEPHandshake(req)
 }
