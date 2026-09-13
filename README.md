@@ -459,6 +459,41 @@ declares `h` for the calls made with that context, in place of the client's;
   call coming back `400`. A `PEPHandshake` built by hand is checked the same way
   on every call, which then fails before anything is sent.
 
+## Typed policy authoring (v11.0.0+)
+
+A v11 platform authors policy as a typed document: validated, published as a
+signed artifact pinned by its digest, and promoted to active. Six methods reach
+the routes the agent proxies under `/api/v1/typed-policies`:
+
+```go
+edition, err := client.TypedPolicyEdition(ctx)                         // what this deployment may author
+validation, err := client.ValidateTypedPolicy(ctx, document, fixtures) // every finding
+published, err := client.PublishTypedPolicy(ctx, document, fixtures)   // signed, pinned by digest
+_, err = client.ActivateTypedPolicy(ctx, published.Digest, "")         // promote to active
+active, err := client.ActiveTypedPolicy(ctx)                           // the signed source in force, or nil
+system, err := client.TypedPolicySystem(ctx)                           // the platform's own controls
+```
+
+- **Activation promotes.** A digest whose version does not advance past the
+  active one is refused. Rolling back to an earlier document, and withdrawing
+  the active one, are operations of the customer portal behind its session; the
+  agent does not proxy them, so the SDK has no method for either.
+- **The organization and the author are the ones your credentials resolve to.**
+  The agent stamps both, and the platform overwrites any author named inside the
+  document. A user token on the context (`ContextWithUserToken`) is the caller,
+  as on every other route.
+- **Refusals are typed.** Every refusal is a `*TypedPolicyRefusal` with the HTTP
+  `Status`, the platform's `Reason` (such as `publication_refused`,
+  `activation_refused` or `tier_limit`), any `Findings`, and `RetryAfter` when
+  the refusal is retryable; a 401 is the client's usual error. On an edition
+  with separation of duties, publishing refuses with the finding code
+  `APPROVER_IS_AUTHOR`: the route names no approver, and such a deployment
+  approves in the customer portal.
+- **The document is the authoring model itself,** a `map[string]any` rather
+  than Go types, so a field the policy vocabulary gains is authorable without an
+  SDK release. `ValidateTypedPolicy` answers identically on every edition; the
+  edition's boundary is applied when you publish.
+
 ## Features
 
 ### ✅ Retry Logic with Exponential Backoff
