@@ -65,6 +65,47 @@ Demonstrates:
 - Checking plan status
 - Handling plan results
 
+### 4. Typed Policy Authoring (`examples/typed_policies/`)
+
+Authoring policy as a typed document against a v11.0.0 platform. Run it from
+the repository root, since it reads `testdata/typed_policy_publish_body.json`
+(or the file `AXONFLOW_TYPED_POLICY_BODY` names):
+
+```bash
+go run ./examples/typed_policies
+```
+
+Demonstrates:
+- Reading what the deployment may author
+- Validating a document and reading every finding
+- Publishing and activating it, only with `AXONFLOW_TYPED_POLICY_PUBLISH=1`,
+  since that changes the organization's active policy
+- Reading a refusal's status, reason and findings
+- The document in force, as the exact signed bytes
+
+### 5. PEP Capability Handshake (`examples/pep_handshake/`)
+
+Declaring what an enforcement point can discharge. The platform reads the
+declaration from v10.4.0.
+
+```bash
+go run ./examples/pep_handshake
+```
+
+Demonstrates:
+- A declaration for every call the client makes to a plane that reads it
+- A per-call declaration, for a second enforcement point in the same process
+- A declaration the platform would refuse, failing before anything is sent
+
+`Decide` names the client id as the caller's organization, and the platform
+denies a caller naming an organization other than its own. On Enterprise the
+client id is the organization id and the secret its license key; on Community
+leave both unset.
+
+Both read `AXONFLOW_ENDPOINT` (default `http://localhost:8080`),
+`AXONFLOW_CLIENT_ID` and `AXONFLOW_CLIENT_SECRET`, and exit non-zero when a
+step fails.
+
 ## Environment Variables
 
 | Variable | Required | Description |
