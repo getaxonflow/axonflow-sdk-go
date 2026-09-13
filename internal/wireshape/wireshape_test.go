@@ -513,3 +513,55 @@ type Wire struct {
 		t.Errorf("Wire fields = %v, want [a]", got["Wire"])
 	}
 }
+
+// TestSnapshotSourceCommit pins what counts as a snapshot's revision: the
+// one commit every generated header names, nothing for a platform
+// checkout, and a refusal for anything partial or ambiguous.
+func TestSnapshotSourceCommit(t *testing.T) {
+	const a = "36e0e96b7e5c16626d394272b727b533f2b94a04"
+	const b = "1111111111111111111111111111111111111111"
+	generated := func(name, commit string) string {
+		return SnapshotHeaderFirstLine + "\n# Source: docs/api/" + name + " at platform commit " + commit + "\ncomponents:\n  schemas: {}\n"
+	}
+	plain := "openapi: 3.0.3\ncomponents:\n  schemas: {}\n"
+	cases := []struct {
+		name    string
+		files   map[string]string
+		want    string
+		wantErr string
+	}{
+		{"a platform checkout has no pin of its own",
+			map[string]string{"agent-api.yaml": plain, "policy-api.yaml": plain}, "", ""},
+		{"a snapshot pins the commit its headers name",
+			map[string]string{"agent-api.yaml": generated("agent-api.yaml", a), "policy-api.yaml": generated("policy-api.yaml", a), "README.md": "not a spec\n"}, a, ""},
+		{"a snapshot mixed with a plain spec is refused",
+			map[string]string{"agent-api.yaml": generated("agent-api.yaml", a), "policy-api.yaml": plain}, "", "mixes generated snapshot files with plain specs (policy-api.yaml)"},
+		{"files from two commits are refused",
+			map[string]string{"agent-api.yaml": generated("agent-api.yaml", a), "policy-api.yaml": generated("policy-api.yaml", b)}, "", "different platform commits"},
+		{"a short commit in a header is refused",
+			map[string]string{"agent-api.yaml": generated("agent-api.yaml", a[:9])}, "", "full 40-character"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, body := range tc.files {
+				if err := writeFile(filepath.Join(dir, name), body); err != nil {
+					t.Fatalf("write %s: %v", name, err)
+				}
+			}
+			got, err := SnapshotSourceCommit(dir)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("want an error containing %q, got commit %q, err %v", tc.wantErr, got, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("commit = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

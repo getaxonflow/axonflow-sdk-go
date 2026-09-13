@@ -1,0 +1,150 @@
+name: Wire-Shape Contract
+
+# QF-15 Go arm: blocks drift between the Go SDK's struct tags and the OpenAPI
+# specs that are the authoritative wire contract. Drift NOT covered by the
+# baseline fails the check.
+#
+# The specs are a schema snapshot committed under testdata/openapi/ (see its
+# README), derived by scripts/snapshot_openapi_schemas.py from the platform's
+# docs/api at the commit recorded as openapi_specs_sha in
+# testdata/wire_shape_baseline.json, so the gate is deterministic. A
+# 'spec-pin-bump' label is required on PRs that change that SHA OR any file
+# under testdata/openapi/, preserving review integrity: a PR that moved the pin
+# and the Go types together could otherwise silence drift.
+#
+# To regenerate the snapshot and the baseline, see testdata/openapi/README.md.
+
+on:
+  pull_request:
+    branches: [main]
+    # The pin guard reads the PR's labels from the event payload. A label
+    # attached after the PR opens (`gh pr create --label` adds it in a second
+    # call) is not in the `opened` payload, so the guard must re-run when a
+    # label is added or removed, or its verdict describes stale labels.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'testdata/wire_shape_baseline.json'
+      - 'testdata/openapi/**'
+      - 'scripts/snapshot_openapi_schemas.py'
+      - 'scripts/refresh_wire_shape_baseline/**'
+      - '.github/workflows/wire-shape-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'testdata/wire_shape_baseline.json'
+      - 'testdata/openapi/**'
+      - 'scripts/snapshot_openapi_schemas.py'
+      - 'scripts/refresh_wire_shape_baseline/**'
+      - '.github/workflows/wire-shape-contract.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  wire-shape:
+    name: Wire-Shape Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout SDK (full history for the pin guard)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read pinned OpenAPI specs SHA from baseline
+        id: specs_sha
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import sys
+          path = "testdata/wire_shape_baseline.json"
+          data = json.load(open(path))
+          sha = (data.get("openapi_specs_sha", "") or "").strip()
+          if not sha:
+              print(
+                  f"::error::{path} is missing openapi_specs_sha. "
+                  "Regenerate via scripts/refresh_wire_shape_baseline.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          print(f"sha={sha}")
+          PY
+
+      - name: Guard against an unauthorized pin or snapshot change
+        if: github.event_name == 'pull_request'
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_SHA: ${{ steps.specs_sha.outputs.sha }}
+        run: |
+          set -e
+          BASE_SHA=$(
+            git show "origin/${BASE_REF}:testdata/wire_shape_baseline.json" 2>/dev/null \
+              | python3 -c "import json, sys; print(json.load(sys.stdin).get('openapi_specs_sha','') or '')" \
+              || true
+          )
+          if [ -z "$BASE_SHA" ]; then
+            echo "::notice::Base branch has no openapi_specs_sha yet; treating this PR as the first pin introduction."
+            exit 0
+          fi
+          SNAPSHOT_CHANGED=false
+          if ! git diff --quiet "origin/${BASE_REF}...HEAD" -- testdata/openapi/; then
+            SNAPSHOT_CHANGED=true
+          fi
+          if [ "$BASE_SHA" = "$PR_SHA" ] && [ "$SNAPSHOT_CHANGED" = false ]; then
+            echo "openapi_specs_sha unchanged (${PR_SHA}) and testdata/openapi/ unchanged."
+            exit 0
+          fi
+          echo "Pin change detected: openapi_specs_sha ${BASE_SHA} -> ${PR_SHA}; snapshot changed: ${SNAPSHOT_CHANGED}"
+          HAS_LABEL=$(printf '%s' "$PR_LABELS" | python3 -c "import json, sys; print('spec-pin-bump' in json.load(sys.stdin))")
+          if [ "$HAS_LABEL" = "True" ]; then
+            echo "::notice::'spec-pin-bump' label present - the pin change is authorized."
+            exit 0
+          fi
+          if [ "$BASE_SHA" != "$PR_SHA" ]; then
+            echo "::error::openapi_specs_sha changed from ${BASE_SHA} to ${PR_SHA}."
+          fi
+          if [ "$SNAPSHOT_CHANGED" = true ]; then
+            echo "::error::testdata/openapi/ changed; the spec snapshot is part of the pin."
+          fi
+          echo "::error::The wire-shape contract's spec revision is pinned to preserve"
+          echo "::error::review integrity: a pin change in the same PR as SDK changes"
+          echo "::error::can silence drift by retargeting the contract to a friendlier"
+          echo "::error::revision. Either split this into a dedicated pin-bump PR, or"
+          echo "::error::apply the 'spec-pin-bump' label to this PR."
+          exit 1
+
+      - name: Set up Python (spec snapshot checks)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check the committed spec snapshot
+        # The derivation's own self-test, then the committed snapshot must be
+        # exactly the script's derived form (prose, types or a spec copied in
+        # verbatim are refused). Any change to it also needs the label above.
+        run: |
+          python -m pip install --quiet pyyaml
+          python scripts/snapshot_openapi_schemas.py --self-test
+          python scripts/snapshot_openapi_schemas.py --check-snapshot testdata/openapi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Run wire-shape contract tests
+        env:
+          AXONFLOW_OPENAPI_SPECS_DIR: ${{ github.workspace }}/testdata/openapi
+        run: go test -v -run "TestWireShape" .
