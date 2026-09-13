@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declaration the platform would refuse fails with `*PEPHandshakeError` naming the member,
   before anything is sent. `FulfillRequest`'s `ErrObligationNotFulfillable` now also wraps the
   engine call's own error, so `errors.As` reaches it (a handshake refusal, an HTTP error).
+- **Typed policy authoring (axonflow-enterprise#3746).** A v11.0.0 platform authors policy as a
+  typed document: validated, published as a signed artifact pinned by its digest, and promoted
+  to active. `TypedPolicyEdition`, `ValidateTypedPolicy`, `PublishTypedPolicy`,
+  `ActivateTypedPolicy`, `ActiveTypedPolicy` and `TypedPolicySystem` reach the six routes the
+  agent proxies under `/api/v1/typed-policies`. Every refusal except a 401 is a
+  `*TypedPolicyRefusal` carrying the status, the platform's reason, any findings and
+  `Retry-After`; `ActiveTypedPolicy` returns `(nil, nil)` when nothing is active. Rolling back
+  and withdrawing are customer portal operations the agent does not proxy, so the SDK has no
+  method for either.
 
 ## [9.3.0] - 2026-09-06: read-path identity, and a heartbeat that fires on first use
 
