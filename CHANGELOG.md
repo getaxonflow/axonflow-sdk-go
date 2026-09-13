@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The first Go SDK release carrying these entries sends the PEP capability handshake, which a
+platform reads from v10.4.0, and reaches `/api/v1/typed-policies`, which needs a v11.0.0
+platform; against an older platform it works unchanged. Upgrade the SDK before the platform:
+from v11.0.0, `Decide` under an organization's redact override refuses a caller that does
+not declare redaction, and only a release that sends the handshake can declare it.
+
 ### Added
 
 - **v11.0.0 decision provenance on every governed response (axonflow-enterprise#3746).**
@@ -28,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   successor from `Link: <...>; rel="successor-version"`), the SDK reports it once per
   route: to this callback when it is set, otherwise to the standard logger. From v11.0.0
   the legacy static- and dynamic-policy reads carry it.
-- **The v11.0.0 PEP capability handshake (axonflow-enterprise#3746).** An enforcement point
+- **The PEP capability handshake (axonflow-enterprise#3746).** An enforcement point
   declares the obligation types and schema versions it can discharge with `NewPEPHandshake`,
   presented as `X-Axonflow-PEP-Handshake` on every call to a plane that reads it: `Decide` (and
   `DecideAndFulfill` and `FulfillRequest`'s engine round-trip), `Evaluate` and `EvaluateAll`, the
@@ -39,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declaration the platform would refuse fails with `*PEPHandshakeError` naming the member,
   before anything is sent. `FulfillRequest`'s `ErrObligationNotFulfillable` now also wraps the
   engine call's own error, so `errors.As` reaches it (a handshake refusal, an HTTP error).
+  The platform reads the declaration from v10.4.0; from v11.0.0, `Decide` under an
+  organization's redact override refuses a caller that does not declare redaction.
 - **Typed policy authoring (axonflow-enterprise#3746).** A v11.0.0 platform authors policy as a
   typed document: validated, published as a signed artifact pinned by its digest, and promoted
   to active. `TypedPolicyEdition`, `ValidateTypedPolicy`, `PublishTypedPolicy`,
@@ -48,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Retry-After`; `ActiveTypedPolicy` returns `(nil, nil)` when nothing is active. Rolling back
   and withdrawing are customer portal operations the agent does not proxy, so the SDK has no
   method for either.
+- **Examples for the v11.0.0 platform.** `examples/typed_policies` authors policy as a typed
+  document (it publishes and activates only when asked), and `examples/pep_handshake`
+  declares an enforcement point's capabilities for the client and for one call. Both exit
+  non-zero when a step fails, and CI builds them. The README gains a "v11.0.0 platform"
+  section naming what each v11 surface needs from the platform.
 
 ### Deprecated
 

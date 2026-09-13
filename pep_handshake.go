@@ -10,11 +10,11 @@ import (
 	"sort"
 )
 
-// This file is the PEP capability handshake (platform v11.0.0): an enforcement
-// point (a PEP) declares, on each governed call, the exact obligation types and
-// schema versions it can discharge. The declaration rides the
-// X-Axonflow-PEP-Handshake header as the unpadded base64url encoding of a JSON
-// document:
+// This file is the PEP capability handshake, which the platform reads from
+// v10.4.0: an enforcement point (a PEP) declares, on each governed call, the
+// exact obligation types and schema versions it can discharge. The declaration
+// rides the X-Axonflow-PEP-Handshake header as the unpadded base64url encoding
+// of a JSON document:
 //
 //	{"profile_version":1,"pep_id":"...","audience":"...",
 //	 "capabilities":[{"type":"field_redact","version":1}]}
@@ -22,7 +22,10 @@ import (
 // On an Enterprise deployment, an allow verdict carrying a mandatory obligation
 // the declared set cannot discharge becomes a deny, so the enforcement point is
 // never handed an instruction it would drop. A Community deployment records the
-// declaration and does not deny on it.
+// declaration and does not deny on it. From platform v11.0.0, on both editions,
+// Decide under an organization's redact override refuses a caller that does
+// not declare redaction (field_redact at version 1) as unsupported_obligation,
+// where v10 allowed it with a redact_pii obligation.
 //
 // WHERE IT IS SENT. Four request planes read the header: Decide (and
 // DecideAndFulfill and FulfillRequest's engine round-trip), the AuthZEN
@@ -33,11 +36,13 @@ import (
 // ProxyLLMCall (/api/request) and the OpenAI-compatible route do not read it.
 //
 // ABSENT IS NOT EMPTY. A client with no declaration sends no header, and the
-// platform behaves exactly as it did before the handshake existed; there is no
-// default declaration, because only the caller knows what its enforcement
-// point can discharge. An empty capability list is a declaration that it
-// discharges nothing, which on Enterprise turns every allow carrying a
-// mandatory obligation into a deny. A nil capability list is refused.
+// platform takes the path it took before the handshake existed, except that
+// from v11.0.0 Decide refuses it under an organization's redact override (see
+// above); there is no default declaration, because only the caller knows what
+// its enforcement point can discharge. An empty capability list is a
+// declaration that it discharges nothing, which on Enterprise turns every allow
+// carrying a mandatory obligation into a deny. A nil capability list is
+// refused.
 //
 // The rules below are the platform's own (platform/decision/contract
 // DecodePEPHandshake): a declaration this file accepts is one the platform's

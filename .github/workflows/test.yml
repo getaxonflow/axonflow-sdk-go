@@ -124,3 +124,5 @@ jobs:
         go build -v ./examples/basic
         go build -v ./examples/connectors
         go build -v ./examples/planning
+        go build -v ./examples/typed_policies
+        go build -v ./examples/pep_handshake

@@ -408,9 +408,9 @@ CI regenerates and diffs, so editing either file without the other fails.
 See [`examples/authzen`](examples/authzen) for a runnable walkthrough of the
 happy path and every refusal.
 
-### PEP capability handshake
+### PEP capability handshake (v10.4.0+)
 
-A v11 platform lets an enforcement point declare, on each call, the exact
+From v10.4.0 the platform lets an enforcement point declare, on each call, the exact
 obligation types and schema versions it can discharge. Build the declaration once
 and give it to the client:
 
@@ -445,19 +445,53 @@ declares `h` for the calls made with that context, in place of the client's;
 `PreCheckWithContext` is the pre-check's form that takes a context.
 
 - **There is no default.** A client given no declaration sends no header, and the
-  platform behaves as it did before the handshake existed. An empty, non-nil
+  platform takes the path it took before the handshake existed, except under an
+  organization's redact override from v11.0.0 (below). An empty, non-nil
   capability slice declares that the enforcement point discharges nothing; a nil
   one is refused.
 - **What a declaration changes.** On an Enterprise deployment, an allow verdict
   carrying a mandatory obligation the declared set cannot discharge becomes a
   deny, so declare every obligation your enforcement point carries out, and only
   those. A Community deployment records the declaration without denying on it,
-  and drops any capability in a family it does not issue.
+  and drops any capability in a family it does not issue. From v11.0.0, on both
+  editions, `Decide` under an organization's redact override refuses a caller
+  that does not declare redaction (`field_redact` at version 1) as
+  `unsupported_obligation`, where v10 allowed it with a `redact_pii` obligation.
 - **Refused before it is sent.** `NewPEPHandshake` applies the platform's own
   rules and returns a `*PEPHandshakeError` naming the member at fault (`Pointer`
   is `/pep_id`, `/audience` or `/capabilities`), instead of the first governed
   call coming back `400`. A `PEPHandshake` built by hand is checked the same way
   on every call, which then fails before anything is sent.
+
+## v11.0.0 platform
+
+Against a v11.0.0 platform this SDK surfaces the new decision plane. Against
+v10 the calls that existed before work as before, and each v11 field reads
+empty.
+
+- **Decision provenance.** Governed responses (`ProxyLLMCall`, `Decide`, the
+  gateway pre-check, the MCP check-output and connector responses) carry
+  `Engine`, `SubjectType` and `PolicyBundle`, and a decision adds
+  `PolicyIdentities`, `PolicyPacks` and `DocumentVersion`. A v11.0.0 platform
+  fills them. `LegacyValidators` is filled only where a checksum validator
+  acted, so it is empty on `ProxyLLMCall` by design.
+- **Frozen legacy policy writes.** A v11.0.0 platform answers a write to its
+  static- or dynamic-policy routes with 409 `LEGACY_POLICY_WRITE_FROZEN`,
+  returned as a `*LegacyPolicyWriteFrozenError` that names the typed policy
+  route.
+- **Route deprecation.** `AxonFlowConfig.OnRouteDeprecation` reports, once per
+  route, each route a v11.0.0 platform marks deprecated (see
+  [v11.0.0 deprecations](#v1100-deprecations)).
+- **The PEP capability handshake.** A platform reads the declaration from
+  v10.4.0. From v11.0.0, `Decide` under an organization's redact override
+  refuses a caller that does not declare redaction (see
+  [PEP capability handshake](#pep-capability-handshake-v1040)).
+- **Typed policy authoring.** The routes exist from v11.0.0. An older platform
+  does not serve them, and its refusal surfaces as a `*TypedPolicyRefusal`
+  (see [Typed policy authoring](#typed-policy-authoring-v1100)).
+
+Runnable programs: [`examples/typed_policies`](examples/typed_policies) and
+[`examples/pep_handshake`](examples/pep_handshake).
 
 ## Typed policy authoring (v11.0.0+)
 
@@ -1116,7 +1150,7 @@ fmt.Printf("Result: %v\n", resp.Data)
 | `Retry.InitialDelay` | `time.Duration` | `1s` | Initial retry delay (exponential backoff) |
 | `Cache.Enabled` | `bool` | `true` | Enable caching |
 | `Cache.TTL` | `time.Duration` | `60s` | Cache time-to-live |
-| `PEPHandshake` | `*PEPHandshake` | `nil` (no header) | The PEP capability declaration sent on the planes that read it; see [PEP capability handshake](#pep-capability-handshake) |
+| `PEPHandshake` | `*PEPHandshake` | `nil` (no header) | The PEP capability declaration sent on the planes that read it; see [PEP capability handshake](#pep-capability-handshake-v1040) |
 
 **Note:** For self-hosted (localhost) deployments, `ClientID` and `ClientSecret` are optional.
 
