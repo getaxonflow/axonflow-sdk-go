@@ -395,7 +395,6 @@ func (c *AxonFlowClient) ActivateTypedPolicy(ctx context.Context, digest, reason
 // nothing_active. Any other 404 is a *TypedPolicyRefusal with Status 404: a
 // platform without the typed routes (before v11.0.0), or an endpoint that is
 // not an AxonFlow agent, is reported as such rather than as nothing active.
-// An SDK release from before this change read any 404 as nothing active.
 //
 // (nil, nil) is only as reliable as that reason: the platform currently also
 // answers nothing_active when its document store cannot be read

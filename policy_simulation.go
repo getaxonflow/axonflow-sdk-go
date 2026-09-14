@@ -142,7 +142,7 @@ type PolicyConflictResponse struct {
 //	    result.Allowed, result.RiskScore, result.TotalPolicies)
 //
 // Deprecated: the platform deprecates POST /api/v1/policies/simulate in v11.0.0 and removes it
-// in v11.1 (PRD v11 §1.11). Every response carries X-AxonFlow-Removed-In:
+// in v11.1. Every response carries X-AxonFlow-Removed-In:
 // v11.1 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
 // Deprecation header once v11.0.0 is tagged, and the client reports the route
 // once through
@@ -186,7 +186,7 @@ func (c *AxonFlowClient) SimulatePolicies(ctx context.Context, req *SimulatePoli
 //	    report.MatchRate*100, report.BlockRate*100)
 //
 // Deprecated: the platform deprecates POST /api/v1/policies/impact-report in v11.0.0 and removes it
-// in v11.1 (PRD v11 §1.11). Every response carries X-AxonFlow-Removed-In:
+// in v11.1. Every response carries X-AxonFlow-Removed-In:
 // v11.1 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
 // Deprecation header once v11.0.0 is tagged, and the client reports the route
 // once through
@@ -226,7 +226,7 @@ func (c *AxonFlowClient) GetPolicyImpactReport(ctx context.Context, req *ImpactR
 //	conflicts, err = client.DetectPolicyConflicts(ctx, "policy-123")
 //
 // Deprecated: the platform deprecates POST /api/v1/policies/conflicts in v11.0.0 and removes it
-// in v11.1 (PRD v11 §1.11). Every response carries X-AxonFlow-Removed-In:
+// in v11.1. Every response carries X-AxonFlow-Removed-In:
 // v11.1 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
 // Deprecation header once v11.0.0 is tagged, and the client reports the route
 // once through
