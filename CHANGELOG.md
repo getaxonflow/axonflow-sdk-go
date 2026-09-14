@@ -5,8 +5,7 @@ All notable changes to the AxonFlow Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
+## [9.4.0] - 2026-09-14: decision provenance, the PEP capability handshake, typed policy authoring, and the simulation family deprecated
 The first Go SDK release carrying these entries sends the PEP capability handshake, which a
 platform reads from v10.4.0, and reaches `/api/v1/typed-policies`, which needs a v11.0.0
 platform; against an older platform it works unchanged. Upgrade the SDK before the platform:
