@@ -5,7 +5,19 @@
 // reads what the deployment may author, validates a document and prints every
 // finding, and shows the document in force. It publishes and activates only
 // when AXONFLOW_TYPED_POLICY_PUBLISH=1, because that changes the organization's
-// active policy.
+// active policy. Before it activates, it prints the publication's report of the
+// organization template's controls the document omits: activating a document
+// that omits them removes them for the organization. A publication or
+// activation it was asked for and refused fails the run.
+//
+// Run examples/pep_handshake first. Note: after a document with an
+// organization-scope constraint is activated, a decide that does not supply
+// the attribute the constraint conditions on is denied fail-closed with
+// reasons ["unknown_constraint"]; supply the attribute or run this example on
+// a fresh stack. From v11.0.0 the deny's first reason is that code, followed
+// by one naming each constraint it could not evaluate and the attribute it
+// needed (getaxonflow/axonflow-enterprise#4247). The default document is such
+// a document.
 //
 // Run it against a local stack from the repository root:
 //
@@ -26,6 +38,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	axonflow "github.com/getaxonflow/axonflow-sdk-go/v9"
@@ -106,12 +119,23 @@ func main() {
 				for _, f := range refusal.Findings {
 					fmt.Printf("  %s %s %s\n", f.Severity, f.Code, f.PolicyID)
 				}
-				return nil
+				// Publishing was asked for, so a refusal fails the run.
+				return errors.New("the publication was refused")
 			}
 			if err != nil {
 				return err
 			}
 			fmt.Printf("published %s (version %d)\n", published.Digest, published.Version)
+			// Activating a document that omits the organization template's controls
+			// removes them for the organization, so the report comes first.
+			switch report := published.TemplateOmissions; {
+			case report != nil:
+				fmt.Printf("template omissions: %d of %d template controls: %s\n", len(report.Omitted), report.Of, strings.Join(report.Omitted, ", "))
+			case published.TemplateOmissionsUnavailable != "":
+				fmt.Printf("template omissions: unavailable: %s\n", published.TemplateOmissionsUnavailable)
+			default:
+				fmt.Println("template omissions: none")
+			}
 			if _, err := client.ActivateTypedPolicy(ctx, published.Digest, "examples/typed_policies"); err != nil {
 				return err
 			}

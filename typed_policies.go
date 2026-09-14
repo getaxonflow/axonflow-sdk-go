@@ -111,10 +111,20 @@ type TypedAuthoringEdition struct {
 	Success bool `json:"success"`
 	// Catalog is the configured authoring vocabulary.
 	Catalog string `json:"catalog,omitempty"`
+	// CatalogDigest is the vocabulary snapshot's content digest: its identity,
+	// which a refusal, a decision and a proof carry too.
+	CatalogDigest string `json:"catalog_digest,omitempty"`
+	// RegistryVersion is the integer the wire carries for this vocabulary.
+	RegistryVersion int64 `json:"registry_version"`
+	// CatalogFixture is true for a test-world vocabulary, which the platform
+	// refuses to activate a document against.
+	CatalogFixture bool `json:"catalog_fixture"`
 	// Root is the one authority root this surface publishes under.
 	Root string `json:"root,omitempty"`
-	// MaxDocuments is the customer-authored documents admitted per
-	// organization; -1 is unlimited.
+	// MaxDocuments is the customer-authored POLICIES (rules) admitted per
+	// organization; -1 is unlimited. The member's name is historical: an
+	// organization has one active document, and the ceiling counts the
+	// policies inside it.
 	MaxDocuments int                     `json:"max_documents"`
 	Constructs   *EditionConstructReport `json:"constructs,omitempty"`
 	// Persistence is process, database or unavailable.
@@ -136,12 +146,34 @@ type TypedPolicyPublication struct {
 	Digest   string             `json:"digest"`
 	Version  int                `json:"version"`
 	Findings []AuthoringFinding `json:"findings"`
+	// TemplateOmissions is the platform's report of the organization template's
+	// controls this document omits, nil when it omits none. Activating such a
+	// document removes those controls for the organization.
+	TemplateOmissions *TemplateOmissionReport `json:"template_omissions,omitempty"`
+	// TemplateOmissionsUnavailable says why that report could not be produced,
+	// when it could not.
+	TemplateOmissionsUnavailable string `json:"template_omissions_unavailable,omitempty"`
+}
+
+// TemplateOmissionReport says which of the organization template's controls a
+// document does not carry. Omitted is sorted, and Of is how many controls the
+// template has.
+type TemplateOmissionReport struct {
+	Omitted []string `json:"omitted"`
+	Of      int      `json:"of"`
+	Message string   `json:"message,omitempty"`
 }
 
 // TypedPolicyActivation is the audited activation record.
 type TypedPolicyActivation struct {
 	Success    bool           `json:"success"`
 	Activation map[string]any `json:"activation"`
+	// TemplateOmissions is the report for the activated document, as on
+	// TypedPolicyPublication; nil when it omits none.
+	TemplateOmissions *TemplateOmissionReport `json:"template_omissions,omitempty"`
+	// TemplateOmissionsUnavailable says why that report could not be produced,
+	// when it could not.
+	TemplateOmissionsUnavailable string `json:"template_omissions_unavailable,omitempty"`
 }
 
 // ActiveTypedPolicy is the document in force. Source is the exact byte
@@ -156,9 +188,12 @@ type ActiveTypedPolicy struct {
 // cannot be evaluated.
 type TypedPolicySystemControl struct {
 	ID        string `json:"id"`
+	Name      string `json:"name,omitempty"`
 	Authority string `json:"authority,omitempty"`
 	// Assurance is enforcement, gating_risk or advisory.
-	Assurance   string           `json:"assurance,omitempty"`
+	Assurance string `json:"assurance,omitempty"`
+	// Mandatory is whether an organization may not override it. The platform
+	// omits the member when it is false, which reads as false.
 	Mandatory   bool             `json:"mandatory"`
 	Description string           `json:"description,omitempty"`
 	Obligations []map[string]any `json:"obligations,omitempty"`
@@ -180,7 +215,8 @@ type TypedPolicySystemCorpus struct {
 // TypedPolicyRefusal is a typed policy authoring request the platform refused.
 // Status is the HTTP status and Reason the platform's reason, for example
 // publication_refused (422), activation_refused (409), tier_limit (402, with
-// Code naming the limit) or artifact_cap (429). Findings holds the declared
+// Code naming the limit and Policy the policy that crossed it) or artifact_cap
+// (429). Findings holds the declared
 // findings a refused publication or document carries, and RetryAfter the
 // seconds from Retry-After when the refusal is retryable (0 when there is
 // none). Message is the platform's own explanation.
@@ -188,6 +224,7 @@ type TypedPolicyRefusal struct {
 	Status     int
 	Reason     string
 	Code       string
+	Policy     string
 	Message    string
 	Findings   []AuthoringFinding
 	RetryAfter int
@@ -245,6 +282,7 @@ func typedPolicyError(resp *http.Response, body []byte, route string) error {
 	var payload struct {
 		Reason   string             `json:"reason"`
 		Code     string             `json:"code"`
+		Policy   string             `json:"policy"`
 		Error    json.RawMessage    `json:"error"`
 		Findings []AuthoringFinding `json:"findings"`
 	}
@@ -263,6 +301,7 @@ func typedPolicyError(resp *http.Response, body []byte, route string) error {
 		Status:     resp.StatusCode,
 		Reason:     payload.Reason,
 		Code:       payload.Code,
+		Policy:     payload.Policy,
 		Message:    message,
 		Findings:   payload.Findings,
 		RetryAfter: retryAfter,
@@ -349,14 +388,30 @@ func (c *AxonFlowClient) ActivateTypedPolicy(ctx context.Context, digest, reason
 	return &out, nil
 }
 
-// ActiveTypedPolicy returns the document in force, or (nil, nil) when nothing is active (the platform's 404).
+// ActiveTypedPolicy returns the document in force, or (nil, nil) when nothing
+// is active.
+//
+// (nil, nil) is the platform's own answer: a 404 whose reason is
+// nothing_active. Any other 404 is a *TypedPolicyRefusal with Status 404: a
+// platform without the typed routes (before v11.0.0), or an endpoint that is
+// not an AxonFlow agent, is reported as such rather than as nothing active.
+// An SDK release from before this change read any 404 as nothing active.
+//
+// (nil, nil) is only as reliable as that reason: the platform currently also
+// answers nothing_active when its document store cannot be read
+// (getaxonflow/axonflow-enterprise#4255).
 func (c *AxonFlowClient) ActiveTypedPolicy(ctx context.Context) (*ActiveTypedPolicy, error) {
 	resp, body, err := c.sendTypedPolicy(ctx, http.MethodGet, "/active", nil)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
+		var answer struct {
+			Reason string `json:"reason"`
+		}
+		if json.Unmarshal(body, &answer) == nil && answer.Reason == "nothing_active" {
+			return nil, nil
+		}
 	}
 	if err := typedPolicyError(resp, body, "/active"); err != nil {
 		return nil, err

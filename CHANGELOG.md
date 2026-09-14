@@ -53,7 +53,7 @@ not declare redaction, and only a release that sends the handshake can declare i
   `ActivateTypedPolicy`, `ActiveTypedPolicy` and `TypedPolicySystem` reach the six routes the
   agent proxies under `/api/v1/typed-policies`. Every refusal except a 401 is a
   `*TypedPolicyRefusal` carrying the status, the platform's reason, any findings and
-  `Retry-After`; `ActiveTypedPolicy` returns `(nil, nil)` when nothing is active. Rolling back
+  `Retry-After`; `ActiveTypedPolicy` returns `(nil, nil)` only for the platform's `nothing_active`. Rolling back
   and withdrawing are customer portal operations the agent does not proxy, so the SDK has no
   method for either.
 - **Examples for the v11.0.0 platform.** `examples/typed_policies` authors policy as a typed
@@ -61,6 +61,20 @@ not declare redaction, and only a release that sends the handshake can declare i
   declares an enforcement point's capabilities for the client and for one call. Both exit
   non-zero when a step fails, and CI builds them. The README gains a "v11.0.0 platform"
   section naming what each v11 surface needs from the platform.
+- **v11 parity for typed policy authoring (axonflow-enterprise#3746, D6).** The typed answers
+  carry every member the platform sends: `TypedPolicyRefusal.Policy` (the policy a tier refusal
+  names), `TypedAuthoringEdition`'s `CatalogDigest`, `RegistryVersion` and `CatalogFixture`, a
+  `TemplateOmissionReport` (`TemplateOmissions` and `TemplateOmissionsUnavailable` on the
+  publication and the activation), and `TypedPolicySystemControl.Name`. `ActiveTypedPolicy`
+  returns `(nil, nil)` only for the platform's `nothing_active`; any other 404, from a platform
+  before v11.0.0 or an endpoint that is not an agent, is a `*TypedPolicyRefusal` with status
+  404. An SDK release from before this change read any 404 as nothing active, and the platform
+  currently also answers `nothing_active` for a store read failure (axonflow-enterprise#4255).
+  `examples/typed_policies` prints the publication's template-omission report before it
+  activates and exits non-zero when a publication or activation it asked for is refused;
+  `examples/pep_handshake` prints each decision's reasons; the examples README runs the
+  handshake example first. `runtime-e2e/v11_examples` runs both examples on a live Community
+  stack.
 
 ### Deprecated
 
@@ -69,7 +83,7 @@ not declare redaction, and only a release that sends the handshake can declare i
   `/api/v1/policies/simulate`, `/impact-report` and `/conflicts` and removes them in v11.1, and
   stamps every response with `X-AxonFlow-Removed-In: v11.1` and a successor `Link` naming
   `/api/v1/typed-policies` (plus an RFC 9745 `Deprecation` header once v11.0.0 is tagged), which
-  `AxonFlowConfig.OnRouteDeprecation` reports once per route. They keep working until then. `CreatePolicyOverride` and `DeletePolicyOverride` now
+  `AxonFlowConfig.OnRouteDeprecation` reports once per route. Each keeps answering until v11.1; on a v11.0.0 platform its result comes from the legacy engine, which no longer decides, so it does not predict what the platform enforces. `CreatePolicyOverride` and `DeletePolicyOverride` now
   document that a v11.0.0 platform retires per-policy overrides and refuses both with the
   typed `*LegacyPolicyWriteFrozenError`.
 

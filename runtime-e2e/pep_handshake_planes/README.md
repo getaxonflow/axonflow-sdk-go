@@ -19,7 +19,7 @@ Each call must move exactly the one series listed, by exactly one. `accepted` me
 
 ## What it does not prove
 
-The consequence of a declaration differs by edition. On Enterprise, an allow verdict carrying a mandatory obligation the declared set cannot discharge becomes a deny. On Community, the declaration is recorded and does not deny. That rule is the platform's own, and the platform's suites prove it. This driver proves the declaration arrives and is admitted, which is the SDK's part.
+The consequence of a declaration is the platform's. From v11.0.0, on every edition, the engine refuses with `unsupported_obligation` a mandatory obligation the declaration cannot discharge; on Enterprise, in addition, an allow verdict carrying a mandatory obligation the declared set cannot discharge becomes a deny. Those rules are the platform's own, and the platform's suites prove them. This driver proves the declaration arrives and is admitted, which is the SDK's part.
 
 `ProxyLLMCall` (`/api/request`) and the OpenAI-compatible route do not read the header, and the SDK does not send it there. The unit tests in `pep_handshake_test.go` assert that absence on the wire.
 
