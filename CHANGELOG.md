@@ -61,8 +61,9 @@ not declare redaction, and only a release that sends the handshake can declare i
   omits, since activating it removes them; and `TypedPolicySystemControl.Name`.
   `ActiveTypedPolicy` returns `(nil, nil)` only for the platform's `nothing_active`; any other
   404, from a platform before v11.0.0 or an endpoint that is not an agent, is a
-  `*TypedPolicyRefusal` with status 404. The platform currently also answers `nothing_active`
-  for a store read failure (axonflow-enterprise#4255). Rolling back and withdrawing are
+  `*TypedPolicyRefusal` with status 404, and so is the 503 `storage_unavailable` a v11.0.0
+  platform answers when it cannot read its document store (axonflow-enterprise#4255). Rolling
+  back and withdrawing are
   customer portal operations the agent does not proxy, so the SDK has no method for either.
 - **Examples for the v11.0.0 platform.** `examples/pep_handshake` declares an enforcement
   point's capabilities for the client and for one call, and prints each decision's reasons;

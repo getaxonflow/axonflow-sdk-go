@@ -388,6 +388,11 @@ func TestEveryDocumentedTypedPolicyRefusalIsTyped(t *testing.T) {
 		{"edition 404", "edition", 404, nil,
 			`{"success":false,"reason":"no_such_endpoint","error":"refused: no_such_endpoint"}`,
 			"no_such_endpoint", "", nil, 0},
+		// A v11.0.0 platform answers a document store it cannot read with 503
+		// storage_unavailable, not nothing_active (getaxonflow/axonflow-enterprise#4255).
+		{"active 503 storage unavailable", "active", 503, nil,
+			`{"success":false,"reason":"storage_unavailable","error":"refused: storage_unavailable"}`,
+			"storage_unavailable", "", nil, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _ := typedPolicyServer(t, tc.status, tc.headers, tc.body)
