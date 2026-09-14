@@ -2,16 +2,26 @@
 // handshake, which the platform reads from v10.4.0.
 //
 // An enforcement point (a PEP) declares, on each governed call, the exact
-// obligation types and schema versions it can discharge. On an Enterprise
-// deployment an allow verdict carrying a mandatory obligation the declared set
-// cannot discharge becomes a deny, so the enforcement point is never handed an
-// instruction it would drop; a Community deployment records the declaration.
-// From v11.0.0, on both editions, Decide under an organization's redact
-// override refuses a caller that does not declare redaction.
+// obligation types and schema versions it can discharge. From v11.0.0, on
+// every edition, the engine refuses with unsupported_obligation a mandatory
+// obligation the caller's declaration cannot discharge: Decide under an
+// organization's redact override refuses a caller that does not declare
+// redaction. On an Enterprise deployment, in addition, an allow verdict
+// carrying a mandatory obligation the declared set cannot discharge becomes a
+// deny, so the enforcement point is never handed an instruction it would drop.
 //
 // This example builds a declaration once for the client, overrides it for one
-// call (one process can be two enforcement points), and shows that a
-// declaration the platform would refuse fails here, before anything is sent.
+// call (one process can be two enforcement points), prints each decision's
+// verdict and reasons, and shows that a declaration the platform would refuse
+// fails here, before anything is sent.
+//
+// Run it before examples/typed_policies. Note: after a document with an
+// organization-scope constraint is activated, a decide that does not supply
+// the attribute the constraint conditions on is denied fail-closed with
+// reasons ["unknown_constraint"]; supply the attribute or run this example on
+// a fresh stack. From v11.0.0 the deny's first reason is that code, followed
+// by one naming each constraint it could not evaluate and the attribute it
+// needed (getaxonflow/axonflow-enterprise#4247).
 //
 // Run it against a local stack:
 //
@@ -78,7 +88,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("verdict=%s obligations=%d\n", decision.Verdict, len(decision.Obligations))
+		fmt.Printf("verdict=%s reasons=%q obligations=%d\n", decision.Verdict, decision.Reasons, len(decision.Obligations))
 		return nil
 	})
 
@@ -94,7 +104,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("verdict=%s obligations=%d\n", decision.Verdict, len(decision.Obligations))
+		fmt.Printf("verdict=%s reasons=%q obligations=%d\n", decision.Verdict, decision.Reasons, len(decision.Obligations))
 		return nil
 	})
 

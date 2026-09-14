@@ -449,14 +449,21 @@ declares `h` for the calls made with that context, in place of the client's;
   organization's redact override from v11.0.0 (below). An empty, non-nil
   capability slice declares that the enforcement point discharges nothing; a nil
   one is refused.
-- **What a declaration changes.** On an Enterprise deployment, an allow verdict
-  carrying a mandatory obligation the declared set cannot discharge becomes a
-  deny, so declare every obligation your enforcement point carries out, and only
-  those. A Community deployment records the declaration without denying on it,
-  and drops any capability in a family it does not issue. From v11.0.0, on both
-  editions, `Decide` under an organization's redact override refuses a caller
-  that does not declare redaction (`field_redact` at version 1) as
-  `unsupported_obligation`, where v10 allowed it with a `redact_pii` obligation.
+- **Which edition refuses what.** From v11.0.0, on every edition, the engine
+  refuses with `unsupported_obligation` a mandatory obligation the caller's
+  declaration cannot discharge, and a caller that presents no declaration can
+  discharge none: `Decide` under an organization's redact override refuses a
+  caller that does not declare redaction (`field_redact` at version 1), where v10
+  allowed it with a `redact_pii` obligation, so on Community too a caller that
+  declares `field_mask` but not `field_redact` is refused there. What only
+  Enterprise adds happens at the handler, for an enforcement point that
+  presented a declaration: an allow carrying a mandatory obligation outside the
+  declared set becomes a deny, a refusal names the capability the declaration
+  lacks, and on the MCP check-input round-trip a redaction the declaration
+  cannot discharge is refused rather than handed back masked. So declare every
+  obligation your enforcement point carries out, and only those. A Community
+  deployment drops a declared capability in a family its edition does not
+  issue, counts it, and lets the request proceed.
 - **Refused before it is sent.** `NewPEPHandshake` applies the platform's own
   rules and returns a `*PEPHandshakeError` naming the member at fault (`Pointer`
   is `/pep_id`, `/audience` or `/capabilities`), instead of the first governed
@@ -487,11 +494,12 @@ empty.
   refuses a caller that does not declare redaction (see
   [PEP capability handshake](#pep-capability-handshake-v1040)).
 - **Typed policy authoring.** The routes exist from v11.0.0. An older platform
-  does not serve them, and its refusal surfaces as a `*TypedPolicyRefusal`
-  (see [Typed policy authoring](#typed-policy-authoring-v1100)).
+  does not serve them, so each call is refused rather than answered, and
+  `ActiveTypedPolicy` does not read that as nothing active (see
+  [Typed policy authoring](#typed-policy-authoring-v1100)).
 
-Runnable programs: [`examples/typed_policies`](examples/typed_policies) and
-[`examples/pep_handshake`](examples/pep_handshake).
+Runnable programs, in this order: [`examples/pep_handshake`](examples/pep_handshake),
+then [`examples/typed_policies`](examples/typed_policies).
 
 ## Typed policy authoring (v11.0.0+)
 
@@ -508,25 +516,40 @@ active, err := client.ActiveTypedPolicy(ctx)                           // the si
 system, err := client.TypedPolicySystem(ctx)                           // the platform's own controls
 ```
 
+- **Activation replaces the organization template.** Activating a document that
+  omits the organization template's controls removes those controls for the
+  organization. The template's controls carry the destructive-command blocks,
+  DROP and TRUNCATE prevention and the blocking SQL-injection rows.
+  `PublishTypedPolicy` and `ActivateTypedPolicy` report which ones a document
+  omits as `TemplateOmissions`, and the example prints that report. The publish
+  fixture the example uses is a minimal example, not a starting point for
+  production: it omits all of them.
 - **Activation promotes.** A digest whose version does not advance past the
   active one is refused. Rolling back to an earlier document, and withdrawing
   the active one, are operations of the customer portal behind its session; the
   agent does not proxy them, so the SDK has no method for either.
-- **The organization and the author are the ones your credentials resolve to.**
-  The agent stamps both, and the platform overwrites any author named inside the
-  document. A user token on the context (`ContextWithUserToken`) is the caller,
-  as on every other route.
+- **The agent stamps the organization and the author.** The platform signs the
+  caller as author whatever the document names; a user token on the context
+  (`ContextWithUserToken`) is the caller, as on every other route. The
+  organization is the one your credentials resolve to; on Community it is the
+  deployment's (`ORG_ID`).
 - **Refusals are typed.** Every refusal is a `*TypedPolicyRefusal` with the HTTP
   `Status`, the platform's `Reason` (such as `publication_refused`,
-  `activation_refused` or `tier_limit`), any `Findings`, and `RetryAfter` when
-  the refusal is retryable; a 401 is the client's usual error. On an edition
-  with separation of duties, publishing refuses with the finding code
+  `activation_refused` or `tier_limit`), any `Findings`, the `Policy` a tier
+  refusal names, and `RetryAfter` when the refusal is retryable; a 401 is the
+  client's usual error. On an edition with separation of duties, publishing
+  refuses with the finding code
   `APPROVER_IS_AUTHOR`: the route names no approver, and such a deployment
   approves in the customer portal.
 - **The document is the authoring model itself,** a `map[string]any` rather
   than Go types, so a field the policy vocabulary gains is authorable without an
   SDK release. `ValidateTypedPolicy` answers identically on every edition; the
   edition's boundary is applied when you publish.
+- **`ActiveTypedPolicy` returns `(nil, nil)` only for the platform's
+  `nothing_active`.** Any other 404 is a `*TypedPolicyRefusal` with status 404.
+  An SDK release from before this change read any 404 as nothing active. The
+  platform currently also answers `nothing_active` when its document store
+  cannot be read (getaxonflow/axonflow-enterprise#4255).
 
 ## Features
 
@@ -1163,12 +1186,15 @@ v11.1. Every response from them carries `X-AxonFlow-Removed-In: v11.1` and a
 successor `Link` naming `/api/v1/typed-policies`, plus an RFC 9745
 `Deprecation` header once v11.0.0 is tagged, and the client reports each such
 route once through
-`AxonFlowConfig.OnRouteDeprecation` (or logs it once when that is unset).
+`AxonFlowConfig.OnRouteDeprecation` (or logs it once when that is unset). A route
+that carries an id is reported once, by its template (for example
+`GET /api/v1/static-policies/{id}`), not once per id.
 
 - **Policy simulation.** `SimulatePolicies`, `GetPolicyImpactReport` and
-  `DetectPolicyConflicts` are deprecated and keep working until v11.1. The
-  typed simulate on `/api/v1/typed-policies` ships with the v11 series; policy
-  is authored and tested through the typed policy methods (see
+  `DetectPolicyConflicts` are deprecated. Each keeps answering until v11.1; on a
+  v11.0.0 platform its result comes from the legacy engine, which no longer
+  decides, so it does not predict what the platform enforces. Policy is authored
+  and tested through the typed policy methods (see
   [Typed policy authoring](#typed-policy-authoring-v1100)).
 - **Per-policy overrides.** A v11.0.0 platform retires them: `CreatePolicyOverride`
   and `DeletePolicyOverride` return a `*LegacyPolicyWriteFrozenError` whose

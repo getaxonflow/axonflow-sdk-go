@@ -65,25 +65,7 @@ Demonstrates:
 - Checking plan status
 - Handling plan results
 
-### 4. Typed Policy Authoring (`examples/typed_policies/`)
-
-Authoring policy as a typed document against a v11.0.0 platform. Run it from
-the repository root, since it reads `testdata/typed_policy_publish_body.json`
-(or the file `AXONFLOW_TYPED_POLICY_BODY` names):
-
-```bash
-go run ./examples/typed_policies
-```
-
-Demonstrates:
-- Reading what the deployment may author
-- Validating a document and reading every finding
-- Publishing and activating it, only with `AXONFLOW_TYPED_POLICY_PUBLISH=1`,
-  since that changes the organization's active policy
-- Reading a refusal's status, reason and findings
-- The document in force, as the exact signed bytes
-
-### 5. PEP Capability Handshake (`examples/pep_handshake/`)
+### 4. PEP Capability Handshake (`examples/pep_handshake/`)
 
 Declaring what an enforcement point can discharge. The platform reads the
 declaration from v10.4.0.
@@ -95,12 +77,39 @@ go run ./examples/pep_handshake
 Demonstrates:
 - A declaration for every call the client makes to a plane that reads it
 - A per-call declaration, for a second enforcement point in the same process
+- Each decision's verdict and reasons
 - A declaration the platform would refuse, failing before anything is sent
 
 `Decide` names the client id as the caller's organization, and the platform
 denies a caller naming an organization other than its own. On Enterprise the
 client id is the organization id and the secret its license key; on Community
 leave both unset.
+
+### 5. Typed Policy Authoring (`examples/typed_policies/`)
+
+Authoring policy as a typed document against a v11.0.0 platform. The document
+it validates and publishes is embedded in it (a byte-for-byte copy of
+`testdata/typed_policy_publish_body.json`) unless `AXONFLOW_TYPED_POLICY_BODY`
+names another file, so the built program runs from any directory. From the
+module root:
+
+```bash
+go run ./examples/typed_policies
+```
+
+Demonstrates:
+- Reading what the deployment may author
+- Validating a document and reading every finding
+- Publishing and activating it, only with `AXONFLOW_TYPED_POLICY_PUBLISH=1`,
+  since that changes the organization's active policy
+- Printing the publication's template-omission report before it activates:
+  activating a document that omits the organization template's controls
+  removes them for the organization
+- Reading a refusal's status, reason and findings; a publication or activation
+  it was asked for and refused fails the run
+- The document in force, as the exact signed bytes
+
+Run `pep_handshake` before `typed_policies`: after a document with an organization-scope constraint is activated, a decide that does not supply the attribute the constraint conditions on is denied fail-closed with reasons ["unknown_constraint"]; supply the attribute or run this example on a fresh stack. From v11.0.0 the deny's first reason is that code, followed by one naming each constraint it could not evaluate and the attribute it needed (getaxonflow/axonflow-enterprise#4247).
 
 Both read `AXONFLOW_ENDPOINT` (default `http://localhost:8080`),
 `AXONFLOW_CLIENT_ID` and `AXONFLOW_CLIENT_SECRET`, and exit non-zero when a

@@ -84,7 +84,8 @@ func assertTypedPolicyRoute(t *testing.T, got *typedPolicyExchange, method, rout
 }
 
 func TestTypedPolicyEdition(t *testing.T) {
-	c, got := typedPolicyServer(t, 200, nil, `{"success":true,"catalog":"default","root":"organization",
+	c, got := typedPolicyServer(t, 200, nil, `{"success":true,"catalog":"default","catalog_digest":"sha256:cat",
+		"registry_version":3,"catalog_fixture":true,"root":"organization",
 		"max_documents":20,"constructs":{"edition":"community","obligation_families":["field_redact"],
 		"attribute_namespaces":["subject"],"group_scope":false,"separation_of_duties":false,
 		"tier_established":true,"reserved":["group_scope"]},"persistence":"database","signing_key_custody":"local"}`)
@@ -97,7 +98,8 @@ func TestTypedPolicyEdition(t *testing.T) {
 		t.Errorf("GET sent a body: %v", got.body)
 	}
 	want := &TypedAuthoringEdition{
-		Success: true, Catalog: "default", Root: "organization", MaxDocuments: 20,
+		Success: true, Catalog: "default", CatalogDigest: "sha256:cat", RegistryVersion: 3, CatalogFixture: true,
+		Root: "organization", MaxDocuments: 20,
 		Constructs: &EditionConstructReport{
 			Edition: "community", ObligationFamilies: []string{"field_redact"},
 			AttributeNamespaces: []string{"subject"}, TierEstablished: true, Reserved: []string{"group_scope"},
@@ -148,7 +150,8 @@ func TestNilFixturesSendNoneAndAnEmptyListSendsAnEmptyArray(t *testing.T) {
 
 func TestPublishTypedPolicy(t *testing.T) {
 	c, got := typedPolicyServer(t, 200, nil, `{"success":true,"digest":"sha256:abc","version":2,
-		"findings":[{"code":"UNUSED_ATTRIBUTE","severity":"warn"}]}`)
+		"findings":[{"code":"UNUSED_ATTRIBUTE","severity":"warn"}],
+		"template_omissions":{"omitted":["sys_a","sys_b"],"of":22,"message":"omits 2 of 22"}}`)
 	published, err := c.PublishTypedPolicy(context.Background(), typedPolicyDocument, typedPolicyFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +161,8 @@ func TestPublishTypedPolicy(t *testing.T) {
 		t.Errorf("body %v", got.body)
 	}
 	want := &TypedPolicyPublication{Success: true, Digest: typedPolicyDigest, Version: 2,
-		Findings: []AuthoringFinding{{Code: "UNUSED_ATTRIBUTE", Severity: "warn"}}}
+		Findings:          []AuthoringFinding{{Code: "UNUSED_ATTRIBUTE", Severity: "warn"}},
+		TemplateOmissions: &TemplateOmissionReport{Omitted: []string{"sys_a", "sys_b"}, Of: 22, Message: "omits 2 of 22"}}
 	if !reflect.DeepEqual(published, want) {
 		t.Errorf("publication\n got %+v\nwant %+v", published, want)
 	}
@@ -204,7 +208,7 @@ func TestActiveTypedPolicyKeepsTheExactBytesThatWereSigned(t *testing.T) {
 }
 
 func TestNothingActiveIsNil(t *testing.T) {
-	c, _ := typedPolicyServer(t, 404, nil, `{"success":false,"reason":"no_active_policy","error":"nothing is active"}`)
+	c, _ := typedPolicyServer(t, 404, nil, `{"success":false,"reason":"nothing_active","error":"nothing is active"}`)
 	active, err := c.ActiveTypedPolicy(context.Background())
 	if active != nil || err != nil {
 		t.Errorf("got (%v, %v), want (nil, nil)", active, err)
@@ -214,8 +218,9 @@ func TestNothingActiveIsNil(t *testing.T) {
 func TestTypedPolicySystem(t *testing.T) {
 	c, got := typedPolicyServer(t, 200, nil, `{"success":true,"system":{"root":"system","version":3,
 		"digest":"sha256:system","authority":"shipped_corpus","controls":[{"id":"sys.pii.ssn",
-		"authority":"constraint","assurance":"enforcement","mandatory":true,"description":"SSN",
-		"obligations":[{"type":"field_redact"}]}],"assurance_counts":{"enforcement":1},"document":{"api_version":"v1"}}}`)
+		"name":"SSN redaction","authority":"constraint","assurance":"enforcement","mandatory":true,"description":"SSN",
+		"obligations":[{"type":"field_redact"}]},{"id":"sys.log","assurance":"advisory"}],
+		"assurance_counts":{"enforcement":1,"advisory":1},"document":{"api_version":"v1"}}}`)
 	system, err := c.TypedPolicySystem(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -224,14 +229,104 @@ func TestTypedPolicySystem(t *testing.T) {
 	want := &TypedPolicySystemCorpus{
 		Root: "system", Version: 3, Digest: "sha256:system", Authority: "shipped_corpus",
 		Controls: []TypedPolicySystemControl{{
-			ID: "sys.pii.ssn", Authority: "constraint", Assurance: "enforcement", Mandatory: true,
+			ID: "sys.pii.ssn", Name: "SSN redaction", Authority: "constraint", Assurance: "enforcement", Mandatory: true,
 			Description: "SSN", Obligations: []map[string]any{{"type": "field_redact"}},
-		}},
-		AssuranceCounts: map[string]int{"enforcement": 1},
+		}, {ID: "sys.log", Assurance: "advisory"}},
+		AssuranceCounts: map[string]int{"enforcement": 1, "advisory": 1},
 		Document:        map[string]any{"api_version": "v1"},
 	}
 	if !reflect.DeepEqual(system, want) {
 		t.Errorf("system\n got %+v\nwant %+v", system, want)
+	}
+}
+
+// Only the platform's own nothing_active is (nil, nil): any other 404, from a
+// platform without the typed routes or an endpoint that is not an agent, is a
+// refusal naming its status.
+func TestA404ThatIsNotNothingActiveIsATypedRefusal(t *testing.T) {
+	for _, tc := range []struct {
+		name, contentType, body, reason string
+	}{
+		{"plain text", "text/plain", "404 page not found", ""},
+		{"no such endpoint", "application/json", `{"success":false,"reason":"no_such_endpoint","error":"no such typed-policies endpoint"}`, "no_such_endpoint"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := typedPolicyServer(t, 404, map[string]string{"Content-Type": tc.contentType}, tc.body)
+			active, err := c.ActiveTypedPolicy(context.Background())
+			var refusal *TypedPolicyRefusal
+			if active != nil || !errors.As(err, &refusal) || refusal.Status != 404 || refusal.Reason != tc.reason {
+				t.Errorf("got (%v, %T %v), want a *TypedPolicyRefusal with status 404 and reason %q", active, err, err, tc.reason)
+			}
+		})
+	}
+}
+
+// A publication whose omission report could not be produced says why, and
+// carries no report.
+func TestAPublicationWhoseOmissionReportIsUnavailableSaysWhy(t *testing.T) {
+	c, _ := typedPolicyServer(t, 200, nil, `{"success":true,"digest":"sha256:abc","version":1,"findings":[],
+		"template_omissions_unavailable":"the organization template could not be read"}`)
+	published, err := c.PublishTypedPolicy(context.Background(), typedPolicyDocument, typedPolicyFixtures)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.TemplateOmissions != nil || published.TemplateOmissionsUnavailable != "the organization template could not be read" {
+		t.Errorf("publication %+v", published)
+	}
+}
+
+// The activation carries the omission report beside the activation record, not
+// inside it.
+func TestTheActivationCarriesTheOmissionReport(t *testing.T) {
+	c, _ := typedPolicyServer(t, 200, nil, `{"success":true,"activation":{"digest":"sha256:abc"},
+		"template_omissions":{"omitted":["sys_a"],"of":22,"message":"omits 1 of 22"}}`)
+	activation, err := c.ActivateTypedPolicy(context.Background(), typedPolicyDigest, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &TemplateOmissionReport{Omitted: []string{"sys_a"}, Of: 22, Message: "omits 1 of 22"}
+	if !reflect.DeepEqual(activation.TemplateOmissions, want) || activation.TemplateOmissionsUnavailable != "" {
+		t.Errorf("activation report %+v, want %+v", activation.TemplateOmissions, want)
+	}
+	if _, inside := activation.Activation["template_omissions"]; inside {
+		t.Errorf("the report was read into the activation record: %v", activation.Activation)
+	}
+}
+
+// An activation whose omission report could not be produced says why, and
+// carries no report.
+func TestAnActivationWhoseOmissionReportIsUnavailableSaysWhy(t *testing.T) {
+	c, _ := typedPolicyServer(t, 200, nil, `{"success":true,"activation":{"digest":"sha256:abc"},
+		"template_omissions_unavailable":"the organization template could not be read"}`)
+	activation, err := c.ActivateTypedPolicy(context.Background(), typedPolicyDigest, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activation.TemplateOmissions != nil || activation.TemplateOmissionsUnavailable != "the organization template could not be read" {
+		t.Errorf("activation %+v", activation)
+	}
+}
+
+// A tier refusal names the policy that crossed the ceiling; an outage refusal
+// (with Retry-After) names none.
+func TestATierRefusalNamesThePolicyThatCrossedIt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+		body    string
+		policy  string
+	}{
+		{"the ceiling", nil, `{"success":false,"reason":"tier_limit","code":"ERR_TIER_LIMIT_ORG_ROOT_POLICY","error":"ceiling","policy":"grant.refund"}`, "grant.refund"},
+		{"an outage", map[string]string{"Retry-After": "30"}, `{"success":false,"reason":"tier_limit","code":"ERR_TIER_LIMIT_ORG_ROOT_POLICY","error":"admission could not be checked"}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := typedPolicyServer(t, 402, tc.headers, tc.body)
+			_, err := c.PublishTypedPolicy(context.Background(), typedPolicyDocument, typedPolicyFixtures)
+			var refusal *TypedPolicyRefusal
+			if !errors.As(err, &refusal) || refusal.Policy != tc.policy {
+				t.Errorf("got %T %+v, want a refusal naming policy %q", err, err, tc.policy)
+			}
+		})
 	}
 }
 
@@ -388,6 +483,23 @@ func TestANilGoCollectionReadsAsEmpty(t *testing.T) {
 				return 0, err
 			}
 			return len(r.Controls) + len(r.AssuranceCounts) + len(r.Document), nil
+		}},
+		{"publish omissions null", `{"success":true,"digest":"sha256:abc","version":1,"findings":[],"template_omissions":null}`, func(c *AxonFlowClient) (int, error) {
+			r, err := c.PublishTypedPolicy(ctx, typedPolicyDocument, typedPolicyFixtures)
+			if err != nil {
+				return 0, err
+			}
+			if r.TemplateOmissions != nil {
+				return 1, nil
+			}
+			return 0, nil
+		}},
+		{"publish omitted null", `{"success":true,"digest":"sha256:abc","version":1,"findings":[],"template_omissions":{"omitted":null,"of":22,"message":"m"}}`, func(c *AxonFlowClient) (int, error) {
+			r, err := c.PublishTypedPolicy(ctx, typedPolicyDocument, typedPolicyFixtures)
+			if err != nil || r.TemplateOmissions == nil {
+				return -1, err
+			}
+			return len(r.TemplateOmissions.Omitted), nil
 		}},
 		{"no system", `{"success":true,"system":null}`, func(c *AxonFlowClient) (int, error) {
 			r, err := c.TypedPolicySystem(ctx)

@@ -20,6 +20,8 @@ The document is `testdata/typed_policy_publish_body.json`, byte-identical to axo
 
 Rolling back and withdrawing are customer portal operations the agent does not proxy, so the SDK has no method for either. An edition with separation of duties refuses every publication through this route with `APPROVER_IS_AUTHOR`; the unit tests cover that refusal's shape, and this driver runs on Community, which has no separation of duties.
 
+Two members are covered by unit tests only. `TypedPolicyRefusal.Policy`, the policy a tier refusal names, needs a deployment at its tier ceiling. `TemplateOmissionsUnavailable`, the reason the platform could not produce the omission report, needs a document store that cannot be read. This driver sets up neither.
+
 ## Running it
 
 Boot a community stack from the platform's main with the agent and orchestrator on the application database role, so it behaves as a deployment does. Then, from the repository root:

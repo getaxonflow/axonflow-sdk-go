@@ -146,8 +146,11 @@ type PolicyConflictResponse struct {
 // v11.1 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
 // Deprecation header once v11.0.0 is tagged, and the client reports the route
 // once through
-// AxonFlowConfig.OnRouteDeprecation. Its successor is the typed simulate on
-// /api/v1/typed-policies, which ships with the v11 series.
+// AxonFlowConfig.OnRouteDeprecation. It keeps answering until v11.1; on a
+// v11.0.0 platform its result comes from the legacy engine, which no longer
+// decides, so it does not predict what the platform enforces. Policy is
+// authored and tested through the typed policy methods (TypedPolicyEdition,
+// ValidateTypedPolicy, PublishTypedPolicy).
 func (c *AxonFlowClient) SimulatePolicies(ctx context.Context, req *SimulatePoliciesRequest) (*SimulatePoliciesResponse, error) {
 	fullURL := c.config.Endpoint + "/api/v1/policies/simulate"
 

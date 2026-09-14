@@ -1,6 +1,7 @@
 package axonflow
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -87,7 +88,10 @@ func responseError(statusCode int, body []byte) error {
 // Either the first or the last marks the route deprecated, so the SDK reports
 // it before the tag as well as after it.
 type PlatformRouteDeprecation struct {
-	Route       string // method and path, e.g. "GET /api/v1/static-policies"
+	// Route is the method and the route: its path, or its template when the
+	// path carries an id, e.g. "GET /api/v1/static-policies" or
+	// "GET /api/v1/static-policies/{id}".
+	Route       string
 	Successor   string // the route that replaces it, when the platform names one
 	RemovedIn   string // the release that removes it, e.g. "v11.1"
 	Deprecation string // the RFC 9745 Deprecation value, when the platform sends one
@@ -155,6 +159,30 @@ func (n *routeDeprecationNotes) first(route string) bool {
 	return true
 }
 
+// routeTemplateKey carries, on a request's context, the route template a call
+// was built for when its path carries an id.
+type routeTemplateKey struct{}
+
+// withRouteTemplate tags req with the route template it was built for, so a
+// deprecated route that carries an id is reported once, not once per id.
+func withRouteTemplate(req *http.Request, template string) *http.Request {
+	return req.WithContext(context.WithValue(req.Context(), routeTemplateKey{}, template))
+}
+
+// routeWithID fills the {id} in a route template with id.
+func routeWithID(template, id string) string {
+	return strings.Replace(template, "{id}", id, 1)
+}
+
+// routeOf is the route a request reports as: its template when the call was
+// built for one, otherwise its path.
+func routeOf(req *http.Request) string {
+	if template, ok := req.Context().Value(routeTemplateKey{}).(string); ok && template != "" {
+		return template
+	}
+	return req.URL.Path
+}
+
 // noteRouteDeprecation reports the deprecation a response declares for its
 // route, once per route: to AxonFlowConfig.OnRouteDeprecation when it is set,
 // otherwise to the standard logger.
@@ -162,7 +190,7 @@ func (c *AxonFlowClient) noteRouteDeprecation(req *http.Request, resp *http.Resp
 	if req == nil || req.URL == nil || resp == nil {
 		return
 	}
-	d := routeDeprecationFrom(req.Method, req.URL.Path, resp.Header)
+	d := routeDeprecationFrom(req.Method, routeOf(req), resp.Header)
 	if d == nil || !c.routeDeprecations.first(d.Route) {
 		return
 	}
