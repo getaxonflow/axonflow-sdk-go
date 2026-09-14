@@ -27,7 +27,7 @@ type LegacyValidatorAction struct {
 	Action    string `json:"action"`    // "blocked" or "masked"
 }
 
-// PolicyIdentity names one policy a decision matched (PRD v11 §1.14).
+// PolicyIdentity names one policy a decision matched.
 // DecideResponse.PolicyIdentities follows EvaluatedPolicies one for one, in
 // order. Name is the policy's own display name, empty when it declares none:
 // the platform never presents an identifier as a name. Source says whose the

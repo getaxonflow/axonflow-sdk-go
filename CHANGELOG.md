@@ -68,8 +68,8 @@ not declare redaction, and only a release that sends the handshake can declare i
   publication and the activation), and `TypedPolicySystemControl.Name`. `ActiveTypedPolicy`
   returns `(nil, nil)` only for the platform's `nothing_active`; any other 404, from a platform
   before v11.0.0 or an endpoint that is not an agent, is a `*TypedPolicyRefusal` with status
-  404. An SDK release from before this change read any 404 as nothing active, and the platform
-  currently also answers `nothing_active` for a store read failure (axonflow-enterprise#4255).
+  404. The platform currently also answers `nothing_active` for a store read failure
+  (axonflow-enterprise#4255).
   `examples/typed_policies` embeds its default document, so it runs from any directory,
   prints the publication's template-omission report before it activates, and exits non-zero
   when a publication or activation it asked for is refused;

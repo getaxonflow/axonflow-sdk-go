@@ -25,7 +25,7 @@ Run 5 is refused because activation promotes. An artifact's digest covers its pu
 
 After a document with an organization-scope constraint is activated, a decide that does not supply the attribute the constraint conditions on is denied fail-closed with reasons ["unknown_constraint"]; supply the attribute or run this example on a fresh stack. From v11.0.0 the deny's first reason is that code, followed by one naming each constraint it could not evaluate and the attribute it needed (getaxonflow/axonflow-enterprise#4247). The example's default document is such a document, so the sixth run shows that deny. It is the platform's by-design answer, not the SDK's, so this leg prints it rather than pinning it. It is why the README runs the handshake example first.
 
-A stack built before #4247 shows only the bare `["unknown_constraint"]`.
+A stack built before getaxonflow/axonflow-enterprise#4247 shows only the bare `["unknown_constraint"]`.
 
 ## What it does not prove
 

@@ -547,8 +547,7 @@ system, err := client.TypedPolicySystem(ctx)                           // the pl
   edition's boundary is applied when you publish.
 - **`ActiveTypedPolicy` returns `(nil, nil)` only for the platform's
   `nothing_active`.** Any other 404 is a `*TypedPolicyRefusal` with status 404.
-  An SDK release from before this change read any 404 as nothing active. The
-  platform currently also answers `nothing_active` when its document store
+  The platform currently also answers `nothing_active` when its document store
   cannot be read (getaxonflow/axonflow-enterprise#4255).
 
 ## Features
