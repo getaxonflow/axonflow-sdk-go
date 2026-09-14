@@ -396,8 +396,8 @@ func (c *AxonFlowClient) ActivateTypedPolicy(ctx context.Context, digest, reason
 // platform without the typed routes (before v11.0.0), or an endpoint that is
 // not an AxonFlow agent, is reported as such rather than as nothing active.
 //
-// (nil, nil) is only as reliable as that reason: the platform currently also
-// answers nothing_active when its document store cannot be read
+// A v11.0.0 platform answers a document store it cannot read with 503
+// storage_unavailable, which is a *TypedPolicyRefusal too
 // (getaxonflow/axonflow-enterprise#4255).
 func (c *AxonFlowClient) ActiveTypedPolicy(ctx context.Context) (*ActiveTypedPolicy, error) {
 	resp, body, err := c.sendTypedPolicy(ctx, http.MethodGet, "/active", nil)
