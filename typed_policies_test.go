@@ -293,6 +293,20 @@ func TestTheActivationCarriesTheOmissionReport(t *testing.T) {
 	}
 }
 
+// An activation whose omission report could not be produced says why, and
+// carries no report.
+func TestAnActivationWhoseOmissionReportIsUnavailableSaysWhy(t *testing.T) {
+	c, _ := typedPolicyServer(t, 200, nil, `{"success":true,"activation":{"digest":"sha256:abc"},
+		"template_omissions_unavailable":"the organization template could not be read"}`)
+	activation, err := c.ActivateTypedPolicy(context.Background(), typedPolicyDigest, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activation.TemplateOmissions != nil || activation.TemplateOmissionsUnavailable != "the organization template could not be read" {
+		t.Errorf("activation %+v", activation)
+	}
+}
+
 // A tier refusal names the policy that crossed the ceiling; an outage refusal
 // (with Retry-After) names none.
 func TestATierRefusalNamesThePolicyThatCrossedIt(t *testing.T) {
