@@ -76,7 +76,9 @@ type AxonFlowConfig struct {
 	// and an RFC 9745 Deprecation header once the deprecating release is
 	// tagged. It is called once per route per client (a client AsUser derives
 	// shares the record), on the goroutine that made the call. When nil, the
-	// SDK logs each deprecated route once with the standard logger.
+	// SDK logs each deprecated route once with the standard logger. A route that
+	// carries an id is reported once, by its template, e.g.
+	// "GET /api/v1/static-policies/{id}", not once per id.
 	OnRouteDeprecation func(PlatformRouteDeprecation)
 	// PEPHandshake is the PEP capability declaration this client presents on
 	// every call to a plane that reads it: Decide (and DecideAndFulfill and

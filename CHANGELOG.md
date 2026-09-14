@@ -32,7 +32,8 @@ not declare redaction, and only a release that sends the handshake can declare i
 - **`AxonFlowConfig.OnRouteDeprecation`.** When the platform marks a route a call used as
   deprecated (`X-AxonFlow-Removed-In` or an RFC 9745 `Deprecation` header, with the
   successor from `Link: <...>; rel="successor-version"`), the SDK reports it once per
-  route: to this callback when it is set, otherwise to the standard logger. From v11.0.0
+  route (a route that carries an id once, by its template, e.g.
+  `GET /api/v1/static-policies/{id}`): to this callback when it is set, otherwise to the standard logger. From v11.0.0
   the legacy static- and dynamic-policy reads carry it.
 - **The PEP capability handshake (axonflow-enterprise#3746).** An enforcement point
   declares the obligation types and schema versions it can discharge with `NewPEPHandshake`,

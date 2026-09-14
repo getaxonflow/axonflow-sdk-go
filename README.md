@@ -1178,7 +1178,9 @@ v11.1. Every response from them carries `X-AxonFlow-Removed-In: v11.1` and a
 successor `Link` naming `/api/v1/typed-policies`, plus an RFC 9745
 `Deprecation` header once v11.0.0 is tagged, and the client reports each such
 route once through
-`AxonFlowConfig.OnRouteDeprecation` (or logs it once when that is unset).
+`AxonFlowConfig.OnRouteDeprecation` (or logs it once when that is unset). A route
+that carries an id is reported once, by its template (for example
+`GET /api/v1/static-policies/{id}`), not once per id.
 
 - **Policy simulation.** `SimulatePolicies`, `GetPolicyImpactReport` and
   `DetectPolicyConflicts` are deprecated. Each keeps answering until v11.1; on a
