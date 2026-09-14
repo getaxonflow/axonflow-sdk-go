@@ -7,14 +7,18 @@
 // fresh stack:
 //
 //  1. Nothing is active yet: ActiveTypedPolicy answers (nil, nil) from the
-//     platform's 404.
-//  2. TypedPolicyEdition reports the deployment's boundary, and
-//     TypedPolicySystem the shipped controls with their digest.
+//     platform's 404 whose reason is nothing_active, the reason it keys on.
+//  2. TypedPolicyEdition reports the deployment's boundary and names its
+//     vocabulary by digest (not a test-world fixture), and TypedPolicySystem
+//     the shipped controls with their digest.
 //  3. The document the platform's own route test proves publishable validates
 //     clean, publishes to a digest, and activates.
-//  4. ActiveTypedPolicy returns that document as the exact signed source, with
-//     the AUTHOR overwritten by the platform: the document deliberately names
-//     someone-else, and the platform signs the caller the agent resolved.
+//     The publication reports the organization template's 22 controls the
+//     document omits, and the activation reports the same.
+//  4. ActiveTypedPolicy returns that document, carrying the policies that were
+//     published, with the AUTHOR overwritten by the platform: the document
+//     deliberately names someone-else, and on Community the platform signs the
+//     Client principal of the presented credentials.
 //  5. Activating the same digest again is refused as a typed 409
 //     (activation_refused): activation promotes, and the version does not
 //     advance.
@@ -147,6 +151,10 @@ func main() {
 		edition.Catalog, edition.Root, edition.MaxDocuments, edition.Persistence, constructsEdition)
 	check(edition.Success && edition.Root == "organization", "TypedPolicyEdition reports the root")
 	check(edition.Constructs != nil, "TypedPolicyEdition reports the construct boundary")
+	fmt.Printf("  vocabulary: catalog_digest=%s registry_version=%d catalog_fixture=%v\n",
+		edition.CatalogDigest, edition.RegistryVersion, edition.CatalogFixture)
+	check(edition.CatalogDigest != "", "TypedPolicyEdition names its vocabulary by digest")
+	check(!edition.CatalogFixture, "the deployment's vocabulary is not a test-world fixture, so a document can activate against it")
 	system, err := client.TypedPolicySystem(ctx)
 	if err != nil {
 		fatal("TypedPolicySystem: %v", err)
@@ -154,6 +162,16 @@ func main() {
 	fmt.Printf("  system: root=%s version=%d digest=%s controls=%d assurance_counts=%v\n",
 		system.Root, system.Version, system.Digest, len(system.Controls), system.AssuranceCounts)
 	check(system.Digest != "" && len(system.Controls) > 0, "TypedPolicySystem returns the shipped corpus")
+	named, mandatory := 0, 0
+	for _, control := range system.Controls {
+		if control.Name != "" {
+			named++
+		}
+		if control.Mandatory {
+			mandatory++
+		}
+	}
+	fmt.Printf("  system controls: %d named, %d mandatory, of %d\n", named, mandatory, len(system.Controls))
 
 	fmt.Println("== validate, publish, activate")
 	validation, err := client.ValidateTypedPolicy(ctx, document, fixtures)
@@ -168,12 +186,21 @@ func main() {
 	}
 	fmt.Printf("  publish: digest=%s version=%d\n", published.Digest, published.Version)
 	check(published.Digest != "", "PublishTypedPolicy returns the artifact digest")
+	if report := published.TemplateOmissions; report != nil {
+		fmt.Printf("  template omissions: %d of %d: %s\n", len(report.Omitted), report.Of, strings.Join(report.Omitted, ", "))
+	} else {
+		fmt.Printf("  template omissions: none (unavailable=%q)\n", published.TemplateOmissionsUnavailable)
+	}
+	check(published.TemplateOmissions != nil && published.TemplateOmissions.Of == 22 && len(published.TemplateOmissions.Omitted) == 22,
+		"the publication reports the organization template's 22 controls the document omits")
 	activation, err := client.ActivateTypedPolicy(ctx, published.Digest, "sdk-go runtime proof")
 	if err != nil {
 		fatal("ActivateTypedPolicy: %v", err)
 	}
 	fmt.Printf("  activate: success=%v activation=%v\n", activation.Success, activation.Activation)
 	check(activation.Success, "ActivateTypedPolicy promotes the digest")
+	check(reflect.DeepEqual(activation.TemplateOmissions, published.TemplateOmissions),
+		"the activation reports the same omissions as the publication")
 
 	fmt.Println("== the document in force")
 	active, err = client.ActiveTypedPolicy(ctx)
@@ -183,10 +210,34 @@ func main() {
 		author, _ := metadata["author"].(map[string]any)
 		fmt.Printf("  active: document_id=%v author=%v\n", metadata["document_id"], author)
 		check(metadata["document_id"] == documentID, "ActiveTypedPolicy is the document just activated")
-		var parsed map[string]any
-		check(json.Unmarshal(active.Source, &parsed) == nil && reflect.DeepEqual(parsed, active.Document),
-			"its Source is the signed source the document parses from")
-		check(author["local"] != "someone-else", "the platform signed the caller as author, not the name in the request")
+		// The signed source carries the policies that were published: compared by
+		// id against the request, not against a parse of the same bytes.
+		ids := func(doc map[string]any) []string {
+			var out []string
+			policy, _ := doc["policy"].(map[string]any)
+			policies, _ := policy["policies"].([]any)
+			for _, p := range policies {
+				if m, ok := p.(map[string]any); ok {
+					if id, ok := m["id"].(string); ok {
+						out = append(out, id)
+					}
+				}
+			}
+			return out
+		}
+		publishedIDs := ids(document)
+		fmt.Printf("  active policy ids: %v\n", ids(active.Document))
+		check(len(publishedIDs) > 0 && reflect.DeepEqual(ids(active.Document), publishedIDs),
+			"the document in force carries the policies that were published")
+		// The author is the caller the agent stamped, never the name the request
+		// carried. On Community that caller is the API client: a Client principal
+		// in the api-credential realm, named by the client id this proof presents.
+		stamped := author["type"] != nil && author["local"] != nil && author["local"] != ""
+		if constructsEdition == "community" {
+			stamped = author["type"] == "Client" && author["qualifier"] == "axonflow-api-credential" &&
+				author["local"] == env("AXONFLOW_CLIENT_ID", "runtime-e2e")
+		}
+		check(stamped && author["local"] != "someone-else", "the platform signed the caller as author, not the name in the request")
 	}
 
 	fmt.Println("== typed refusals")
