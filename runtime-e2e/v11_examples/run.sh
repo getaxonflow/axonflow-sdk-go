@@ -37,9 +37,10 @@
 #
 #   AXONFLOW_ENDPOINT=http://localhost:8080 ./runtime-e2e/v11_examples/run.sh
 #
-# Exit codes: 0 all proofs passed; 1 a proof failed; 2 the agent is not
-# reachable, or a typed document is already active.
+# Exit codes: 0 all proofs passed; 1 a proof failed; 2 timeout is not
+# installed, the agent is not reachable, or a typed document is already active.
 set -uo pipefail
+command -v timeout > /dev/null || { echo "FAIL: this leg needs timeout (GNU coreutils; on macOS: brew install coreutils)"; exit 2; }
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ENDPOINT="${AXONFLOW_ENDPOINT:-http://localhost:8080}"
 unset AXONFLOW_CLIENT_ID AXONFLOW_CLIENT_SECRET

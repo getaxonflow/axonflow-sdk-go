@@ -19,7 +19,8 @@
 // needed (getaxonflow/axonflow-enterprise#4247). The default document is such
 // a document.
 //
-// Run it against a local stack, from any directory:
+// Run it against a local stack from the module root. Its default document is
+// embedded, so the built program runs from any directory:
 //
 //	export AXONFLOW_ENDPOINT=http://localhost:8080
 //	export AXONFLOW_CLIENT_ID=...

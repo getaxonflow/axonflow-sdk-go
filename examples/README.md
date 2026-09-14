@@ -87,10 +87,11 @@ leave both unset.
 
 ### 5. Typed Policy Authoring (`examples/typed_policies/`)
 
-Authoring policy as a typed document against a v11.0.0 platform. It runs from
-any directory: the document it validates and publishes is embedded in it (a
-byte-for-byte copy of `testdata/typed_policy_publish_body.json`), unless
-`AXONFLOW_TYPED_POLICY_BODY` names another file:
+Authoring policy as a typed document against a v11.0.0 platform. The document
+it validates and publishes is embedded in it (a byte-for-byte copy of
+`testdata/typed_policy_publish_body.json`) unless `AXONFLOW_TYPED_POLICY_BODY`
+names another file, so the built program runs from any directory. From the
+module root:
 
 ```bash
 go run ./examples/typed_policies

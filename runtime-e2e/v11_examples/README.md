@@ -40,4 +40,4 @@ Community on the application database role, on a fresh stack:
 AXONFLOW_ENDPOINT=http://localhost:8080 ./runtime-e2e/v11_examples/run.sh
 ```
 
-It leaves `AXONFLOW_CLIENT_ID` and `AXONFLOW_CLIENT_SECRET` unset: `Decide` names the client id as the caller's organization, and on Community the organization is the deployment's (`ORG_ID`). It exits 0 when every assertion passes, 1 when one fails, and 2 when the agent is not reachable or a typed document is already active. It changes the organization's active policy.
+It leaves `AXONFLOW_CLIENT_ID` and `AXONFLOW_CLIENT_SECRET` unset: `Decide` names the client id as the caller's organization, and on Community the organization is the deployment's (`ORG_ID`). It exits 0 when every assertion passes, 1 when one fails, and 2 when `timeout` (GNU coreutils) is not installed, the agent is not reachable, or a typed document is already active. It changes the organization's active policy.

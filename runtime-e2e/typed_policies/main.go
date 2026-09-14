@@ -13,7 +13,7 @@
 //     the shipped controls with their digest.
 //  3. The document the platform's own route test proves publishable validates
 //     clean, publishes to a digest, and activates.
-//     The publication reports the organization template's 22 controls the
+//     The publication reports every organization template control the
 //     document omits, and the activation reports the same.
 //  4. ActiveTypedPolicy returns that document, carrying the policies that were
 //     published, with the AUTHOR overwritten by the platform: the document

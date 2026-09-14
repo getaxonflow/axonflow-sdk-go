@@ -536,8 +536,9 @@ system, err := client.TypedPolicySystem(ctx)                           // the pl
 - **Refusals are typed.** Every refusal is a `*TypedPolicyRefusal` with the HTTP
   `Status`, the platform's `Reason` (such as `publication_refused`,
   `activation_refused` or `tier_limit`), any `Findings`, the `Policy` a tier
-  refusal names, and `RetryAfter` when the refusal is retryable; a 401 is the client's usual error. On an edition
-  with separation of duties, publishing refuses with the finding code
+  refusal names, and `RetryAfter` when the refusal is retryable; a 401 is the
+  client's usual error. On an edition with separation of duties, publishing
+  refuses with the finding code
   `APPROVER_IS_AUTHOR`: the route names no approver, and such a deployment
   approves in the customer portal.
 - **The document is the authoring model itself,** a `map[string]any` rather
