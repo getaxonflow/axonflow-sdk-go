@@ -1,6 +1,6 @@
 # v11_examples
 
-Real-stack proof that the two v11 examples run as the README says. `run.sh` builds `examples/pep_handshake` and `examples/typed_policies` from this tree and runs them against a live Community agent in the README's order, the handshake example first, from the repository root with no body file. Nothing is mocked.
+Real-stack proof that the two v11 examples run as the README says. `run.sh` builds `examples/pep_handshake` and `examples/typed_policies` from this tree and runs them against a live Community agent in the README's order, the handshake example first. Every run starts from a temporary directory outside the tree, with no body file: `typed_policies` embeds its default document. Nothing is mocked.
 
 ## Precondition
 
@@ -14,13 +14,16 @@ Before any run, `curl` asks `GET /api/v1/typed-policies/active` and requires `40
 | 2. `typed_policies` without publishing, the README's default | exits 0; `ActiveTypedPolicy` reads the platform's `nothing_active` as nothing active |
 | 3. `typed_policies` with `AXONFLOW_TYPED_POLICY_PUBLISH=1` | exits 0; prints the publication's template-omission report before it activates; the document is published and activated |
 | 4. `typed_policies` asked to publish a document the save-time checks reject | exits 1, printing the platform's typed `422 document_refused`: an example that was asked to publish and could not must not report success |
-| 5. `pep_handshake` again, after the activation | printed as an observation, not asserted (below) |
+| 5. `typed_policies` publishing the same document again | the publication is accepted, and the activation is refused as a typed `409 activation_refused`; exits 1, since an example asked to activate and refused must not report success either |
+| 6. `pep_handshake` again, after the activation | printed as an observation, not asserted (below) |
 
-Run 4 publishes a copy of `testdata/typed_policy_publish_body.json` with one action the registry does not contain (the same edit `runtime-e2e/typed_policies` makes), written to a temporary directory. It is refused before anything is admitted, so it changes nothing on the stack.
+Run 4 publishes a copy of `testdata/typed_policy_publish_body.json` with one action the registry does not contain (the same edit `runtime-e2e/typed_policies` makes), written to the temporary directory. It is refused before anything is admitted, so it changes nothing on the stack.
 
-## Why the fifth run is an observation
+Run 5 is refused because activation promotes. An artifact's digest covers its publication time, so publishing the same document again produces a new artifact, but its document version is the active one's, and a version that does not advance is not promoted.
 
-After a document with an organization-scope constraint is activated, a decide that does not supply the attribute the constraint conditions on is denied fail-closed with reasons ["unknown_constraint"]; supply the attribute or run this example on a fresh stack. From v11.0.0 the deny's first reason is that code, followed by one naming each constraint it could not evaluate and the attribute it needed (getaxonflow/axonflow-enterprise#4247). The example's default document is such a document, so the fifth run shows that deny. It is the platform's by-design answer, not the SDK's, so this leg prints it rather than pinning it. It is why the README runs the handshake example first.
+## Why the sixth run is an observation
+
+After a document with an organization-scope constraint is activated, a decide that does not supply the attribute the constraint conditions on is denied fail-closed with reasons ["unknown_constraint"]; supply the attribute or run this example on a fresh stack. From v11.0.0 the deny's first reason is that code, followed by one naming each constraint it could not evaluate and the attribute it needed (getaxonflow/axonflow-enterprise#4247). The example's default document is such a document, so the sixth run shows that deny. It is the platform's by-design answer, not the SDK's, so this leg prints it rather than pinning it. It is why the README runs the handshake example first.
 
 A stack built before #4247 shows only the bare `["unknown_constraint"]`.
 

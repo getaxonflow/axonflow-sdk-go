@@ -32,9 +32,9 @@ not declare redaction, and only a release that sends the handshake can declare i
 - **`AxonFlowConfig.OnRouteDeprecation`.** When the platform marks a route a call used as
   deprecated (`X-AxonFlow-Removed-In` or an RFC 9745 `Deprecation` header, with the
   successor from `Link: <...>; rel="successor-version"`), the SDK reports it once per
-  route (a route that carries an id once, by its template, e.g.
-  `GET /api/v1/static-policies/{id}`): to this callback when it is set, otherwise to the standard logger. From v11.0.0
-  the legacy static- and dynamic-policy reads carry it.
+  route (a route that carries an id is reported once, by its template, for example
+  `GET /api/v1/static-policies/{id}`): to this callback when it is set, otherwise to the
+  standard logger. From v11.0.0 the legacy static- and dynamic-policy reads carry it.
 - **The PEP capability handshake (axonflow-enterprise#3746).** An enforcement point
   declares the obligation types and schema versions it can discharge with `NewPEPHandshake`,
   presented as `X-Axonflow-PEP-Handshake` on every call to a plane that reads it: `Decide` (and
@@ -54,15 +54,14 @@ not declare redaction, and only a release that sends the handshake can declare i
   `ActivateTypedPolicy`, `ActiveTypedPolicy` and `TypedPolicySystem` reach the six routes the
   agent proxies under `/api/v1/typed-policies`. Every refusal except a 401 is a
   `*TypedPolicyRefusal` carrying the status, the platform's reason, any findings and
-  `Retry-After`; `ActiveTypedPolicy` returns `(nil, nil)` only for the platform's `nothing_active`. Rolling back
-  and withdrawing are customer portal operations the agent does not proxy, so the SDK has no
-  method for either.
-- **Examples for the v11.0.0 platform.** `examples/typed_policies` authors policy as a typed
-  document (it publishes and activates only when asked), and `examples/pep_handshake`
-  declares an enforcement point's capabilities for the client and for one call. Both exit
+  `Retry-After`. Rolling back and withdrawing are customer portal operations the agent does
+  not proxy, so the SDK has no method for either.
+- **Examples for the v11.0.0 platform.** `examples/pep_handshake` declares an enforcement
+  point's capabilities for the client and for one call, and `examples/typed_policies` authors
+  policy as a typed document (it publishes and activates only when asked). Both exit
   non-zero when a step fails, and CI builds them. The README gains a "v11.0.0 platform"
   section naming what each v11 surface needs from the platform.
-- **v11 parity for typed policy authoring (axonflow-enterprise#3746, D6).** The typed answers
+- **v11 parity for typed policy authoring (axonflow-enterprise#3746).** The typed answers
   carry every member the platform sends: `TypedPolicyRefusal.Policy` (the policy a tier refusal
   names), `TypedAuthoringEdition`'s `CatalogDigest`, `RegistryVersion` and `CatalogFixture`, a
   `TemplateOmissionReport` (`TemplateOmissions` and `TemplateOmissionsUnavailable` on the
@@ -71,8 +70,9 @@ not declare redaction, and only a release that sends the handshake can declare i
   before v11.0.0 or an endpoint that is not an agent, is a `*TypedPolicyRefusal` with status
   404. An SDK release from before this change read any 404 as nothing active, and the platform
   currently also answers `nothing_active` for a store read failure (axonflow-enterprise#4255).
-  `examples/typed_policies` prints the publication's template-omission report before it
-  activates and exits non-zero when a publication or activation it asked for is refused;
+  `examples/typed_policies` embeds its default document, so it runs from any directory,
+  prints the publication's template-omission report before it activates, and exits non-zero
+  when a publication or activation it asked for is refused;
   `examples/pep_handshake` prints each decision's reasons; the examples README runs the
   handshake example first. `runtime-e2e/v11_examples` runs both examples on a live Community
   stack.

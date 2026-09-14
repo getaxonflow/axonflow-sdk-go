@@ -171,6 +171,11 @@ func withRouteTemplate(req *http.Request, template string) *http.Request {
 
 // routeOf is the route a request reports as: its template when the call was
 // built for one, otherwise its path.
+// routeWithID fills the {id} in a route template with id.
+func routeWithID(template, id string) string {
+	return strings.Replace(template, "{id}", id, 1)
+}
+
 func routeOf(req *http.Request) string {
 	if template, ok := req.Context().Value(routeTemplateKey{}).(string); ok && template != "" {
 		return template

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runtime proof: examples/pep_handshake and examples/typed_policies, built from
 # this tree, against a LIVE Community agent, in the order the README gives:
-# the handshake example first. NO mocks. The examples run from the repository
-# root with no body file, as the README runs them.
+# the handshake example first. NO mocks. The examples run from a temporary
+# directory outside the tree with no body file: typed_policies embeds its
+# default document.
 #
 # Precondition, checked with curl rather than the SDK: no typed document is
 # active (GET /api/v1/typed-policies/active answers 404 nothing_active).
@@ -19,10 +20,17 @@
 #      document is published and activated.
 #   4. typed_policies asked to publish a document the save-time checks reject:
 #      exits 1, printing the platform's typed 422 document_refused.
-#   5. pep_handshake again: printed as an OBSERVATION, not asserted. After run
+#   5. typed_policies publishing the same document again: the publication is a
+#      new artifact of the same document version, so the activation is refused
+#      (a typed 409 activation_refused, since activation promotes), and the
+#      example exits 1.
+#   6. pep_handshake again: printed as an OBSERVATION, not asserted. After run
 #      3 activates a document with an organization-scope constraint, a decide
 #      that does not supply the attribute the constraint conditions on is
-#      denied fail-closed with reasons ["unknown_constraint"].
+#      denied fail-closed with reasons ["unknown_constraint"]. From v11.0.0 the
+#      deny's first reason is that code, followed by one naming each constraint
+#      it could not evaluate and the attribute it needed
+#      (getaxonflow/axonflow-enterprise#4247).
 #
 # Credentials are left unset: Decide names the client id as the caller's
 # organization, and on Community the organization is the deployment's.
@@ -33,26 +41,26 @@
 # reachable, or a typed document is already active.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT" || exit 1
 ENDPOINT="${AXONFLOW_ENDPOINT:-http://localhost:8080}"
 unset AXONFLOW_CLIENT_ID AXONFLOW_CLIENT_SECRET
 export AXONFLOW_ENDPOINT="$ENDPOINT" AXONFLOW_TELEMETRY=off
 
-if ! timeout 60 bash -c "until curl -sf ${ENDPOINT}/health > /dev/null; do sleep 2; done"; then
+if ! timeout 60 bash -c "until curl -sf --max-time 5 ${ENDPOINT}/health > /dev/null; do sleep 2; done"; then
   echo "FAIL: agent at ${ENDPOINT} did not become healthy within 60s"
   exit 2
 fi
 
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/v11-examples.XXXXXX")"
+trap 'rm -rf "$OUT"' EXIT
 # Built first and outside the timeouts, so a cold build does not count against
 # a run.
-go build -o "$OUT/pep_handshake" ./examples/pep_handshake && go build -o "$OUT/typed_policies" ./examples/typed_policies || {
+(cd "$ROOT" && go build -o "$OUT/pep_handshake" ./examples/pep_handshake && go build -o "$OUT/typed_policies" ./examples/typed_policies) || {
   echo "FAIL: the examples did not build"
   exit 1
 }
 
 echo "=== precondition: no typed document is active"
-code=$(curl -s -o "$OUT/active.json" -w '%{http_code}' "${ENDPOINT}/api/v1/typed-policies/active")
+code=$(curl -s --max-time 10 -o "$OUT/active.json" -w '%{http_code}' "${ENDPOINT}/api/v1/typed-policies/active")
 reason=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("reason",""))' "$OUT/active.json" 2>/dev/null || true)
 if [ "$code" != 404 ] || [ "$reason" != nothing_active ]; then
   echo "FAIL: a typed document is already active, or the route did not answer nothing_active (HTTP $code, reason '$reason'): run this leg on a fresh stack"
@@ -64,12 +72,12 @@ FAILURES=0
 check() {
   if [ "$1" = ok ]; then echo "PASS: $2"; else echo "FAIL: $2"; FAILURES=$((FAILURES + 1)); fi
 }
-# Runs one built example from the repository root with extra environment,
+# Runs one built example from $OUT, outside the tree, with extra environment,
 # prints its output, and returns its exit code.
 run_example() {
   local example=$1 log=$2
   shift 2
-  env "$@" timeout 120 "$OUT/$example" > "$log" 2>&1
+  (cd "$OUT" && env "$@" timeout 120 "./$example") > "$log" 2>&1
   local rc=$?
   sed 's/^/  | /' "$log"
   return "$rc"
@@ -113,13 +121,21 @@ json.dump(body, open(sys.argv[2], "w"))
 PY
 rc=0; run_example typed_policies "$OUT/4.log" \
   AXONFLOW_TYPED_POLICY_PUBLISH=1 AXONFLOW_TYPED_POLICY_BODY="$OUT/refused_body.json" || rc=$?
-check "$([ "$rc" = 1 ] && echo ok)" "typed_policies exits 1 when the publish it asked for is refused (exit $rc)"
+check "$([ "$rc" = 1 ] && echo ok)" "typed_policies exits 1 when the publication it asked for is refused (exit $rc)"
 check "$(grep -q '^refused: HTTP 422 document_refused: ' "$OUT/4.log" && echo ok)" \
   "it prints the platform's typed 422 document_refused"
 
-echo "=== 5. OBSERVATION, not asserted: pep_handshake after the activation"
-run_example pep_handshake "$OUT/5.log" || true
-echo "  observed: $(grep -m1 -oE '^verdict=.*' "$OUT/5.log" || echo 'no verdict printed')"
+echo "=== 5. typed_policies publishing the same document again"
+rc=0; run_example typed_policies "$OUT/5.log" AXONFLOW_TYPED_POLICY_PUBLISH=1 || rc=$?
+check "$([ "$rc" = 1 ] && echo ok)" "typed_policies exits 1 when the activation it asked for is refused (exit $rc)"
+check "$(grep -q '^published ' "$OUT/5.log" && echo ok)" \
+  "the second publication is accepted: a new artifact of the same document version"
+check "$(grep -q '^activation refused: HTTP 409 activation_refused: ' "$OUT/5.log" && echo ok)" \
+  "it prints the platform's typed 409 activation_refused"
+
+echo "=== 6. OBSERVATION, not asserted: pep_handshake after the activation"
+run_example pep_handshake "$OUT/6.log" || true
+echo "  observed: $(grep -m1 -oE '^verdict=.*' "$OUT/6.log" || echo 'no verdict printed')"
 
 if [ "$FAILURES" -gt 0 ]; then
   echo

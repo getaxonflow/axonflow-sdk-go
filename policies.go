@@ -380,13 +380,19 @@ type GetEffectiveRequest = EffectivePoliciesOptions
 
 // orchestratorPolicyRequest makes an HTTP request to the Orchestrator policy API (for dynamic policies)
 func (c *AxonFlowClient) orchestratorPolicyRequest(method, path string, body interface{}, result interface{}) error {
-	return c.orchestratorPolicyRequestAt(method, "", path, body, result)
+	return c.orchestratorPolicySend(method, "", path, body, result)
 }
 
-// orchestratorPolicyRequestAt is orchestratorPolicyRequest for a path that carries an id: template is the route
-// it was built for (for example /api/v1/static-policies/{id}), so the
-// once-per-route deprecation record keys on the route, not on each id.
-func (c *AxonFlowClient) orchestratorPolicyRequestAt(method, template, path string, body interface{}, result interface{}) error {
+// orchestratorPolicyRequestAt is orchestratorPolicyRequest for a route that
+// carries an id, built from its template as policyRequestAt builds it (for
+// example /api/v1/dynamic-policies/{id}).
+func (c *AxonFlowClient) orchestratorPolicyRequestAt(method, template, id string, body interface{}, result interface{}) error {
+	return c.orchestratorPolicySend(method, template, routeWithID(template, id), body, result)
+}
+
+// orchestratorPolicySend sends an Orchestrator policy API request; template is
+// the route an id-bearing path was built from, or empty.
+func (c *AxonFlowClient) orchestratorPolicySend(method, template, path string, body interface{}, result interface{}) error {
 	var reqBody io.Reader
 	if body != nil {
 		bodyBytes, err := json.Marshal(body)
@@ -446,13 +452,21 @@ func (c *AxonFlowClient) orchestratorPolicyRequestAt(method, template, path stri
 
 // policyRequest makes an HTTP request to the policy API
 func (c *AxonFlowClient) policyRequest(method, path string, body interface{}, result interface{}) error {
-	return c.policyRequestAt(method, "", path, body, result)
+	return c.policySend(method, "", path, body, result)
 }
 
-// policyRequestAt is policyRequest for a path that carries an id: template is the route
-// it was built for (for example /api/v1/static-policies/{id}), so the
-// once-per-route deprecation record keys on the route, not on each id.
-func (c *AxonFlowClient) policyRequestAt(method, template, path string, body interface{}, result interface{}) error {
+// policyRequestAt is policyRequest for a route that carries an id: template is
+// the route with {id} where the id goes (for example
+// /api/v1/static-policies/{id}), and the path is built from it, so the two
+// cannot disagree and the once-per-route deprecation record keys on the route,
+// not on each id. The id is not escaped (getaxonflow/axonflow-sdk-go#238).
+func (c *AxonFlowClient) policyRequestAt(method, template, id string, body interface{}, result interface{}) error {
+	return c.policySend(method, template, routeWithID(template, id), body, result)
+}
+
+// policySend sends a policy API request; template is the route an id-bearing
+// path was built from, or empty.
+func (c *AxonFlowClient) policySend(method, template, path string, body interface{}, result interface{}) error {
 	var reqBody io.Reader
 	if body != nil {
 		bodyBytes, err := json.Marshal(body)
@@ -678,7 +692,7 @@ func (c *AxonFlowClient) GetStaticPolicy(id string) (*StaticPolicy, error) {
 	}
 
 	var policy StaticPolicy
-	if err := c.policyRequestAt("GET", "/api/v1/static-policies/{id}", "/api/v1/static-policies/"+id, nil, &policy); err != nil {
+	if err := c.policyRequestAt("GET", "/api/v1/static-policies/{id}", id, nil, &policy); err != nil {
 		return nil, err
 	}
 
@@ -711,7 +725,7 @@ func (c *AxonFlowClient) UpdateStaticPolicy(id string, req *UpdateStaticPolicyRe
 	}
 
 	var policy StaticPolicy
-	if err := c.policyRequestAt("PUT", "/api/v1/static-policies/{id}", "/api/v1/static-policies/"+id, req, &policy); err != nil {
+	if err := c.policyRequestAt("PUT", "/api/v1/static-policies/{id}", id, req, &policy); err != nil {
 		return nil, err
 	}
 
@@ -724,7 +738,7 @@ func (c *AxonFlowClient) DeleteStaticPolicy(id string) error {
 		log.Printf("[AxonFlow] Deleting static policy: %s", id)
 	}
 
-	return c.policyRequestAt("DELETE", "/api/v1/static-policies/{id}", "/api/v1/static-policies/"+id, nil, nil)
+	return c.policyRequestAt("DELETE", "/api/v1/static-policies/{id}", id, nil, nil)
 }
 
 // ToggleStaticPolicy toggles a static policy's enabled status.
@@ -735,7 +749,7 @@ func (c *AxonFlowClient) ToggleStaticPolicy(id string, enabled bool) (*StaticPol
 
 	body := map[string]bool{"enabled": enabled}
 	var policy StaticPolicy
-	if err := c.policyRequestAt("PATCH", "/api/v1/static-policies/{id}", "/api/v1/static-policies/"+id, body, &policy); err != nil {
+	if err := c.policyRequestAt("PATCH", "/api/v1/static-policies/{id}", id, body, &policy); err != nil {
 		return nil, err
 	}
 
@@ -797,7 +811,7 @@ func (c *AxonFlowClient) GetStaticPolicyVersions(id string) ([]PolicyVersion, er
 		Versions []PolicyVersion `json:"versions"`
 		Count    int             `json:"count"`
 	}
-	if err := c.policyRequestAt("GET", "/api/v1/static-policies/{id}/versions", "/api/v1/static-policies/"+id+"/versions", nil, &response); err != nil {
+	if err := c.policyRequestAt("GET", "/api/v1/static-policies/{id}/versions", id, nil, &response); err != nil {
 		return nil, err
 	}
 
@@ -820,7 +834,7 @@ func (c *AxonFlowClient) CreatePolicyOverride(policyID string, req *CreatePolicy
 	}
 
 	var override PolicyOverride
-	if err := c.policyRequestAt("POST", "/api/v1/static-policies/{id}/override", "/api/v1/static-policies/"+policyID+"/override", req, &override); err != nil {
+	if err := c.policyRequestAt("POST", "/api/v1/static-policies/{id}/override", policyID, req, &override); err != nil {
 		return nil, err
 	}
 
@@ -838,7 +852,7 @@ func (c *AxonFlowClient) DeletePolicyOverride(policyID string) error {
 		log.Printf("[AxonFlow] Deleting policy override for: %s", policyID)
 	}
 
-	return c.policyRequestAt("DELETE", "/api/v1/static-policies/{id}/override", "/api/v1/static-policies/"+policyID+"/override", nil, nil)
+	return c.policyRequestAt("DELETE", "/api/v1/static-policies/{id}/override", policyID, nil, nil)
 }
 
 // ListPolicyOverrides lists all active policy overrides (Enterprise).
@@ -900,7 +914,7 @@ func (c *AxonFlowClient) GetDynamicPolicy(id string) (*DynamicPolicy, error) {
 	}
 
 	var response dynamicPolicyResponse
-	if err := c.orchestratorPolicyRequestAt("GET", "/api/v1/dynamic-policies/{id}", "/api/v1/dynamic-policies/"+id, nil, &response); err != nil {
+	if err := c.orchestratorPolicyRequestAt("GET", "/api/v1/dynamic-policies/{id}", id, nil, &response); err != nil {
 		return nil, err
 	}
 
@@ -935,7 +949,7 @@ func (c *AxonFlowClient) UpdateDynamicPolicy(id string, req *UpdateDynamicPolicy
 	}
 
 	var response dynamicPolicyResponse
-	if err := c.orchestratorPolicyRequestAt("PUT", "/api/v1/dynamic-policies/{id}", "/api/v1/dynamic-policies/"+id, req, &response); err != nil {
+	if err := c.orchestratorPolicyRequestAt("PUT", "/api/v1/dynamic-policies/{id}", id, req, &response); err != nil {
 		return nil, err
 	}
 
@@ -949,7 +963,7 @@ func (c *AxonFlowClient) DeleteDynamicPolicy(id string) error {
 		log.Printf("[AxonFlow] Deleting dynamic policy: %s", id)
 	}
 
-	return c.orchestratorPolicyRequestAt("DELETE", "/api/v1/dynamic-policies/{id}", "/api/v1/dynamic-policies/"+id, nil, nil)
+	return c.orchestratorPolicyRequestAt("DELETE", "/api/v1/dynamic-policies/{id}", id, nil, nil)
 }
 
 // ToggleDynamicPolicy toggles a dynamic policy's enabled status.
@@ -961,7 +975,7 @@ func (c *AxonFlowClient) ToggleDynamicPolicy(id string, enabled bool) (*DynamicP
 
 	body := map[string]bool{"enabled": enabled}
 	var response dynamicPolicyResponse
-	if err := c.orchestratorPolicyRequestAt("PUT", "/api/v1/dynamic-policies/{id}", "/api/v1/dynamic-policies/"+id, body, &response); err != nil {
+	if err := c.orchestratorPolicyRequestAt("PUT", "/api/v1/dynamic-policies/{id}", id, body, &response); err != nil {
 		return nil, err
 	}
 

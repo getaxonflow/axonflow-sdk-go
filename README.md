@@ -449,14 +449,21 @@ declares `h` for the calls made with that context, in place of the client's;
   organization's redact override from v11.0.0 (below). An empty, non-nil
   capability slice declares that the enforcement point discharges nothing; a nil
   one is refused.
-- **What a declaration changes.** On an Enterprise deployment, an allow verdict
-  carrying a mandatory obligation the declared set cannot discharge becomes a
-  deny, so declare every obligation your enforcement point carries out, and only
-  those. A Community deployment records the declaration without denying on it,
-  and drops any capability in a family it does not issue. From v11.0.0, on both
-  editions, `Decide` under an organization's redact override refuses a caller
-  that does not declare redaction (`field_redact` at version 1) as
-  `unsupported_obligation`, where v10 allowed it with a `redact_pii` obligation.
+- **Which edition refuses what.** From v11.0.0, on every edition, the engine
+  refuses with `unsupported_obligation` a mandatory obligation the caller's
+  declaration cannot discharge, and a caller that presents no declaration can
+  discharge none: `Decide` under an organization's redact override refuses a
+  caller that does not declare redaction (`field_redact` at version 1), where v10
+  allowed it with a `redact_pii` obligation, so on Community too a caller that
+  declares `field_mask` but not `field_redact` is refused there. What only
+  Enterprise adds happens at the handler, for an enforcement point that
+  presented a declaration: an allow carrying a mandatory obligation outside the
+  declared set becomes a deny, a refusal names the capability the declaration
+  lacks, and on the MCP check-input round-trip a redaction the declaration
+  cannot discharge is refused rather than handed back masked. So declare every
+  obligation your enforcement point carries out, and only those. A Community
+  deployment drops a declared capability in a family its edition does not
+  issue, counts it, and lets the request proceed.
 - **Refused before it is sent.** `NewPEPHandshake` applies the platform's own
   rules and returns a `*PEPHandshakeError` naming the member at fault (`Pointer`
   is `/pep_id`, `/audience` or `/capabilities`), instead of the first governed
@@ -511,12 +518,12 @@ system, err := client.TypedPolicySystem(ctx)                           // the pl
 
 - **Activation replaces the organization template.** Activating a document that
   omits the organization template's controls removes those controls for the
-  organization (PRD v11 §1.4). The template's 22 controls carry the
-  destructive-command blocks, DROP and TRUNCATE prevention and the blocking
-  SQL-injection rows. `PublishTypedPolicy` and `ActivateTypedPolicy` report
-  which ones a document omits as `TemplateOmissions`, and the example prints
-  that report. The publish fixture the example uses is a minimal example, not
-  a starting point for production: it omits all 22.
+  organization. The template's controls carry the destructive-command blocks,
+  DROP and TRUNCATE prevention and the blocking SQL-injection rows.
+  `PublishTypedPolicy` and `ActivateTypedPolicy` report which ones a document
+  omits as `TemplateOmissions`, and the example prints that report. The publish
+  fixture the example uses is a minimal example, not a starting point for
+  production: it omits all of them.
 - **Activation promotes.** A digest whose version does not advance past the
   active one is refused. Rolling back to an earlier document, and withdrawing
   the active one, are operations of the customer portal behind its session; the

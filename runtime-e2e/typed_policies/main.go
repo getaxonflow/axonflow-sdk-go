@@ -172,6 +172,8 @@ func main() {
 		}
 	}
 	fmt.Printf("  system controls: %d named, %d mandatory, of %d\n", named, mandatory, len(system.Controls))
+	check(named > 0, "TypedPolicySystem reads each control's name")
+	check(mandatory > 0, "TypedPolicySystem reads which controls are mandatory")
 
 	fmt.Println("== validate, publish, activate")
 	validation, err := client.ValidateTypedPolicy(ctx, document, fixtures)
@@ -191,8 +193,9 @@ func main() {
 	} else {
 		fmt.Printf("  template omissions: none (unavailable=%q)\n", published.TemplateOmissionsUnavailable)
 	}
-	check(published.TemplateOmissions != nil && published.TemplateOmissions.Of == 22 && len(published.TemplateOmissions.Omitted) == 22,
-		"the publication reports the organization template's 22 controls the document omits")
+	// The document names none of the template's controls, so it omits every one.
+	check(published.TemplateOmissions != nil && published.TemplateOmissions.Of > 0 && len(published.TemplateOmissions.Omitted) == published.TemplateOmissions.Of,
+		"the publication reports every organization template control the document omits")
 	activation, err := client.ActivateTypedPolicy(ctx, published.Digest, "sdk-go runtime proof")
 	if err != nil {
 		fatal("ActivateTypedPolicy: %v", err)

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// The v11.0.0 deprecations: the three simulation methods keep working until
+// The v11.0.0 deprecations: the three simulation methods keep answering until
 // v11.1 and are reported once per route with the platform's own signal, and the
 // retired per-policy override writes return the typed frozen error.
 
