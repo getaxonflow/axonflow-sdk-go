@@ -1182,7 +1182,7 @@ fmt.Printf("Result: %v\n", resp.Data)
 ### v11.0.0 deprecations
 
 A v11.0.0 platform deprecates its legacy policy routes and removes them in
-v11.1. Every response from them carries `X-AxonFlow-Removed-In: v11.1` and a
+v12.0. Every response from them carries `X-AxonFlow-Removed-In: v12.0` and a
 successor `Link` naming `/api/v1/typed-policies`, plus an RFC 9745
 `Deprecation` header once v11.0.0 is tagged, and the client reports each such
 route once through
@@ -1191,7 +1191,7 @@ that carries an id is reported once, by its template (for example
 `GET /api/v1/static-policies/{id}`), not once per id.
 
 - **Policy simulation.** `SimulatePolicies`, `GetPolicyImpactReport` and
-  `DetectPolicyConflicts` are deprecated. Each keeps answering until v11.1; on a
+  `DetectPolicyConflicts` are deprecated. Each keeps answering until v12.0; on a
   v11.0.0 platform its result comes from the legacy engine, which no longer
   decides, so it does not predict what the platform enforces. Policy is authored
   and tested through the typed policy methods (see

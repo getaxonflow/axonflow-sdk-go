@@ -17,7 +17,7 @@ import (
 // stampEveryRoute answers every path with the removal stamp a v11 platform puts
 // on its legacy policy routes, whatever the id, and a body every method reads.
 func stampEveryRoute(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("X-AxonFlow-Removed-In", "v11.1")
+	w.Header().Set("X-AxonFlow-Removed-In", "v12.0")
 	writeJSON(w, http.StatusOK, `{}`)
 }
 
