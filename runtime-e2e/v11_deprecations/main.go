@@ -7,7 +7,7 @@
 //
 //  1. SimulatePolicies and DetectPolicyConflicts still work, and each route is
 //     reported exactly once through AxonFlowConfig.OnRouteDeprecation with the
-//     platform's own signal: X-AxonFlow-Removed-In v11.1 and the successor
+//     platform's own signal: X-AxonFlow-Removed-In v12.0 and the successor
 //     /api/v1/typed-policies from the Link. The platform adds an RFC 9745
 //     Deprecation date ("@<unix seconds>") once v11.0.0 is tagged and omits
 //     it until then, so the leg accepts it absent or well-formed.
@@ -124,7 +124,7 @@ func main() {
 			return false
 		}
 		d := got[0]
-		return d.Route == route && d.RemovedIn == "v11.1" && d.Successor == "/api/v1/typed-policies" &&
+		return d.Route == route && d.RemovedIn == "v12.0" && d.Successor == "/api/v1/typed-policies" &&
 			(d.Deprecation == "" || deprecationDate.MatchString(d.Deprecation))
 	}
 
@@ -146,7 +146,7 @@ func main() {
 		} else {
 			check(err == nil, leg.name+" still works")
 		}
-		check(signalled(got, leg.route), leg.name+" is reported deprecated once, with v11.1 and the typed successor")
+		check(signalled(got, leg.route), leg.name+" is reported deprecated once, with v12.0 and the typed successor")
 		again, _ := reportedBy(leg.call)
 		check(len(again) == 0, leg.name+" is not reported a second time")
 	}

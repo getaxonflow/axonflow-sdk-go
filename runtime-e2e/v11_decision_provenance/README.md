@@ -2,6 +2,8 @@
 
 Real-stack proof that the SDK surfaces the v11.0.0 platform wire:
 
+Requires a v11.1.0 or later platform: a v11.0.0 platform stamps `X-AxonFlow-Removed-In: v11.1`, and this leg reds against it.
+
 - decision provenance on `Decide`, the gateway pre-check and MCP check-output;
 - a deprecated route reported through `AxonFlowConfig.OnRouteDeprecation` on a legacy policy read;
 - `LegacyPolicyWriteFrozenError` on a legacy policy write.

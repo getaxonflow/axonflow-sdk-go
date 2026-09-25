@@ -93,7 +93,7 @@ type PlatformRouteDeprecation struct {
 	// "GET /api/v1/static-policies/{id}".
 	Route       string
 	Successor   string // the route that replaces it, when the platform names one
-	RemovedIn   string // the release that removes it, e.g. "v11.1"
+	RemovedIn   string // the release that removes it, e.g. "v12.0"
 	Deprecation string // the RFC 9745 Deprecation value, when the platform sends one
 }
 
