@@ -2,6 +2,8 @@
 
 `main.go` calls the three policy simulation methods the SDK marks deprecated (`SimulatePolicies`, `DetectPolicyConflicts` and `GetPolicyImpactReport`) against a real v11 agent and orchestrator, and reads what `AxonFlowConfig.OnRouteDeprecation` reports. Nothing is mocked.
 
+Requires a v11.1.0 or later platform: a v11.0.0 platform stamps `X-AxonFlow-Removed-In: v11.1`, and this leg reds against it.
+
 ## What it proves
 
 1. `SimulatePolicies` and `DetectPolicyConflicts` still work. Each route is reported exactly once, with the platform's own signal: `X-AxonFlow-Removed-In: v12.0` and the successor `/api/v1/typed-policies` from the `Link`. The platform adds an RFC 9745 `Deprecation` date (`@<unix seconds>`) once v11.0.0 is tagged and omits it until then, so the leg accepts it absent or well-formed.

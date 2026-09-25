@@ -1181,9 +1181,11 @@ fmt.Printf("Result: %v\n", resp.Data)
 
 ### v11.0.0 deprecations
 
-A v11.0.0 platform deprecates its legacy policy routes and removes them in
-v12.0. Every response from them carries `X-AxonFlow-Removed-In: v12.0` and a
-successor `Link` naming `/api/v1/typed-policies`, plus an RFC 9745
+A v11.0.0 platform deprecates its legacy policy routes, and v12.0 removes
+them. Every response from them carries `X-AxonFlow-Removed-In`, naming the
+removal release (`v11.1` from a v11.0.0 platform, which announced it before
+the removal moved; `v12.0` from v11.1.0 on), and a successor `Link` naming
+`/api/v1/typed-policies`, plus an RFC 9745
 `Deprecation` header once v11.0.0 is tagged, and the client reports each such
 route once through
 `AxonFlowConfig.OnRouteDeprecation` (or logs it once when that is unset). A route

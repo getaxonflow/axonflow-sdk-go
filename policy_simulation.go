@@ -142,8 +142,9 @@ type PolicyConflictResponse struct {
 //	    result.Allowed, result.RiskScore, result.TotalPolicies)
 //
 // Deprecated: the platform deprecates POST /api/v1/policies/simulate in v11.0.0 and removes it
-// in v12.0. Every response carries X-AxonFlow-Removed-In:
-// v12.0 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
+// in v12.0. Every response carries X-AxonFlow-Removed-In (v11.1 from a v11.0.0
+// platform, v12.0 from v11.1.0 on) and a successor Link naming
+// /api/v1/typed-policies, plus an RFC 9745
 // Deprecation header once v11.0.0 is tagged, and the client reports the route
 // once through
 // AxonFlowConfig.OnRouteDeprecation. It keeps answering until v12.0; on a
@@ -186,8 +187,9 @@ func (c *AxonFlowClient) SimulatePolicies(ctx context.Context, req *SimulatePoli
 //	    report.MatchRate*100, report.BlockRate*100)
 //
 // Deprecated: the platform deprecates POST /api/v1/policies/impact-report in v11.0.0 and removes it
-// in v12.0. Every response carries X-AxonFlow-Removed-In:
-// v12.0 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
+// in v12.0. Every response carries X-AxonFlow-Removed-In (v11.1 from a v11.0.0
+// platform, v12.0 from v11.1.0 on) and a successor Link naming
+// /api/v1/typed-policies, plus an RFC 9745
 // Deprecation header once v11.0.0 is tagged, and the client reports the route
 // once through
 // AxonFlowConfig.OnRouteDeprecation. Policy is authored and tested
@@ -226,8 +228,9 @@ func (c *AxonFlowClient) GetPolicyImpactReport(ctx context.Context, req *ImpactR
 //	conflicts, err = client.DetectPolicyConflicts(ctx, "policy-123")
 //
 // Deprecated: the platform deprecates POST /api/v1/policies/conflicts in v11.0.0 and removes it
-// in v12.0. Every response carries X-AxonFlow-Removed-In:
-// v12.0 and a successor Link naming /api/v1/typed-policies, plus an RFC 9745
+// in v12.0. Every response carries X-AxonFlow-Removed-In (v11.1 from a v11.0.0
+// platform, v12.0 from v11.1.0 on) and a successor Link naming
+// /api/v1/typed-policies, plus an RFC 9745
 // Deprecation header once v11.0.0 is tagged, and the client reports the route
 // once through
 // AxonFlowConfig.OnRouteDeprecation. Policy is authored and tested
