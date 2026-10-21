@@ -10,14 +10,14 @@ import (
 )
 
 // The v11.0.0 deprecations: the three simulation methods keep answering until
-// v11.1 and are reported once per route with the platform's own signal, and the
+// v12.0 and are reported once per route with the platform's own signal, and the
 // retired per-policy override writes return the typed frozen error.
 
 // stampedSimulationRoutes answers the three simulation routes with the headers
 // a v11 platform stamps on the deprecated export surface today. The RFC 9745
 // Deprecation header joins them once v11.0.0 is tagged; D1's tests read it.
 func stampedSimulationRoutes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("X-AxonFlow-Removed-In", "v11.1")
+	w.Header().Set("X-AxonFlow-Removed-In", "v12.0")
 	w.Header().Add("Link", `</api/v1/typed-policies>; rel="successor-version"`)
 	writeJSON(w, http.StatusOK, `{}`)
 }
@@ -42,7 +42,7 @@ func TestTheSimulationMethodsWorkAndAreReportedDeprecatedOnce(t *testing.T) {
 			t.Fatalf("DetectPolicyConflicts: %v", err)
 		}
 	}
-	stamp := PlatformRouteDeprecation{Successor: "/api/v1/typed-policies", RemovedIn: "v11.1"}
+	stamp := PlatformRouteDeprecation{Successor: "/api/v1/typed-policies", RemovedIn: "v12.0"}
 	var want []PlatformRouteDeprecation
 	for _, route := range []string{"simulate", "impact-report", "conflicts"} {
 		d := stamp

@@ -235,7 +235,7 @@ func TestOtherErrorsAreNotTheFrozenError(t *testing.T) {
 func deprecatedRoutes(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/v1/static-policies":
-		w.Header().Set("X-AxonFlow-Removed-In", "v11.1")
+		w.Header().Set("X-AxonFlow-Removed-In", "v12.0")
 		w.Header().Add("Link", `</api/v1/audit>; rel="related"`)
 		w.Header().Add("Link", `</api/v1/typed-policies>; rel="successor-version"`)
 	case "/api/v1/dynamic-policies":
@@ -270,7 +270,7 @@ func TestRouteDeprecationIsReportedOncePerRoute(t *testing.T) {
 		t.Fatalf("GetStaticPolicy: %v", err)
 	}
 	want := []PlatformRouteDeprecation{
-		{Route: "GET /api/v1/static-policies", Successor: "/api/v1/typed-policies", RemovedIn: "v11.1"},
+		{Route: "GET /api/v1/static-policies", Successor: "/api/v1/typed-policies", RemovedIn: "v12.0"},
 		{Route: "GET /api/v1/dynamic-policies", Deprecation: "@1788220800"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -296,7 +296,7 @@ func TestRouteDeprecationLogsWhenNoCallbackIsSet(t *testing.T) {
 		}
 	}
 	want := "[AxonFlow] GET /api/v1/static-policies is deprecated by the AxonFlow platform; " +
-		"use /api/v1/typed-policies instead; it is removed in v11.1."
+		"use /api/v1/typed-policies instead; it is removed in v12.0."
 	if n := strings.Count(buf.String(), want); n != 1 {
 		t.Errorf("logged the deprecation %d times, want once; log:\n%s", n, buf.String())
 	}

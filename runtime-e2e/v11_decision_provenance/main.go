@@ -13,7 +13,7 @@
 //  3. MCP check-output carries the provenance.
 //  4. A legacy static-policy read is reported once through
 //     AxonFlowConfig.OnRouteDeprecation, naming /api/v1/typed-policies as the
-//     successor and v11.1 as the removal release.
+//     successor and v12.0 as the removal release.
 //  5. A valid legacy static-policy write and a valid dynamic-policy write each
 //     return *axonflow.LegacyPolicyWriteFrozenError.
 //
@@ -176,7 +176,7 @@ func deprecatedReadLeg(reported []axonflow.PlatformRouteDeprecation) {
 	check(len(static) == 1, "a legacy static-policy read is reported once through OnRouteDeprecation")
 	if len(static) == 1 {
 		check(static[0].Successor == "/api/v1/typed-policies", "the report names the typed route as the successor")
-		check(static[0].RemovedIn == "v11.1", "the report names v11.1 as the removal release")
+		check(static[0].RemovedIn == "v12.0", "the report names v12.0 as the removal release")
 	}
 }
 
