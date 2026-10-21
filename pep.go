@@ -88,6 +88,8 @@ type DecideRequest struct {
 	Target         DecisionTarget         `json:"target"`
 	UserToken      string                 `json:"user_token,omitempty"`
 	Context        map[string]interface{} `json:"context,omitempty"`
+	// ApprovalID names the held call this exact retry may spend.
+	ApprovalID string `json:"approval_id,omitempty"`
 }
 
 // DecisionCallerIdentity is the gateway-asserted identity for a /decide request.
@@ -104,6 +106,7 @@ type DecisionTarget struct {
 	Type     string `json:"type,omitempty"`     // "llm" | "tool" | "agent"
 	Model    string `json:"model,omitempty"`    // when type=llm
 	Provider string `json:"provider,omitempty"` // when type=llm
+	Server   string `json:"server,omitempty"`   // when type=tool
 	Tool     string `json:"tool,omitempty"`     // when type=tool
 }
 
@@ -137,6 +140,26 @@ type DecideResponse struct {
 	PolicyIdentities []PolicyIdentity `json:"policy_identities,omitempty"`
 	PolicyPacks      []string         `json:"policy_packs,omitempty"`
 	DocumentVersion  int              `json:"document_version,omitempty"`
+	// A hold is never permission to forward the call. Retry only after a person
+	// approves, then require an allow verdict naming the spent approval ID.
+	PendingApproval *DecisionPendingApproval `json:"pending_approval,omitempty"`
+	ApprovalID      string                   `json:"approval_id,omitempty"`
+}
+
+// DecisionPendingApproval describes a call held on the Decision API.
+type DecisionPendingApproval struct {
+	ApprovalID string                `json:"approval_id"`
+	Status     string                `json:"status"`
+	Plane      string                `json:"plane"`
+	ExpiresAt  *time.Time            `json:"expires_at,omitempty"`
+	Retry      DecisionApprovalRetry `json:"retry"`
+}
+
+// DecisionApprovalRetry describes how the caller names an approved hold.
+type DecisionApprovalRetry struct {
+	Header    string `json:"header"`
+	Argument  string `json:"argument,omitempty"`
+	BodyField string `json:"body_field,omitempty"`
 }
 
 // Obligation is a self-describing, engine-fulfillable PEP requirement on an

@@ -151,6 +151,48 @@ func TestDecide_ParsesObligations(t *testing.T) {
 	}
 }
 
+func TestDecide_PaymentHoldAndApprovedRetryWire(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		target, _ := request["target"].(map[string]any)
+		if target["server"] != "payment-ops" || target["tool"] != "payment-ops.retry_disbursement" {
+			t.Errorf("payment target = %v", target)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			if _, ok := request["approval_id"]; ok {
+				t.Error("first request unexpectedly names an approval")
+			}
+			_, _ = io.WriteString(w, `{"verdict":"needs_approval","pending_approval":{"approval_id":"hold-1","status":"pending","plane":"decide","retry":{"header":"X-Axonflow-Approval-Id","body_field":"approval_id"}}}`)
+			return
+		}
+		if request["approval_id"] != "hold-1" {
+			t.Errorf("retry approval_id = %v", request["approval_id"])
+		}
+		_, _ = io.WriteString(w, `{"verdict":"allow","approval_id":"hold-1"}`)
+	}))
+	defer srv.Close()
+	c := newPEPClient(srv.URL)
+	req := DecideRequest{Stage: "tool", Query: "Retry failed disbursement",
+		Target: DecisionTarget{Type: "tool", Server: "payment-ops", Tool: "payment-ops.retry_disbursement"}}
+	held, err := c.Decide(context.Background(), req)
+	if err != nil || held.Verdict != "needs_approval" || held.PendingApproval == nil ||
+		held.PendingApproval.ApprovalID != "hold-1" || held.PendingApproval.Retry.BodyField != "approval_id" {
+		t.Fatalf("held response = %+v, err = %v", held, err)
+	}
+	req.ApprovalID = held.PendingApproval.ApprovalID
+	allowed, err := c.Decide(context.Background(), req)
+	if err != nil || allowed.Verdict != "allow" || allowed.ApprovalID != "hold-1" {
+		t.Fatalf("retry response = %+v, err = %v", allowed, err)
+	}
+}
+
 func TestDecide_StampsOrgID(t *testing.T) {
 	var captured DecideRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
