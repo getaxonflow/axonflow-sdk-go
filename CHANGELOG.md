@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - An answered Hosted `402 hosted_payment_required` now returns a terminal Go error in production mode, including when the refusal body is malformed. It no longer decodes into a non-blocked zero-value response with a nil error. Explicit legacy self-hosted blocked `402` verdicts keep their response shape.
+- An answered Hosted `429 hosted_monthly_limit_reached` now remains a terminal HTTP error in production mode, including when only the Agent's monthly-tier header survives a malformed body. Ordinary `429` capacity responses retain their existing fail-open behavior.
 
 ## [9.5.0] - 2026-10-21: Decision API approval retry fields
 

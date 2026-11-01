@@ -80,3 +80,70 @@ func TestLegacyBlocked402StillReturnsVerdict(t *testing.T) {
 		t.Fatalf("legacy blocked 402 response = %#v, err = %v", response, err)
 	}
 }
+
+func TestHostedMonthlyLimit429IsTerminalError(t *testing.T) {
+	const hostedBody = `{"error":"hosted_monthly_limit_reached","message":"Monthly hosted governance allowance reached.","limit_type":"monthly_governed_events","higher_usage_path":"paid_enterprise_poc"}`
+	for _, tc := range []struct {
+		name, body, tierLimit string
+	}{
+		{"exact Agent response", hostedBody, "monthly_governed_events"},
+		{"body code only", hostedBody, ""},
+		{"header with malformed body", `{"error":`, "monthly_governed_events"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.Header().Set("X-Axonflow-Tier-Limit", tc.tierLimit)
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewClient(AxonFlowConfig{
+				Endpoint: server.URL, ClientID: "hosted-capped", Mode: "production",
+				Retry: RetryConfig{Enabled: true, MaxAttempts: 3, InitialDelay: time.Millisecond},
+				Cache: CacheConfig{Enabled: false},
+			})
+			response, err := client.ProxyLLMCall("user", "monthly cap probe", "chat", nil)
+			var httpErr *httpError
+			if response != nil || !errors.As(err, &httpErr) || httpErr.statusCode != http.StatusTooManyRequests || !httpErr.hostedMonthlyLimit {
+				t.Fatalf("Hosted cap response = %#v, err = %v; want terminal HTTP 429", response, err)
+			}
+			if calls != 1 {
+				t.Fatalf("Hosted cap calls = %d, want 1", calls)
+			}
+		})
+	}
+}
+
+func TestOrdinary429KeepsProductionFailOpen(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"rate_limited"}`))
+	}))
+	defer server.Close()
+	client := NewClient(AxonFlowConfig{
+		Endpoint: server.URL, ClientID: "self-hosted", Mode: "production",
+		Retry: RetryConfig{Enabled: true, MaxAttempts: 3, InitialDelay: time.Millisecond},
+		Cache: CacheConfig{Enabled: false},
+	})
+	response, err := client.ProxyLLMCall("user", "ordinary 429 probe", "chat", nil)
+	if err != nil || response == nil || !response.Success || calls != 1 {
+		t.Fatalf("ordinary 429 response = %#v, err = %v, calls = %d; want fail-open success after one call", response, err, calls)
+	}
+}
+
+func TestOrdinary200StillReturnsVerdict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"request_id":"governed-200"}`))
+	}))
+	defer server.Close()
+	client := NewClient(AxonFlowConfig{Endpoint: server.URL, ClientID: "self-hosted", Mode: "production", Cache: CacheConfig{Enabled: false}})
+	response, err := client.ProxyLLMCall("user", "ordinary 200 probe", "chat", nil)
+	if err != nil || response == nil || !response.Success || response.RequestID != "governed-200" {
+		t.Fatalf("ordinary 200 response = %#v, err = %v", response, err)
+	}
+}

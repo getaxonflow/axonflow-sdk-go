@@ -1034,8 +1034,9 @@ func (c *AxonFlowClient) executeWithRetry(req ClientRequest) (*ClientResponse, e
 
 // httpError represents an HTTP error with status code
 type httpError struct {
-	statusCode int
-	message    string
+	statusCode         int
+	message            string
+	hostedMonthlyLimit bool
 }
 
 func (e *httpError) Error() string {
@@ -1101,9 +1102,16 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		var hostedError struct {
+			Error string `json:"error"`
+		}
+		hostedMonthlyLimit := resp.StatusCode == http.StatusTooManyRequests &&
+			(resp.Header.Get("X-Axonflow-Tier-Limit") == "monthly_governed_events" ||
+				(json.Unmarshal(body, &hostedError) == nil && hostedError.Error == "hosted_monthly_limit_reached"))
 		return nil, &httpError{
-			statusCode: resp.StatusCode,
-			message:    string(body),
+			statusCode:         resp.StatusCode,
+			message:            string(body),
+			hostedMonthlyLimit: hostedMonthlyLimit,
 		}
 	}
 
@@ -1210,10 +1218,13 @@ func (c *AxonFlowClient) isAxonFlowError(err error) bool {
 // failing open there silently converts an auth/config error into an
 // ungoverned success (the retry wrapper's "request failed after N attempts"
 // prefix used to make isAxonFlowError match exactly that). 429 stays
-// eligible: rate limiting is a capacity condition, same class as 5xx.
+// eligible unless the Agent answered with the Hosted monthly governance cap.
 func (c *AxonFlowClient) isFailOpenEligible(err error) bool {
 	var httpErr *httpError
 	if errors.As(err, &httpErr) {
+		if httpErr.hostedMonthlyLimit {
+			return false
+		}
 		if httpErr.statusCode >= 400 && httpErr.statusCode < 500 && httpErr.statusCode != http.StatusTooManyRequests {
 			return false
 		}

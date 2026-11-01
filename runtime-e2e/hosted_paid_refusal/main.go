@@ -1,8 +1,8 @@
 //go:build ignore
 
-// Run against a real disposable Hosted staging Agent with an unpaid Basic
-// credential. This driver never accepts a production origin and prints no
-// credential. A local unit-test listener is not a substitute for this run.
+// Run against a real disposable Hosted staging Agent with a prepared 402 or
+// monthly-cap 429 fixture. This driver never accepts a production origin and
+// prints no credential. A local unit-test listener is not a substitute.
 package main
 
 import (
@@ -23,10 +23,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "only the HTTPS Hosted staging Agent origin is allowed")
 		os.Exit(2)
 	}
-	clientID := os.Getenv("AXONFLOW_HOSTED_UNPAID_CLIENT_ID")
-	secret := os.Getenv("AXONFLOW_HOSTED_UNPAID_CLIENT_SECRET")
+	clientID := os.Getenv("AXONFLOW_HOSTED_STAGING_CLIENT_ID")
+	secret := os.Getenv("AXONFLOW_HOSTED_STAGING_CLIENT_SECRET")
 	if clientID == "" || secret == "" {
-		fmt.Fprintln(os.Stderr, "staging unpaid Basic credential is required")
+		fmt.Fprintln(os.Stderr, "staging fixture credential is required")
+		os.Exit(2)
+	}
+	expected := os.Getenv("AXONFLOW_HOSTED_EXPECTED_STATUS")
+	if expected != "402" && expected != "429" {
+		fmt.Fprintln(os.Stderr, "AXONFLOW_HOSTED_EXPECTED_STATUS must be 402 or 429")
 		os.Exit(2)
 	}
 	client := axonflow.NewClient(axonflow.AxonFlowConfig{
@@ -36,10 +41,14 @@ func main() {
 		}, Cache: axonflow.CacheConfig{Enabled: false},
 	})
 	response, err := client.ProxyLLMCall("hosted-sdk-runtime-e2e", "synthetic Hosted refusal probe", "chat", nil)
-	if response != nil || err == nil || !strings.Contains(err.Error(), "HTTP 402") ||
-		!strings.Contains(err.Error(), "hosted_payment_required") {
-		fmt.Fprintln(os.Stderr, "Hosted 402 did not surface as a terminal payment error")
+	code := "hosted_payment_required"
+	if expected == "429" {
+		code = "hosted_monthly_limit_reached"
+	}
+	if response != nil || err == nil || !strings.Contains(err.Error(), "HTTP "+expected) ||
+		!strings.Contains(err.Error(), code) {
+		fmt.Fprintln(os.Stderr, "Hosted refusal did not surface as a terminal HTTP error")
 		os.Exit(1)
 	}
-	fmt.Println("PASS: real Hosted staging 402 is a terminal Go error")
+	fmt.Printf("PASS: real Hosted staging %s is a terminal Go error\n", expected)
 }
