@@ -1087,16 +1087,17 @@ func (c *AxonFlowClient) executeRequest(req ClientRequest) (*ClientResponse, err
 		}
 	}
 
-	// For 402 (Payment Required) or 403 (Forbidden), the request was blocked - parse the response body
-	// 402: Budget exceeded (Issue #1082)
-	// 403: Policy violation
+	// Legacy self-hosted 402/403 responses carry an explicit blocked verdict.
+	// Hosted payment refusals use a different error envelope (error, message,
+	// checkout_url) with no success/blocked fields. Treat only a real blocked
+	// verdict as a response; every other 402/403 must remain an HTTP error so
+	// production-mode fail-open cannot turn an answered refusal into success.
 	if resp.StatusCode == http.StatusPaymentRequired || resp.StatusCode == http.StatusForbidden {
 		var clientResp ClientResponse
-		if err := json.Unmarshal(body, &clientResp); err != nil {
-			return nil, fmt.Errorf("failed to parse blocked response: %w", err)
+		if err := json.Unmarshal(body, &clientResp); err == nil && !clientResp.Success && clientResp.Blocked {
+			return &clientResp, nil
 		}
-		// The response contains blocked=true and block_reason from the agent
-		return &clientResp, nil
+		return nil, &httpError{statusCode: resp.StatusCode, message: string(body)}
 	}
 
 	if resp.StatusCode != http.StatusOK {
