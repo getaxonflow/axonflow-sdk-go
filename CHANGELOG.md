@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [9.5.1] - Unpublished release candidate
+
 ### Fixed
 
 - An answered Hosted `402 hosted_payment_required` now returns a terminal Go error in production mode, including when the refusal body is malformed. It no longer decodes into a non-blocked zero-value response with a nil error. Explicit legacy self-hosted blocked `402` verdicts keep their response shape.
