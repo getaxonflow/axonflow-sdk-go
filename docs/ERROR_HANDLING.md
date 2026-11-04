@@ -166,9 +166,10 @@ The SDK maps HTTP status codes to appropriate error handling:
 |-------------|----------|
 | 400 | Returns error with validation details |
 | 401 | Returns error indicating authentication failure |
+| 402 | Hosted payment refusal returns a terminal error; an explicit self-hosted blocked verdict returns a response |
 | 403 | Returns error indicating authorization failure |
 | 404 | Returns error indicating resource not found |
-| 429 | Returns error with rate limit information |
+| 429 | Hosted `hosted_monthly_limit_reached` returns a terminal error, including in production mode; ordinary rate limits retain production fail-open behavior |
 | 500+ | Returns error indicating server-side issue |
 
 ## Context and Cancellation
